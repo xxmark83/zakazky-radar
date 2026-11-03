@@ -61,3 +61,18 @@ button:disabled { opacity: .6; cursor: wait; }
 .actions button { padding: 4px 10px; font-size: 13px; }
 .filters { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .filters button.on { border-color: var(--accent); color: var(--accent); }
+h2 { font-size: 17px; margin: 24px 0 8px; }
+a { color: var(--accent); }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.tabs button.on, .presets button.on, .actions button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.note { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 16px; }
+.kpi-v { font-size: 20px; font-weight: 700; }
+.kpi-l { color: var(--muted); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td:nth-child(n+2), th:nth-child(n+2) { text-align: right; white-space: nowrap; }
+.watch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.watch select { width: auto; }
+.watch .note { margin: 0; flex: 1; min-width: 160px; }

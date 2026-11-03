@@ -1,6 +1,7 @@
 export type Tender = {
   id: string;
   source: "TED" | "Hlídač státu";
+  kind: "open" | "upcoming"; // otevřená výzva / připravovaná (PIN, tržní konzultace)
   title: string;
   buyer: string;
   published: string | null;
@@ -18,10 +19,31 @@ export type ScoredTender = Tender & {
   product: string; // který z mých produktů sedí
 };
 
-export type SearchRequest = {
+export type Award = {
+  id: string;
+  title: string;
+  buyer: string;
+  published: string | null;
+  winners: string[];
+  value: number | null;
+  currency: string | null;
+  cpv: string[];
+  url: string;
+};
+
+export type Profile = {
+  name: string;
   profile: string; // volný popis, co nabízím
-  keywords: string; // slova oddělená čárkou – použijí se v Hlídači státu
+  keywords: string; // slova oddělená čárkou
   cpv: string; // CPV kódy oddělené čárkou/mezerou
+};
+
+export type SearchRequest = Profile & {
+  mode: "open" | "upcoming";
   days: number; // jak staré zveřejnění brát
   minScore: number;
 };
+
+export type WatchedProfile = Profile & { minScore: number; watch: boolean };
+
+export type Status = "new" | "maybe" | "bid" | "no";

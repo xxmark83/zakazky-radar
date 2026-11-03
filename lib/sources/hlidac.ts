@@ -8,7 +8,11 @@ function first<T>(...vals: T[]): T | undefined {
   return vals.find((v) => v !== undefined && v !== null && (v as any) !== "");
 }
 
-export async function fetchHlidac(opts: { keywords: string[]; days: number }): Promise<Tender[]> {
+export async function fetchHlidac(opts: {
+  keywords: string[];
+  days: number;
+  kind: Tender["kind"];
+}): Promise<Tender[]> {
   const token = process.env.HLIDAC_TOKEN;
   if (!token || !opts.keywords.length) return [];
 
@@ -16,7 +20,8 @@ export async function fetchHlidac(opts: { keywords: string[]; days: number }): P
   const seen = new Map<string, Tender>();
 
   for (const kw of opts.keywords.slice(0, 8)) {
-    const dotaz = `${kw} AND zverejneno:[${since} TO *]`;
+    const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
+    const dotaz = `${early}${kw} AND zverejneno:[${since} TO *]`;
     const res = await fetch(`${URL}?dotaz=${encodeURIComponent(dotaz)}&strana=1`, {
       headers: { Authorization: `Token ${token}` },
       cache: "no-store",
@@ -32,6 +37,7 @@ export async function fetchHlidac(opts: { keywords: string[]; days: number }): P
       seen.set(id, {
         id: `hs-${id}`,
         source: "Hlídač státu",
+        kind: opts.kind,
         title: first(r.NazevZakazky, r.nazevZakazky) ?? "(bez názvu)",
         buyer: first(r.Zadavatel?.Jmeno, r.zadavatel?.jmeno) ?? "",
         published: (first(r.DatumUverejneni, r.datumUverejneni) ?? "").slice(0, 10) || null,
