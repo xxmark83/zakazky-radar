@@ -78,3 +78,6 @@ td:nth-child(n+2), th:nth-child(n+2) { text-align: right; white-space: nowrap; }
 .watch .note { margin: 0; flex: 1; min-width: 160px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand svg { flex: none; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+button.primary.big { display: block; width: 100%; padding: 14px; font-size: 16px; }

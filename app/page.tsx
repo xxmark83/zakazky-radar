@@ -6,10 +6,9 @@ import { PRESETS } from "@/lib/presets";
 import type { Award, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
 const STATUS_LABEL: Record<Status, string> = { new: "Nové", maybe: "Zajímavé", bid: "Podám", no: "Ne" };
-type Tab = "open" | "upcoming" | "market" | "watch";
+type Tab = "search" | "market" | "watch";
 const TABS: Record<Tab, string> = {
-  open: "Otevřené zakázky",
-  upcoming: "Připravované",
+  search: "Zakázky",
   market: "Průzkum trhu",
   watch: "Hlídání e-mailem",
 };
@@ -44,14 +43,14 @@ const money = (v: number | null, c: string | null = "CZK") =>
   v ? `${Math.round(v).toLocaleString("cs-CZ")} ${c ?? ""}` : "hodnota neuvedena";
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("open");
+  const [tab, setTab] = useState<Tab>("search");
   const [form, setForm] = useState({ ...PRESETS[0], days: 30, minScore: 40 });
   const [server, setServer] = useState<ServerState>({ db: false });
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [marked, setMarked] = useState<Record<string, ScoredTender>>({});
 
   useEffect(() => {
-    const last = load<{ form?: typeof form }>("zr-last", {});
+    const last = load<{ form?: typeof form }>("zr-form", {});
     if (last.form) setForm(last.form);
     fetch("/api/state")
       .then((r) => r.json())
@@ -93,8 +92,7 @@ export default function Home() {
         Zakázky radar
       </h1>
       <p className="sub">
-        České veřejné zakázky + AI výběr podle tvé nabídky.{" "}
-        <span className="tag">{server.db ? "databáze připojena" : "ukládá se jen v tomto prohlížeči"}</span>
+        Nové veřejné zakázky z TED a NEN, AI vybere ty, které sedí na tvou nabídku.
       </p>
 
       <nav className="tabs">
@@ -107,9 +105,7 @@ export default function Home() {
 
       <ProfileForm form={form} setForm={setForm} tab={tab} />
 
-      {(tab === "open" || tab === "upcoming") && (
-        <SearchTab key={tab} mode={tab} form={form} statuses={statuses} marked={marked} setStatus={setStatus} />
-      )}
+      {tab === "search" && <SearchTab form={form} statuses={statuses} marked={marked} setStatus={setStatus} />}
       {tab === "market" && <MarketTab form={form} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
     </main>
@@ -128,6 +124,8 @@ function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) =>
           </button>
         ))}
       </div>
+      <details>
+        <summary>Upravit, co hledám</summary>
       {tab !== "market" && (
         <>
           <label>
@@ -147,7 +145,7 @@ function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) =>
           </label>
           <input value={form.cpv} onChange={(e) => setForm({ ...form, cpv: e.target.value })} />
         </div>
-        {(tab === "open" || tab === "upcoming") && (
+        {tab === "search" && (
           <>
             <div>
               <label>Zveřejněno za posledních</label>
@@ -172,18 +170,18 @@ function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) =>
           </>
         )}
       </div>
+      </details>
     </div>
   );
 }
 
 function SearchTab(props: {
-  mode: "open" | "upcoming";
   form: Form;
   statuses: Record<string, Status>;
   marked: Record<string, ScoredTender>;
   setStatus: (t: ScoredTender, s: Status) => void;
 }) {
-  const { mode, form, statuses, marked, setStatus } = props;
+  const { form, statuses, marked, setStatus } = props;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -191,21 +189,28 @@ function SearchTab(props: {
   const [results, setResults] = useState<ScoredTender[]>([]);
   const [filter, setFilter] = useState<Status | "all">("all");
 
-  useEffect(() => setResults(load(`zr-results-${mode}`, [])), [mode]);
+  useEffect(() => setResults(load("zr-results", [])), []);
 
+  // otevřené výzvy i připravované (předběžná oznámení, tržní konzultace) najednou
   async function search() {
     setLoading(true);
     setError("");
     setWarnings([]);
     try {
-      const res = await post("/api/search", { ...form, mode });
-      const data = await res.json();
-      setWarnings(data.warnings ?? []);
-      if (!res.ok) throw new Error(data.error ?? `Chyba ${res.status}`);
-      setStats({ total: data.total, open: data.open });
-      setResults(data.results);
-      save(`zr-results-${mode}`, data.results);
-      save("zr-last", { form });
+      const data = await Promise.all(
+        (["open", "upcoming"] as const).map(async (mode) => {
+          const res = await post("/api/search", { ...form, mode });
+          const d = await res.json();
+          if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
+          return d as { total: number; open: number; warnings?: string[]; results: ScoredTender[] };
+        }),
+      );
+      const all = data.flatMap((d) => d.results).sort((a, b) => b.score - a.score);
+      setWarnings([...new Set(data.flatMap((d) => d.warnings ?? []))]);
+      setStats({ total: data[0].total + data[1].total, open: data[0].open + data[1].open });
+      setResults(all);
+      save("zr-results", all);
+      save("zr-form", { form });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -217,18 +222,13 @@ function SearchTab(props: {
   const pool =
     filter === "all" || filter === "new"
       ? results
-      : [...results, ...Object.values(marked).filter((m) => m.kind === mode && !results.some((r) => r.id === m.id))];
+      : [...results, ...Object.values(marked).filter((m) => !results.some((r) => r.id === m.id))];
   const shown = pool.filter((r) => filter === "all" || (statuses[r.id] ?? "new") === filter);
 
   return (
     <>
-      <p className="note">
-        {mode === "open"
-          ? "Výzvy, do kterých lze podat nabídku teď."
-          : "Předběžná oznámení a předběžné tržní konzultace – šance mluvit se zadavatelem dřív, než napíše zadání."}
-      </p>
-      <button className="primary" onClick={search} disabled={loading}>
-        {loading ? "Stahuji a hodnotím… (až 1–2 min)" : mode === "open" ? "Najít zakázky" : "Najít připravované"}
+      <button className="primary big" onClick={search} disabled={loading}>
+        {loading ? "Stahuji a hodnotím… (až 1–2 min)" : "Najít zakázky"}
       </button>
       {error && <div className="warn">{error}</div>}
       {warnings.map((w) => (
@@ -238,21 +238,23 @@ function SearchTab(props: {
       ))}
       {stats && (
         <p className="stats">
-          Staženo {stats.total} oznámení, aktuálních {stats.open}, vhodných {results.length}.
+          Prošel jsem {stats.open} aktuálních zakázek, vhodných je {results.length}.
         </p>
       )}
-      <div className="filters">
-        {(["all", "new", "maybe", "bid", "no"] as const).map((f) => (
-          <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
-            {f === "all" ? "Vše" : STATUS_LABEL[f]}
-          </button>
-        ))}
-      </div>
+      {results.length > 0 && (
+        <div className="filters">
+          {(["all", "maybe", "bid", "no"] as const).map((f) => (
+            <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+              {f === "all" ? "Vše" : STATUS_LABEL[f]}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="list">
         {shown.map((t) => (
           <TenderCard key={t.id} t={t} status={statuses[t.id] ?? "new"} setStatus={setStatus} />
         ))}
-        {!shown.length && !loading && <p className="note">Zatím nic. Klikni na tlačítko výše.</p>}
+        {!shown.length && !loading && <p className="note">Zatím nic. Klikni na Najít zakázky.</p>}
       </div>
     </>
   );
@@ -274,7 +276,8 @@ function TenderCard({ t, status, setStatus }: { t: ScoredTender; status: Status;
           <span>{t.buyer}</span>
           <span>{money(t.value, t.currency)}</span>
           {t.deadline && <span>lhůta: {t.deadline}</span>}
-          <span>zveřejněno: {t.published ?? "?"}</span>
+          {t.published && <span>zveřejněno: {t.published}</span>}
+          {t.kind === "upcoming" && <span className="tag">připravovaná</span>}
           <span className="tag">{t.source}</span>
           {t.product && t.product !== "–" && <span className="tag">{t.product}</span>}
         </div>
@@ -438,7 +441,7 @@ function WatchTab({ form, server, setServer }: { form: Form; server: ServerState
         <Check ok={server.email} label="E-mail (RESEND_API_KEY + ALERT_EMAIL)" />
         <Check ok={server.db} label="Databáze – vlastní profily a bez duplicit (Upstash Redis)" />
         {!server.db && (
-          <p className="note">Bez databáze se hlídají výchozí profily Kotva CRM a Vzdělávací portál se skóre 75+.</p>
+          <p className="note">Bez databáze se hlídá výchozí profil „CRM a zákaznické portály“ se skóre 75+.</p>
         )}
       </div>
 

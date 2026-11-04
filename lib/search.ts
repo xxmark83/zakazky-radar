@@ -1,4 +1,5 @@
 import { fetchHlidac } from "./sources/hlidac";
+import { fetchNen } from "./sources/nen";
 import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { scoreTenders } from "./score";
 import type { ScoredTender, SearchRequest, Tender } from "./types";
@@ -20,16 +21,18 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
   const kind = body.mode === "upcoming" ? "upcoming" : "open";
   const warnings: string[] = [];
 
-  const [ted, hs] = await Promise.allSettled([
-    kind === "upcoming" ? fetchTedUpcoming({ cpv, days }) : fetchTedOpen({ cpv, days }),
-    fetchHlidac({ keywords, days, kind }),
-  ]);
+  // NEN nemá předběžná oznámení, hledá se jen u otevřených zakázek
+  const sources: [string, Promise<Tender[]>][] = [
+    ["TED", kind === "upcoming" ? fetchTedUpcoming({ cpv, days }) : fetchTedOpen({ cpv, days })],
+    ["NEN", kind === "open" ? fetchNen({ keywords }) : Promise.resolve([])],
+    ["Hlídač státu", fetchHlidac({ keywords, days, kind })],
+  ];
+  const settled = await Promise.allSettled(sources.map(([, p]) => p));
   const tenders: Tender[] = [];
-  if (ted.status === "fulfilled") tenders.push(...ted.value);
-  else warnings.push(`TED: ${ted.reason?.message ?? ted.reason}`);
-  if (hs.status === "fulfilled") tenders.push(...hs.value);
-  else warnings.push(`Hlídač státu: ${hs.reason?.message ?? hs.reason}`);
-  if (!process.env.HLIDAC_TOKEN) warnings.push("Hlídač státu vypnutý (chybí HLIDAC_TOKEN) – podlimitní zakázky se nenačítají.");
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") tenders.push(...r.value);
+    else warnings.push(`${sources[i][0]}: ${r.reason?.message ?? r.reason}`);
+  });
 
   // u otevřených zahodit prošlou lhůtu; připravované lhůtu obvykle nemají
   const today = new Date().toISOString().slice(0, 10);

@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const saved = (await getProfiles()).filter((p) => p.watch);
   const profiles: WatchedProfile[] = saved.length
     ? saved
-    : PRESETS.slice(0, 2).map((p) => ({ ...p, minScore: defaultMin, watch: true }));
+    : PRESETS.slice(0, 1).map((p) => ({ ...p, minScore: defaultMin, watch: true }));
 
   // s databází hlídáme delší okno a duplicity odfiltrujeme; bez ní jen poslední den
   const days = redis ? 3 : 1;
