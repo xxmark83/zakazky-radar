@@ -27,7 +27,7 @@ const isoDate = (s: string) => {
 // koncovkou („zákaznick“ najde i „zákaznického“). Nesouvisející výsledky pak vyřadí AI.
 const STOP = new Set(["pro", "správa", "systém", "zaměstnanců", "občany", "klientů", "kontaktů"]);
 const ALWAYS = ["informační systém", "aplikac", "software"];
-const terms = (keywords: string[]) => {
+export const terms = (keywords: string[]) => {
   const words = keywords
     .flatMap((k) => k.split(/\s+/))
     .filter((w) => w.length >= 3 && !STOP.has(w.toLowerCase()))

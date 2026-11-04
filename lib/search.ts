@@ -1,5 +1,6 @@
 import { fetchHlidac } from "./sources/hlidac";
 import { fetchNen } from "./sources/nen";
+import { fetchProfily } from "./sources/profily";
 import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { scoreTenders } from "./score";
 import type { ScoredTender, SearchRequest, Tender } from "./types";
@@ -26,6 +27,7 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
     ["TED", kind === "upcoming" ? fetchTedUpcoming({ cpv, days }) : fetchTedOpen({ cpv, days })],
     ["NEN", kind === "open" ? fetchNen({ keywords }) : Promise.resolve([])],
     ["Hlídač státu", fetchHlidac({ keywords, days, kind })],
+    ["Profily zadavatelů", Promise.resolve(kind === "open" ? fetchProfily({ keywords, cpv, days }) : [])],
   ];
   const settled = await Promise.allSettled(sources.map(([, p]) => p));
   const tenders: Tender[] = [];
@@ -34,9 +36,18 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
     else warnings.push(`${sources[i][0]}: ${r.reason?.message ?? r.reason}`);
   });
 
-  // u otevřených zahodit prošlou lhůtu; připravované lhůtu obvykle nemají
+  // u otevřených zahodit prošlou lhůtu; připravované lhůtu obvykle nemají.
+  // Stejná zakázka bývá ve více zdrojích (TED, NEN i profil zadavatele) – necháme první výskyt.
   const today = new Date().toISOString().slice(0, 10);
-  const open = tenders.filter((t) => !t.deadline || t.deadline >= today);
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const seen = new Set<string>();
+  const open = tenders.filter((t) => {
+    if (t.deadline && t.deadline < today) return false;
+    const key = `${norm(t.title)}|${norm(t.buyer).slice(0, 12)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   if (!process.env.ANTHROPIC_API_KEY) {
     warnings.push("Chybí ANTHROPIC_API_KEY – zobrazuji zakázky bez AI hodnocení.");

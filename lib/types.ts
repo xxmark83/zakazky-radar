@@ -1,6 +1,6 @@
 export type Tender = {
   id: string;
-  source: "TED" | "NEN" | "Hlídač státu";
+  source: "TED" | "NEN" | "Hlídač státu" | "Profily zadavatelů";
   kind: "open" | "upcoming"; // otevřená výzva / připravovaná (PIN, tržní konzultace)
   title: string;
   buyer: string;

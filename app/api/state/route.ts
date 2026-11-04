@@ -1,3 +1,4 @@
+import { profilyInfo } from "@/lib/sources/profily";
 import { getMarkedTenders, getState, saveProfiles, setStatus } from "@/lib/store";
 
 export async function GET() {
@@ -8,6 +9,7 @@ export async function GET() {
     marked,
     email: Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL),
     cron: Boolean(process.env.CRON_SECRET),
+    profily: profilyInfo(),
   });
 }
 

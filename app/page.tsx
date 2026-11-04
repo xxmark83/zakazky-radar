@@ -10,7 +10,7 @@ type Tab = "search" | "market" | "watch";
 const TABS: Record<Tab, string> = {
   search: "Zakázky",
   market: "Průzkum trhu",
-  watch: "Hlídání e-mailem",
+  watch: "Hlídání",
 };
 
 type ServerState = {
@@ -20,6 +20,7 @@ type ServerState = {
   statuses?: Record<string, Status>;
   profiles?: WatchedProfile[];
   marked?: ScoredTender[];
+  profily?: { updated: string; profiles: number; ok: number; open: number } | null;
 };
 
 function load<T>(key: string, fallback: T): T {
@@ -84,24 +85,40 @@ export default function Home() {
   };
 
   return (
+    <>
+      <header className="top">
+        <div className="top-in">
+          <div className="brand">
+            <svg viewBox="0 0 456 312" width="35" height="24" aria-hidden="true">
+              <path fill="var(--accent)" fillRule="evenodd" d={MB_LOGO} />
+            </svg>
+            <span>Zakázky radar</span>
+          </div>
+          <nav className="tabs">
+            {(Object.keys(TABS) as Tab[]).map((t) => (
+              <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+                {TABS[t]}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
     <main>
-      <h1 className="brand">
-        <svg viewBox="0 0 456 312" width="41" height="28" aria-hidden="true">
-          <path fill="var(--accent)" fillRule="evenodd" d={MB_LOGO} />
-        </svg>
-        Zakázky radar
-      </h1>
-      <p className="sub">
-        Nové veřejné zakázky z TED a NEN, AI vybere ty, které sedí na tvou nabídku.
-      </p>
-
-      <nav className="tabs">
-        {(Object.keys(TABS) as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-            {TABS[t]}
-          </button>
-        ))}
-      </nav>
+      <section className="hero">
+        <h1>{tab === "search" ? "Zakázky, které sedí na tvou nabídku" : tab === "watch" ? "Hlídání e-mailem" : TABS[tab]}</h1>
+        <p className="sub">AI projde nové veřejné zakázky v celé ČR a vybere ty, kde máš reálnou šanci.</p>
+        <div className="sources">
+          <span className="chip">TED (EU)</span>
+          <span className="chip">NEN</span>
+          <span className="chip">
+            {server.profily ? `${server.profily.ok.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}
+          </span>
+          {server.profily && (
+            <span className="chip muted">aktualizováno {new Date(server.profily.updated).toLocaleDateString("cs-CZ")}</span>
+          )}
+          {server.db && <span className="chip muted">databáze připojena</span>}
+        </div>
+      </section>
 
       <ProfileForm form={form} setForm={setForm} tab={tab} />
 
@@ -109,8 +126,14 @@ export default function Home() {
       {tab === "market" && <MarketTab form={form} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
     </main>
+    </>
   );
 }
+
+const PRESET_HINT: Record<string, string> = {
+  "CRM a zákaznické portály": "Malé CRM, klientské a občanské portály, helpdesk",
+  "Vzdělávací portál": "E-learning, LMS, povinná školení zaměstnanců",
+};
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
 
@@ -119,8 +142,9 @@ function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) =>
     <div className="card">
       <div className="presets">
         {PRESETS.map((p) => (
-          <button key={p.name} className={form.name === p.name ? "on" : ""} onClick={() => setForm({ ...form, ...p })}>
-            {p.name}
+          <button key={p.name} className={`preset ${form.name === p.name ? "on" : ""}`} onClick={() => setForm({ ...form, ...p })}>
+            <b>{p.name}</b>
+            <span>{PRESET_HINT[p.name] ?? p.keywords}</span>
           </button>
         ))}
       </div>
@@ -251,22 +275,35 @@ function SearchTab(props: {
         </div>
       )}
       <div className="list">
-        {shown.map((t) => (
-          <TenderCard key={t.id} t={t} status={statuses[t.id] ?? "new"} setStatus={setStatus} />
-        ))}
-        {!shown.length && !loading && <p className="note">Zatím nic. Klikni na Najít zakázky.</p>}
+        {loading && [0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}
+        {!loading &&
+          shown.map((t) => <TenderCard key={t.id} t={t} status={statuses[t.id] ?? "new"} setStatus={setStatus} />)}
+        {!shown.length && !loading && (
+          <div className="empty">
+            <b>Zatím nic</b>
+            <span>Klikni na Najít zakázky – hledání trvá asi minutu.</span>
+          </div>
+        )}
       </div>
     </>
   );
 }
 
+const daysLeft = (d: string | null) => (d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400_000) : null);
+
 function TenderCard({ t, status, setStatus }: { t: ScoredTender; status: Status; setStatus: (t: ScoredTender, s: Status) => void }) {
+  const left = daysLeft(t.deadline);
   return (
-    <div className="card item" style={{ opacity: status === "no" ? 0.5 : 1 }}>
-      <div className="score" style={{ background: scoreColor(t.score) }}>
-        {t.score < 0 ? "–" : t.score}
+    <article className={`card tender ${status === "no" ? "dim" : ""}`}>
+      <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
+        <span>{t.score < 0 ? "–" : t.score}</span>
       </div>
-      <div>
+      <div className="tender-body">
+        <div className="tags">
+          <span className="tag">{t.source}</span>
+          {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
+          {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
+        </div>
         <h3>
           <a href={t.url} target="_blank" rel="noreferrer">
             {t.title || "(bez názvu)"}
@@ -274,23 +311,29 @@ function TenderCard({ t, status, setStatus }: { t: ScoredTender; status: Status;
         </h3>
         <div className="meta">
           <span>{t.buyer}</span>
-          <span>{money(t.value, t.currency)}</span>
-          {t.deadline && <span>lhůta: {t.deadline}</span>}
-          {t.published && <span>zveřejněno: {t.published}</span>}
-          {t.kind === "upcoming" && <span className="tag">připravovaná</span>}
-          <span className="tag">{t.source}</span>
-          {t.product && t.product !== "–" && <span className="tag">{t.product}</span>}
+          {t.value ? <span>{money(t.value, t.currency)}</span> : null}
+          {t.published && <span>zveřejněno {new Date(t.published).toLocaleDateString("cs-CZ")}</span>}
         </div>
         {t.reason && <p className="reason">{t.reason}</p>}
-        <div className="actions">
-          {(["maybe", "bid", "no"] as const).map((s) => (
-            <button key={s} className={status === s ? "on" : ""} onClick={() => setStatus(t, status === s ? "new" : s)}>
-              {STATUS_LABEL[s]}
-            </button>
-          ))}
+        <div className="tender-foot">
+          {left !== null ? (
+            <span className={`deadline ${left <= 3 ? "urgent" : ""}`}>
+              {left <= 0 ? "lhůta končí dnes" : `lhůta za ${left} ${left === 1 ? "den" : left < 5 ? "dny" : "dní"}`}
+              <small>{new Date(t.deadline!).toLocaleDateString("cs-CZ")}</small>
+            </span>
+          ) : (
+            <span className="deadline none">lhůta neuvedena</span>
+          )}
+          <div className="actions">
+            {(["maybe", "bid", "no"] as const).map((s) => (
+              <button key={s} className={`${s} ${status === s ? "on" : ""}`} onClick={() => setStatus(t, status === s ? "new" : s)}>
+                {STATUS_LABEL[s]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -325,7 +368,7 @@ function MarketTab({ form }: { form: Form }) {
 
   return (
     <>
-      <p className="note">Kdo a za kolik vyhrál podobné zakázky (výsledky řízení z TED). Ukáže reálné ceny a konkurenci.</p>
+      <p className="note lead">Kdo a za kolik vyhrál podobné zakázky (výsledky řízení z TED). Ukáže reálné ceny a konkurenci.</p>
       <div className="row" style={{ marginTop: 8 }}>
         <div>
           <label>Období</label>
@@ -432,7 +475,7 @@ function WatchTab({ form, server, setServer }: { form: Form; server: ServerState
 
   return (
     <>
-      <p className="note">
+      <p className="note lead">
         Každé ráno (cca 6–7 h) se stáhnou nové otevřené i připravované zakázky, AI je ohodnotí a pošle e-mail jen s těmi nad
         zvoleným skóre, které ti ještě nepřišly.
       </p>
