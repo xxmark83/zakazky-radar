@@ -1,0 +1,38 @@
+name: Sběr zakázek z profilů zadavatelů
+
+# Každé ráno projde profily zadavatelů v ČR a uloží otevřené zakázky do data/profily.json.
+# Běh má limit 45 minut (soukromé repo má 2000 minut Actions měsíčně). Pomalé servery (Tender arena
+# pustí asi 5 dotazů za minutu) se střídají po dnech, data/profily-stav.json pamatuje, kde skončil.
+# Commit spustí nové nasazení na Vercelu, ranní e-mail (Vercel Cron v 5:00 UTC) už pracuje s čerstvými daty.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Plný sběr (120 dní)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/crawl.mjs ${{ inputs.full && '--full' || '' }}
+        env:
+          BUDGET_MIN: 45
+      - name: Uložit výsledky
+        run: |
+          git config user.name "xxmark83"
+          git config user.email "142055462+xxmark83@users.noreply.github.com"
+          git add data/profily.json data/profily-stav.json
+          git diff --cached --quiet || git commit -m "Zakázky z profilů zadavatelů $(date -u +%F)"
+          git push
