@@ -76,3 +76,5 @@ td:nth-child(n+2), th:nth-child(n+2) { text-align: right; white-space: nowrap; }
 .watch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .watch select { width: auto; }
 .watch .note { margin: 0; flex: 1; min-width: 160px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand svg { flex: none; }

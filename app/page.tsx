@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MB_LOGO } from "@/lib/logo";
 import { PRESETS } from "@/lib/presets";
 import type { Award, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
@@ -85,7 +86,12 @@ export default function Home() {
 
   return (
     <main>
-      <h1>Zakázky radar</h1>
+      <h1 className="brand">
+        <svg viewBox="0 0 456 312" width="41" height="28" aria-hidden="true">
+          <path fill="var(--accent)" fillRule="evenodd" d={MB_LOGO} />
+        </svg>
+        Zakázky radar
+      </h1>
       <p className="sub">
         České veřejné zakázky + AI výběr podle tvé nabídky.{" "}
         <span className="tag">{server.db ? "databáze připojena" : "ukládá se jen v tomto prohlížeči"}</span>
