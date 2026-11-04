@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MB_LOGO } from "@/lib/logo";
 import { PRESETS } from "@/lib/presets";
 import type { Award, ScoredTender, Status, WatchedProfile } from "@/lib/types";
@@ -36,10 +36,58 @@ function save(key: string, v: unknown) {
     localStorage.setItem(key, JSON.stringify(v));
   } catch {}
 }
-const post = (url: string, body: unknown) =>
-  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const post = (url: string, body: unknown, signal?: AbortSignal) =>
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
 
 const scoreColor = (s: number) => (s < 0 ? "var(--low)" : s >= 75 ? "var(--good)" : s >= 50 ? "var(--mid)" : "var(--low)");
+const scoreLabel = (s: number) => (s < 0 ? "bez AI" : s >= 75 ? "sedí" : s >= 50 ? "částečně" : "slabě");
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const today = () => new Date().toISOString().slice(0, 10);
+
+function download(name: string, text: string, type: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// tabulka pro Excel: středník a BOM, aby se správně načetla čeština
+function exportCsv(rows: ScoredTender[]) {
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [
+    ["Skóre", "Název", "Zadavatel", "Zdroj", "Lhůta", "Hodnota", "Produkt", "Proč", "Odkaz"],
+    ...rows.map((t) => [t.score < 0 ? "" : t.score, t.title, t.buyer, t.source, t.deadline, t.value ? Math.round(t.value) : "", t.product, t.reason, t.url]),
+  ].map((r) => r.map(esc).join(";"));
+  download(`zakazky-${today()}.csv`, "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
+}
+
+// lhůta do kalendáře s připomenutím 2 dny předem
+function exportIcs(t: ScoredTender) {
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, "\\n");
+  const day = t.deadline!.replace(/-/g, "");
+  const text = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//zakazky-radar//CS",
+    "BEGIN:VEVENT",
+    `UID:${t.id}@zakazky-radar`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+    `DTSTART;VALUE=DATE:${day}`,
+    `SUMMARY:${esc(`Lhůta: ${t.title}`)}`,
+    `DESCRIPTION:${esc(`${t.buyer}\n${t.url}`)}`,
+    `URL:${t.url}`,
+    "BEGIN:VALARM",
+    "TRIGGER:-P2D",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Lhůta za 2 dny",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  download(`lhuta-${t.id}.ics`, text, "text/calendar");
+}
+
 const money = (v: number | null, c: string | null = "CZK") =>
   v ? `${Math.round(v).toLocaleString("cs-CZ")} ${c ?? ""}` : "hodnota neuvedena";
 
@@ -68,20 +116,34 @@ export default function Home() {
       .catch(() => setStatuses(load("zr-status", {})));
   }, []);
 
-  const setStatus = (t: ScoredTender, s: Status) => {
-    const next = { ...statuses, [t.id]: s };
-    const nextMarked = { ...marked, [t.id]: t };
-    if (s === "new") {
-      delete next[t.id];
-      delete nextMarked[t.id];
-    }
-    setStatuses(next);
-    setMarked(nextMarked);
+  const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const applyStatus = (t: ScoredTender, s: Status) => {
+    setStatuses((cur) => {
+      const next = { ...cur, [t.id]: s };
+      if (s === "new") delete next[t.id];
+      if (!server.db) save("zr-status", next);
+      return next;
+    });
+    setMarked((cur) => {
+      const next = { ...cur, [t.id]: t };
+      if (s === "new") delete next[t.id];
+      if (!server.db) save("zr-marked", next);
+      return next;
+    });
     if (server.db) post("/api/state", { status: { tender: t, value: s } });
-    else {
-      save("zr-status", next);
-      save("zr-marked", nextMarked);
-    }
+  };
+
+  const setStatus = (t: ScoredTender, s: Status) => {
+    const prev = statuses[t.id] ?? "new";
+    applyStatus(t, s);
+    if (s === "no") setToast({ text: "Zakázka skryta", undo: () => applyStatus(t, prev) });
+    else if (s === "bid") setToast({ text: "Přidáno mezi zakázky, kde podáš nabídku" });
   };
 
   return (
@@ -122,10 +184,27 @@ export default function Home() {
 
       <ProfileForm form={form} setForm={setForm} tab={tab} />
 
-      {tab === "search" && <SearchTab form={form} statuses={statuses} marked={marked} setStatus={setStatus} />}
+      {tab === "search" && (
+        <SearchTab form={form} statuses={statuses} marked={marked} setStatus={setStatus} profily={server.profily?.ok} />
+      )}
       {tab === "market" && <MarketTab form={form} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
     </main>
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast.text}</span>
+          {toast.undo && (
+            <button
+              onClick={() => {
+                toast.undo!();
+                setToast(null);
+              }}
+            >
+              Vrátit
+            </button>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -199,89 +278,232 @@ function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) =>
   );
 }
 
+type Sort = "score" | "deadline" | "new";
+const SORTS: Record<Sort, string> = { score: "Nejlépe sedí", deadline: "Nejbližší lhůta", new: "Nejnovější" };
+const CMP: Record<Sort, (a: ScoredTender, b: ScoredTender) => number> = {
+  score: (a, b) => b.score - a.score,
+  deadline: (a, b) => (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"),
+  new: (a, b) => (b.published ?? "").localeCompare(a.published ?? ""),
+};
+
 function SearchTab(props: {
   form: Form;
   statuses: Record<string, Status>;
   marked: Record<string, ScoredTender>;
   setStatus: (t: ScoredTender, s: Status) => void;
+  profily?: number;
 }) {
-  const { form, statuses, marked, setStatus } = props;
+  const { form, statuses, marked, setStatus, profily } = props;
   const [loading, setLoading] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [stats, setStats] = useState<{ total: number; open: number } | null>(null);
   const [results, setResults] = useState<ScoredTender[]>([]);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Status | "all">("all");
+  const [query, setQuery] = useState("");
+  const [source, setSource] = useState("all");
+  const [sort, setSort] = useState<Sort>("score");
+  const abort = useRef<AbortController | null>(null);
 
-  useEffect(() => setResults(load("zr-results", [])), []);
+  useEffect(() => {
+    setResults(load("zr-results", []));
+    setFresh(new Set(load<string[]>("zr-fresh", [])));
+    setSort(load("zr-sort", "score"));
+  }, []);
+
+  useEffect(() => {
+    if (!loading) return;
+    const start = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [loading]);
 
   // otevřené výzvy i připravované (předběžná oznámení, tržní konzultace) najednou
   async function search() {
+    const ctrl = new AbortController();
+    abort.current = ctrl;
     setLoading(true);
     setError("");
     setWarnings([]);
     try {
       const data = await Promise.all(
         (["open", "upcoming"] as const).map(async (mode) => {
-          const res = await post("/api/search", { ...form, mode });
+          const res = await post("/api/search", { ...form, mode }, ctrl.signal);
           const d = await res.json();
           if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
           return d as { total: number; open: number; warnings?: string[]; results: ScoredTender[] };
         }),
       );
       const all = data.flatMap((d) => d.results).sort((a, b) => b.score - a.score);
+      // co přibylo od minulého hledání
+      const before = new Set(load<ScoredTender[]>("zr-results", []).map((r) => r.id));
+      const added = before.size ? all.filter((r) => !before.has(r.id)).map((r) => r.id) : [];
+      setFresh(new Set(added));
       setWarnings([...new Set(data.flatMap((d) => d.warnings ?? []))]);
       setStats({ total: data[0].total + data[1].total, open: data[0].open + data[1].open });
       setResults(all);
       save("zr-results", all);
+      save("zr-fresh", added);
       save("zr-form", { form });
     } catch (e: any) {
-      setError(e.message);
+      if (e.name !== "AbortError") setError(e.message);
     } finally {
       setLoading(false);
     }
   }
 
-  // u filtru stavu ukázat i dříve označené zakázky, které už nejsou ve výsledcích
+  const changeSort = (s: Sort) => {
+    setSort(s);
+    save("zr-sort", s);
+  };
+
+  // „Vše“ skrývá odmítnuté; u filtru stavu ukázat i dříve označené zakázky, které už nejsou ve výsledcích
   const pool =
-    filter === "all" || filter === "new"
-      ? results
-      : [...results, ...Object.values(marked).filter((m) => !results.some((r) => r.id === m.id))];
-  const shown = pool.filter((r) => filter === "all" || (statuses[r.id] ?? "new") === filter);
+    filter === "all"
+      ? results.filter((r) => statuses[r.id] !== "no")
+      : [...results, ...Object.values(marked).filter((m) => !results.some((r) => r.id === m.id))].filter(
+          (r) => statuses[r.id] === filter,
+        );
+  const q = norm(query.trim());
+  const shown = pool
+    .filter((r) => source === "all" || r.source === source)
+    .filter((r) => !q || norm(`${r.title} ${r.buyer} ${r.product} ${r.reason}`).includes(q))
+    .sort(CMP[sort]);
+  const count = (s: Status) => Object.values(statuses).filter((x) => x === s).length;
+  const sources = [...new Set(results.map((r) => r.source))];
+  const narrowed = Boolean(q) || source !== "all";
+
+  const bids = Object.values(marked)
+    .filter((t) => statuses[t.id] === "bid" && t.deadline && t.deadline >= today())
+    .sort(CMP.deadline)
+    .slice(0, 3);
 
   return (
     <>
-      <button className="primary big" onClick={search} disabled={loading}>
-        {loading ? "Stahuji a hodnotím… (až 1–2 min)" : "Najít zakázky"}
-      </button>
+      {loading ? (
+        <div className="card progress">
+          <div className="radar" aria-hidden="true" />
+          <div className="progress-text">
+            <b>
+              Prohledávám TED, NEN a {profily ? `${profily.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}
+            </b>
+            <span>
+              AI hodnotí každou zakázku podle tvé nabídky, obvykle 1–2 minuty. {Math.floor(elapsed / 60)}:
+              {String(elapsed % 60).padStart(2, "0")}
+            </span>
+          </div>
+          <button onClick={() => abort.current?.abort()}>Zrušit</button>
+        </div>
+      ) : (
+        <button className="primary big" onClick={search}>
+          {results.length ? "Hledat znovu" : "Najít zakázky"}
+        </button>
+      )}
       {error && <div className="warn">{error}</div>}
       {warnings.map((w) => (
         <div key={w} className="warn">
           {w}
         </div>
       ))}
-      {stats && (
-        <p className="stats">
-          Prošel jsem {stats.open} aktuálních zakázek, vhodných je {results.length}.
-        </p>
-      )}
-      {results.length > 0 && (
-        <div className="filters">
-          {(["all", "maybe", "bid", "no"] as const).map((f) => (
-            <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
-              {f === "all" ? "Vše" : STATUS_LABEL[f]}
+
+      {bids.length > 0 && (
+        <div className="card mine">
+          <div className="mine-head">
+            <b>Podáváš nabídku</b>
+            <button className="link" onClick={() => setFilter("bid")}>
+              Zobrazit vše
             </button>
+          </div>
+          {bids.map((t) => (
+            <a key={t.id} className="mine-row" href={t.url} target="_blank" rel="noreferrer">
+              <span>{t.title}</span>
+              <Deadline d={t.deadline} short />
+            </a>
           ))}
         </div>
+      )}
+
+      {stats && !loading && (
+        <p className="stats">
+          Prošel jsem {stats.open.toLocaleString("cs-CZ")} aktuálních zakázek, vhodných je {results.length}
+          {fresh.size > 0 && <>, z toho {fresh.size} nových od minula</>}.
+        </p>
+      )}
+      {(results.length > 0 || Object.keys(statuses).length > 0) && !loading && (
+        <>
+          <div className="filters">
+            {(["all", "maybe", "bid", "no"] as const).map((f) => (
+              <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+                {f === "all" ? "Vše" : STATUS_LABEL[f]}
+                {f !== "all" && count(f) > 0 && <span className="count">{count(f)}</span>}
+              </button>
+            ))}
+          </div>
+          <div className="toolbar">
+            <input
+              type="search"
+              placeholder="Hledat v názvu, zadavateli…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {sources.length > 1 && (
+              <select value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="all">Všechny zdroje</option>
+                {sources.map((s) => (
+                  <option key={s} value={s}>
+                    {s} ({results.filter((r) => r.source === s).length})
+                  </option>
+                ))}
+              </select>
+            )}
+            <select value={sort} onChange={(e) => changeSort(e.target.value as Sort)}>
+              {(Object.keys(SORTS) as Sort[]).map((s) => (
+                <option key={s} value={s}>
+                  {SORTS[s]}
+                </option>
+              ))}
+            </select>
+            <button onClick={() => exportCsv(shown)} disabled={!shown.length} title="Stáhnout zobrazené zakázky pro Excel">
+              Excel
+            </button>
+          </div>
+        </>
       )}
       <div className="list">
         {loading && [0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}
         {!loading &&
-          shown.map((t) => <TenderCard key={t.id} t={t} status={statuses[t.id] ?? "new"} setStatus={setStatus} />)}
+          shown.map((t) => (
+            <TenderCard key={t.id} t={t} fresh={fresh.has(t.id)} status={statuses[t.id] ?? "new"} setStatus={setStatus} />
+          ))}
         {!shown.length && !loading && (
           <div className="empty">
-            <b>Zatím nic</b>
-            <span>Klikni na Najít zakázky – hledání trvá asi minutu.</span>
+            {narrowed ? (
+              <>
+                <b>Filtru nic neodpovídá</b>
+                <button
+                  className="link"
+                  onClick={() => {
+                    setQuery("");
+                    setSource("all");
+                  }}
+                >
+                  Zrušit filtr
+                </button>
+              </>
+            ) : filter !== "all" ? (
+              <>
+                <b>Tady zatím nic není</b>
+                <span>Zakázky sem přesuneš tlačítky u každé z nich.</span>
+              </>
+            ) : (
+              <>
+                <b>Zatím nic</b>
+                <span>Klikni na Najít zakázky, hledání trvá asi minutu.</span>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -291,15 +513,30 @@ function SearchTab(props: {
 
 const daysLeft = (d: string | null) => (d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400_000) : null);
 
-function TenderCard({ t, status, setStatus }: { t: ScoredTender; status: Status; setStatus: (t: ScoredTender, s: Status) => void }) {
-  const left = daysLeft(t.deadline);
+function Deadline({ d, short }: { d: string | null; short?: boolean }) {
+  const left = daysLeft(d);
+  if (left === null) return <span className="deadline none">lhůta neuvedena</span>;
   return (
-    <article className={`card tender ${status === "no" ? "dim" : ""}`}>
-      <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
-        <span>{t.score < 0 ? "–" : t.score}</span>
+    <span className={`deadline ${left <= 3 ? "urgent" : left <= 7 ? "soon" : ""}`}>
+      {left <= 0 ? "končí dnes" : `${short ? "" : "lhůta "}za ${left} ${left === 1 ? "den" : left < 5 ? "dny" : "dní"}`}
+      <small>{new Date(d!).toLocaleDateString("cs-CZ")}</small>
+    </span>
+  );
+}
+
+function TenderCard(props: { t: ScoredTender; fresh: boolean; status: Status; setStatus: (t: ScoredTender, s: Status) => void }) {
+  const { t, fresh, status, setStatus } = props;
+  return (
+    <article className={`card tender ${status === "no" ? "dim" : ""} ${status !== "new" ? `is-${status}` : ""}`}>
+      <div className="score-col">
+        <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
+          <span>{t.score < 0 ? "–" : t.score}</span>
+        </div>
+        <small style={{ color: scoreColor(t.score) }}>{scoreLabel(t.score)}</small>
       </div>
       <div className="tender-body">
         <div className="tags">
+          {fresh && <span className="tag fresh">nová</span>}
           <span className="tag">{t.source}</span>
           {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
           {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
@@ -315,15 +552,21 @@ function TenderCard({ t, status, setStatus }: { t: ScoredTender; status: Status;
           {t.published && <span>zveřejněno {new Date(t.published).toLocaleDateString("cs-CZ")}</span>}
         </div>
         {t.reason && <p className="reason">{t.reason}</p>}
+        {t.description && (
+          <details className="more">
+            <summary>Popis zakázky</summary>
+            <p>{t.description}</p>
+          </details>
+        )}
         <div className="tender-foot">
-          {left !== null ? (
-            <span className={`deadline ${left <= 3 ? "urgent" : ""}`}>
-              {left <= 0 ? "lhůta končí dnes" : `lhůta za ${left} ${left === 1 ? "den" : left < 5 ? "dny" : "dní"}`}
-              <small>{new Date(t.deadline!).toLocaleDateString("cs-CZ")}</small>
-            </span>
-          ) : (
-            <span className="deadline none">lhůta neuvedena</span>
-          )}
+          <div className="foot-left">
+            <Deadline d={t.deadline} />
+            {t.deadline && (
+              <button className="link" onClick={() => exportIcs(t)} title="Přidat lhůtu do kalendáře s připomenutím">
+                do kalendáře
+              </button>
+            )}
+          </div>
           <div className="actions">
             {(["maybe", "bid", "no"] as const).map((s) => (
               <button key={s} className={`${s} ${status === s ? "on" : ""}`} onClick={() => setStatus(t, status === s ? "new" : s)}>
@@ -425,7 +668,10 @@ function MarketTab({ form }: { form: Form }) {
               <tbody>
                 {data.topWinners.map((w) => (
                   <tr key={w.name}>
-                    <td>{w.name}</td>
+                    <td>
+                      {w.name}
+                      <div className="bar" style={{ width: `${(w.wins / data.topWinners[0].wins) * 100}%` }} />
+                    </td>
                     <td>{w.wins}</td>
                     <td>{w.total ? Math.round(w.total).toLocaleString("cs-CZ") : "–"}</td>
                   </tr>
@@ -524,9 +770,10 @@ function WatchTab({ form, server, setServer }: { form: Form; server: ServerState
 
 function Check({ ok, label }: { ok?: boolean; label: string }) {
   return (
-    <div style={{ margin: "4px 0" }}>
-      <span style={{ color: ok ? "var(--good)" : "var(--muted)", fontWeight: 700 }}>{ok ? "✓" : "○"}</span> {label}
-      {!ok && <span className="note"> – nenastaveno</span>}
+    <div className={`check ${ok ? "ok" : ""}`}>
+      <span className="dot" aria-hidden="true">{ok ? "✓" : ""}</span>
+      <span>{label}</span>
+      <span className="state">{ok ? "nastaveno" : "nenastaveno"}</span>
     </div>
   );
 }
