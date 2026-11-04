@@ -20,8 +20,12 @@ jak sedí na moji nabídku (Kotva CRM, vzdělávací portál…).
 Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profil>/XMLdataVZ?od=…&do=…`).
 - `data/profily-seznam.txt` – adresy všech profilů, vytažené z otevřených dat Registru veřejných zakázek
   (isvz.nipez.cz/opendata, pole `adresa_profilu`).
-- `scripts/crawl.mjs` – projde všechny profily a uloží otevřené zakázky do `data/profily.json`.
-- GitHub Actions (`.github/workflows/crawl.yml`) ho spouští každé ráno ve 3:17 UTC; commit spustí nasazení na Vercelu.
+- `scripts/crawl.mjs` – projde profily a uloží otevřené zakázky do `data/profily.json`. Každý profil stahuje
+  od svého posledního úspěchu (`data/profily-stav.json`), napřed ty s otevřenými zakázkami.
+  Tender arena a eGORDION (stejné API) pustí asi 5 dotazů za minutu, proto se jejich ~3 300 profilů střídá
+  po dnech; server, který vůbec neodpovídá, se v daném běhu přeskočí.
+- GitHub Actions (`.github/workflows/crawl.yml`) ho spouští každé ráno ve 3:17 UTC s limitem 45 minut;
+  commit spustí nasazení na Vercelu.
   Ručně: GitHub → Actions → Sběr zakázek → Run workflow.
 
 ## Nastavení na Vercelu (Settings → Environment Variables)

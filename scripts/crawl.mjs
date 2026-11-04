@@ -4,25 +4,39 @@
 // Seznam profilů (data/profily-seznam.txt) pochází z otevřených dat Registru veřejných zakázek.
 // Výsledek: data/profily.json – jen zakázky, do kterých lze právě podat nabídku.
 //
-// node scripts/crawl.mjs          – přírůstek (změny za poslední 3 dny) sloučený s minulým během
-// node scripts/crawl.mjs --full   – vše změněné za posledních 120 dní (první naplnění)
+// node scripts/crawl.mjs          – denní běh: každý profil od jeho posledního úspěšného stažení
+// node scripts/crawl.mjs --full   – začít znovu: vše změněné za posledních 120 dní
+// BUDGET_MIN=45                   – po kolika minutách přestat brát další profily (zbytek příště)
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 const LIST = "data/profily-seznam.txt";
 const OUT = "data/profily.json";
+const STATE = "data/profily-stav.json"; // profil -> den posledního úspěšného stažení
 const FULL = process.argv.includes("--full") || !existsSync(OUT);
-const DAYS = FULL ? 120 : 3;
+const MAX_DAYS = 120;
+const BUDGET = Number(process.env.BUDGET_MIN || 45) * 60_000;
 const CONCURRENCY = 24;
 const PER_HOST = 3;
 const TIMEOUT = 60_000;
+const UA = "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)";
+
+// Tender arena a eGORDION běží na stejném API (api.tenderarena.cz), které pustí asi 5 dotazů za minutu
+const GROUP = { "tenderarena.cz": "tenderarena", "egordion.cz": "tenderarena" };
+const SLOW = { tenderarena: { parallel: 1, gap: 12_500 } };
 
 const ddmmyyyy = (d) =>
   `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
 const now = new Date();
-const od = ddmmyyyy(new Date(now.getTime() - DAYS * 86400_000));
+const started = Date.now();
 const doo = ddmmyyyy(now);
 const today = now.toISOString().slice(0, 10);
+const state = !FULL && existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : {};
+// od posledního úspěchu (den rezervy), nejvýš 120 dní zpět
+const since = (profile) => {
+  const last = state[profile] ? new Date(state[profile]).getTime() - 86400_000 : 0;
+  return ddmmyyyy(new Date(Math.max(last, now.getTime() - MAX_DAYS * 86400_000)));
+};
 
 const decode = (s) =>
   s
@@ -36,13 +50,14 @@ const decode = (s) =>
     .replace(/\s+/g, " ")
     .trim();
 const tag = (xml, name) => {
-  const m = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+  const m = xml.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`));
   return m ? decode(m[1]) : "";
 };
-const tags = (xml, name) => [...xml.matchAll(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`, "g"))].map((m) => m[1]);
+const tags = (xml, name) =>
+  [...xml.matchAll(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, "g"))].map((m) => m[1]);
 
 function parse(xml, profile) {
-  const buyer = tag(xml.match(/<zadavatel>[\s\S]*?<\/zadavatel>/)?.[0] ?? "", "nazev_zadavatele");
+  const buyer = tag(xml.match(/<zadavatel[\s>][\s\S]*?<\/zadavatel>/)?.[0] ?? "", "nazev_zadavatele");
   const out = [];
   for (const z of tags(xml, "zakazka")) {
     const idObj = tag(z, "id_objektu");
@@ -80,73 +95,129 @@ function parse(xml, profile) {
   return out;
 }
 
+class RateLimited extends Error {}
+class Answered extends Error {} // server odpověděl, jen ne XML profilu (špatná adresa v registru)
+
 async function fetchProfile(profile) {
-  const url = `${profile.replace(/\/+$/, "")}/XMLdataVZ?od=${od}&do=${doo}`;
+  const url = `${profile.replace(/\/+$/, "")}/XMLdataVZ?od=${since(profile)}&do=${doo}`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)" } });
-      if (!res.ok) throw new Error(String(res.status));
+      const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA } });
+      if (res.status === 429) throw new RateLimited("429");
+      if (!res.ok) throw new Answered(String(res.status));
       const xml = await res.text();
-      if (!xml.includes("<profil")) throw new Error("není XML profilu");
+      if (!xml.includes("<profil")) throw new Answered("není XML profilu");
       return parse(xml, profile);
     } catch (e) {
-      if (attempt) throw e;
+      if (attempt || e instanceof RateLimited || e instanceof Answered) throw e;
     }
   }
 }
 
-const profiles = [...new Set(readFileSync(LIST, "utf8").split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s)))];
-const host = (u) => new URL(u).host.replace(/^www\./, "");
-const active = new Map();
+const prev = !FULL && existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")).tenders : [];
+const host = (u) => {
+  const h = new URL(u).host.replace(/^www\./, "");
+  return GROUP[h.split(".").slice(-2).join(".")] ?? h;
+};
+// napřed profily s otevřenými zakázkami, pak ty, které jsme nejdéle nestáhli
+const active = new Set(prev.map((t) => t.url));
+const all = [...new Set(readFileSync(LIST, "utf8").split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s)))];
+const profiles = all.sort((a, b) => active.has(b) - active.has(a) || (state[a] ?? "").localeCompare(state[b] ?? ""));
+
 let ok = 0;
 const failed = {};
+const okHost = {};
+const down = {};
 const found = new Map();
+const running = new Map(); // host -> běžících dotazů
+const nextAt = new Map(); // host -> nejdřív kdy smí další dotaz
+const dead = new Set(); // hosty, které tento běh vůbec neodpovídají
+const queue = [...profiles];
+let total = 0;
+let skipped = 0;
+const nFailed = () => Object.values(failed).reduce((a, b) => a + b, 0);
 
-// fronta s limitem celkem i na jeden server (Tender arena hostí tisíce profilů)
+// fronta s limitem celkem i na jeden server; pomalé servery mají vlastní rozestup dotazů
 await new Promise((resolve) => {
-  let i = 0;
-  let running = 0;
-  const next = () => {
-    if (i >= profiles.length && running === 0) return resolve();
-    while (running < CONCURRENCY && i < profiles.length) {
-      const idx = profiles.findIndex((p, k) => k >= i && (active.get(host(p)) ?? 0) < PER_HOST);
-      if (idx === -1) break;
-      [profiles[i], profiles[idx]] = [profiles[idx], profiles[i]];
-      const p = profiles[i++];
+  let timer = null;
+  const pump = () => {
+    clearTimeout(timer);
+    const overBudget = Date.now() - started > BUDGET;
+    if (overBudget) {
+      skipped += queue.length;
+      queue.length = 0;
+    }
+    if (!queue.length && total === 0) return resolve();
+    let wait = Infinity;
+    for (let i = 0; i < queue.length && total < CONCURRENCY; i++) {
+      const p = queue[i];
       const h = host(p);
-      active.set(h, (active.get(h) ?? 0) + 1);
-      running++;
+      if (dead.has(h)) {
+        queue.splice(i--, 1);
+        skipped++;
+        continue;
+      }
+      const lim = SLOW[h] ?? { parallel: PER_HOST, gap: 0 };
+      const at = nextAt.get(h) ?? 0;
+      if ((running.get(h) ?? 0) >= lim.parallel) continue;
+      if (at > Date.now()) {
+        wait = Math.min(wait, at - Date.now());
+        continue;
+      }
+      queue.splice(i--, 1);
+      running.set(h, (running.get(h) ?? 0) + 1);
+      nextAt.set(h, Date.now() + lim.gap);
+      total++;
       fetchProfile(p)
         .then((list) => {
           ok++;
+          okHost[h] = (okHost[h] ?? 0) + 1;
+          state[p] = today;
           for (const t of list) if (!found.get(t.id) || found.get(t.id).closed) found.set(t.id, t);
         })
-        .catch(() => (failed[h] = (failed[h] ?? 0) + 1))
+        .catch((e) => {
+          if (e instanceof RateLimited) {
+            // server nás brzdí: počkat minutu a profil zkusit znovu
+            nextAt.set(h, Date.now() + 60_000);
+            queue.push(p);
+            return;
+          }
+          failed[h] = (failed[h] ?? 0) + 1;
+          if (e instanceof Answered) return;
+          // 15× se nepřipojíme a nic neprošlo = server nejede, zbytek jeho profilů zkusíme příště
+          down[h] = (down[h] ?? 0) + 1;
+          if (!okHost[h] && down[h] >= 15) dead.add(h);
+        })
         .finally(() => {
-          active.set(h, active.get(h) - 1);
-          running--;
-          if ((ok + Object.values(failed).reduce((a, b) => a + b, 0)) % 250 === 0)
-            console.log(`${ok} ok, ${Object.values(failed).reduce((a, b) => a + b, 0)} chyb, ${[...found.values()].filter((t) => !t.closed).length} otevřených`);
-          next();
+          running.set(h, running.get(h) - 1);
+          total--;
+          if ((ok + nFailed()) % 250 === 0)
+            console.log(`${ok} ok, ${nFailed()} chyb, ${[...found.values()].filter((t) => !t.closed).length} otevřených`);
+          pump();
         });
     }
+    if (wait < Infinity) timer = setTimeout(pump, wait + 50);
   };
-  next();
+  pump();
 });
 
 // sloučení s minulým během: změněné zakázky přepíšeme, ukončené (už nejsou „zahájen“) a prošlé vypadnou
-const prev = !FULL && existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")).tenders : [];
 const merged = new Map(prev.map((t) => [t.id, t]));
 for (const t of found.values()) {
   if (t.closed) merged.delete(t.id);
   else merged.set(t.id, t);
 }
 const tenders = [...merged.values()].filter((t) => !t.deadline || t.deadline >= today);
-const nFailed = Object.values(failed).reduce((a, b) => a + b, 0);
+// „ok“ = profily stažené v posledních 14 dnech (rotace pomalých serverů trvá několik dní)
+const fresh = Object.values(state).filter((d) => (now - new Date(d)) / 86400_000 <= 14).length;
 
+writeFileSync(STATE, JSON.stringify(state));
 writeFileSync(
   OUT,
-  JSON.stringify({ updated: now.toISOString(), mode: FULL ? "full" : "incremental", profiles: profiles.length, ok, failed: nFailed, tenders }),
+  JSON.stringify({ updated: now.toISOString(), mode: FULL ? "full" : "incremental", profiles: profiles.length, ok: fresh, failed: nFailed(), tenders }),
 );
-console.log(`Hotovo: ${profiles.length} profilů, ${ok} ok, ${nFailed} chyb, ${tenders.length} otevřených zakázek`);
+console.log(
+  `Hotovo za ${Math.round((Date.now() - started) / 60_000)} min: ${ok} ok, ${nFailed()} chyb, ${skipped} odloženo na příště, ${tenders.length} otevřených zakázek`,
+);
+console.log("Nedostupné servery:", [...dead]);
 console.log("Nejvíc chyb:", Object.entries(failed).sort((a, b) => b[1] - a[1]).slice(0, 10));
