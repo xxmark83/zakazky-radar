@@ -17,6 +17,7 @@ export type ScoredTender = Tender & {
   score: number; // 0–100
   reason: string;
   product: string; // který z mých produktů sedí
+  region?: string; // kraj zadavatele podle AI (lib/regions.ts)
 };
 
 export type Award = {
@@ -38,13 +39,15 @@ export type Profile = {
   cpv: string; // CPV kódy oddělené čárkou/mezerou
 };
 
-export type Score = Pick<ScoredTender, "score" | "product" | "reason">;
+export type Score = Pick<ScoredTender, "score" | "product" | "reason" | "region">;
 
 export type SearchRequest = Profile & {
   mode: "open" | "upcoming";
   days: number; // jak staré zveřejnění brát
   minScore: number;
   known?: Record<string, Score>; // skóre z minulých hledání se stejným profilem – AI je nehodnotí znovu
+  model?: "opus" | "haiku";
+  noAi?: boolean; // měsíční limit vyčerpán – jen nové zakázky bez hodnocení
 };
 
 export type WatchedProfile = Profile & { minScore: number; watch: boolean };
@@ -61,3 +64,7 @@ export type Analysis = {
   offer: string;
   questions: string[];
 };
+
+export type Draft = { outline: { heading: string; points: string[] }[]; coverLetter: string };
+
+export type Change = { field: "deadline" | "title" | "value" | "description"; from: string; to: string; at: string };

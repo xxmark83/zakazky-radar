@@ -42,6 +42,7 @@ Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profi
 | `CRON_SECRET` | ranní spouštění (libovolný dlouhý řetězec) | pro e-maily |
 | `RESEND_API_KEY`, `ALERT_EMAIL` | odesílání e-mailu (resend.com, zdarma) | pro e-maily |
 | Upstash Redis | Vercel → Storage → Upstash → Connect (nastaví `KV_REST_API_*` sám) | pro databázi |
+| `AI_MODEL`, `AI_BUDGET_USD` | výchozí model (`opus`/`haiku`) a měsíční limit; jde změnit v Nastavení | ne |
 
 Cron běží denně v 5:00 UTC (`vercel.json`). Bez databáze hlídá výchozí profil „CRM a zákaznické portály“.
 
@@ -55,6 +56,10 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.9** – databáze pro poznámky, rozbory, nástěnku a skóre (Upstash), ranní e-mail i s blížícími se lhůtami
+  a změnami, filtr kraj a hodnota (kraj určuje AI), hlídání změn u sledovaných zakázek, AI návrh nabídky
+  (osnova a průvodní dopis), profil konkurenta (TED), útrata za AI s měsíčním limitem a volbou Opus / Haiku,
+  Tender arena + eGORDION: všechny nové zakázky za 24 h jedním dotazem.
 - **1.8** – Nastavení (ozubené kolo vpravo nahoře): světlý / tmavý / podle systému; číslo verze na webu.
 - **1.7** – detail zakázky s AI rozborem, záložka Moje zakázky (přehled a nástěnka), paměť AI skóre.
 - **1.6** – sběr profilů zadavatelů: oprava NEN, limit Tender areny, střídání po dnech.

@@ -201,6 +201,37 @@ await new Promise((resolve) => {
   pump();
 });
 
+// Tender arena + eGORDION: veřejný seznam všech zakázek zveřejněných za posledních 24 hodin (jeden dotaz
+// pro všech ~4 200 zadavatelů). Profily se kvůli limitu API stahují jen pomalu po dnech, takže díky tomu
+// žádná nová zakázka neunikne. Seznam nemá CPV ani popis – hledá se v něm podle názvu.
+try {
+  const res = await fetch("https://api.tenderarena.cz/ta/profil/seznam-zakazek/noveUverejneneZakazky", {
+    signal: AbortSignal.timeout(TIMEOUT),
+    headers: { "User-Agent": UA, Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const day = (ms) => (ms ? new Date(ms).toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" }) : null);
+  let n = 0;
+  for (const z of (await res.json()).polozky ?? []) {
+    if (z.stav !== "NEUKONCENA") continue;
+    found.set(`ta-${z.id}`, {
+      id: `ta-${z.id}`,
+      title: z.nazev,
+      buyer: z.uredniNazevZadavatele,
+      published: today,
+      deadline: day(z.lhutaProPodaniNabidek ?? z.lhutaProDoruceniZadostiOUcast),
+      regime: "",
+      cpv: "",
+      description: "",
+      url: `https://tenderarena.cz/dodavatel/zakazka/${z.id}`,
+    });
+    n++;
+  }
+  console.log(`Tender arena – nové za 24 h: ${n}`);
+} catch (e) {
+  console.log(`Tender arena – nové za 24 h: chyba ${e.message}`);
+}
+
 // sloučení s minulým během: změněné zakázky přepíšeme, ukončené (už nejsou „zahájen“) a prošlé vypadnou
 const merged = new Map(prev.map((t) => [t.id, t]));
 for (const t of found.values()) {

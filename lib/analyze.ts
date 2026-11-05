@@ -1,7 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
-import type { Analysis, Tender } from "./types";
+import { askJson, type AiResult, type ModelChoice } from "./ai";
+import type { Analysis, Draft, Tender } from "./types";
 
-const client = new Anthropic();
 const UA = "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)";
 
 const list = { type: "array", items: { type: "string" } } as const;
@@ -30,7 +29,7 @@ Dostaneš popis nabídky dodavatele, údaje o zakázce a text stránky zakázky 
 - questions: dotazy na zadavatele (vysvětlení zadávací dokumentace), které by stálo za to položit. Max 4.`;
 
 // text stránky zakázky (detail na NEN, profilu zadavatele, TED) – bez skriptů a značek
-async function pageText(url: string): Promise<string> {
+export async function pageText(url: string): Promise<string> {
   if (!/^https:\/\//.test(url)) return "";
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { "User-Agent": UA } });
@@ -49,34 +48,58 @@ async function pageText(url: string): Promise<string> {
   }
 }
 
-export async function analyzeTender(profile: string, t: Tender): Promise<Analysis> {
+const tenderInfo = (t: Tender) => ({
+  nazev: t.title,
+  zadavatel: t.buyer,
+  zdroj: t.source,
+  hodnota: t.value ? `${Math.round(t.value).toLocaleString("cs-CZ")} ${t.currency ?? ""}` : "neuvedeno",
+  lhuta: t.deadline ?? "neuvedena",
+  cpv: t.cpv.join(", "),
+  popis: t.description,
+});
+
+export async function analyzeTender(profile: string, t: Tender, model: ModelChoice): Promise<AiResult<Analysis>> {
   const page = await pageText(t.url);
-  const tender = {
-    nazev: t.title,
-    zadavatel: t.buyer,
-    zdroj: t.source,
-    hodnota: t.value ? `${Math.round(t.value).toLocaleString("cs-CZ")} ${t.currency ?? ""}` : "neuvedeno",
-    lhuta: t.deadline ?? "neuvedena",
-    cpv: t.cpv.join(", "),
-    popis: t.description,
-  };
-
-  const response = await client.beta.messages.create({
-    model: "claude-opus-5-5",
-    max_tokens: 8000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+  return askJson<Analysis>({
+    model,
     system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKA:\n${JSON.stringify(tender)}\n\nTEXT STRÁNKY ZAKÁZKY:\n${page || "(nepodařilo se načíst)"}`,
-      },
-    ],
-  } as any);
+    schema: SCHEMA,
+    effort: "medium",
+    content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKA:\n${JSON.stringify(tenderInfo(t))}\n\nTEXT STRÁNKY ZAKÁZKY:\n${page || "(nepodařilo se načíst)"}`,
+  });
+}
 
-  if (response.stop_reason === "refusal") throw new Error("AI rozbor odmítla");
-  const text = response.content.flatMap((b: any) => (b.type === "text" ? [b.text] : [])).join("");
-  return JSON.parse(text) as Analysis;
+const DRAFT_SCHEMA = {
+  type: "object",
+  properties: {
+    outline: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { heading: { type: "string" }, points: { type: "array", items: { type: "string" } } },
+        required: ["heading", "points"],
+        additionalProperties: false,
+      },
+    },
+    coverLetter: { type: "string" },
+  },
+  required: ["outline", "coverLetter"],
+  additionalProperties: false,
+} as const;
+
+const DRAFT_SYSTEM = `Jsi zkušený autor nabídek do českých veřejných zakázek. Pro malou firmu se SaaS aplikacemi připrav podklad nabídky.
+- outline: osnova nabídky (5–8 kapitol, např. Porozumění potřebám zadavatele, Navrhované řešení, Harmonogram implementace, Podpora a SLA, Reference a tým, Cena). Ke každé 2–5 konkrétních bodů šitých na tuto zakázku a produkty dodavatele.
+- coverLetter: krátký průvodní dopis (do 200 slov), věcný, bez frází, s oslovením zadavatele a místy k doplnění v hranatých závorkách, např. [jméno jednatele].
+Piš česky. Nevymýšlej si reference, čísla ani certifikace – kde chybí, nech místo k doplnění v hranatých závorkách.`;
+
+export async function draftOffer(profile: string, t: Tender, analysis: Analysis | null, model: ModelChoice) {
+  return askJson<Draft>({
+    model,
+    system: DRAFT_SYSTEM,
+    schema: DRAFT_SCHEMA,
+    effort: "medium",
+    content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKA:\n${JSON.stringify(tenderInfo(t))}${
+      analysis ? `\n\nROZBOR ZAKÁZKY:\n${JSON.stringify(analysis)}` : ""
+    }`,
+  });
 }

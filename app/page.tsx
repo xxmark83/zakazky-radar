@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { MB_LOGO } from "@/lib/logo";
 import { PRESETS } from "@/lib/presets";
-import type { Analysis, Award, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
+import { diff } from "@/lib/diff";
+import { profileKey } from "@/lib/profile-key";
+import { REGIONS } from "@/lib/regions";
+import type { Analysis, Award, Change, Draft, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
 const STATUS_LABEL: Record<Status, string> = {
   new: "Nové",
@@ -36,7 +39,32 @@ type ServerState = {
   profiles?: WatchedProfile[];
   marked?: ScoredTender[];
   profily?: { updated: string; profiles: number; ok: number; open: number } | null;
+  kept?: Kept | null;
+  spend?: number | null;
+  budget?: number;
+  model?: Model;
+  ai?: boolean;
 };
+
+// poznámky, AI rozbory, návrhy nabídek a změny – v databázi, bez ní v prohlížeči
+type Kept = {
+  notes: Record<string, string>;
+  analysis: Record<string, Analysis>;
+  drafts: Record<string, Draft>;
+  changes: Record<string, Change[]>;
+};
+type KeptKind = keyof Kept;
+const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {} };
+type Keep = <K extends KeptKind>(kind: K, id: string, value: Kept[K][string] | null) => void;
+
+type Model = "opus" | "haiku";
+const MODEL_LABEL: Record<Model, string> = { opus: "Opus – přesnější", haiku: "Haiku – asi 40× levnější" };
+// co AI potřebuje vědět od komponent: model, jestli je limit vyčerpaný, a kam hlásit útratu
+type Ai = { model: Model; noAi: boolean; onCost: (usd: number) => void };
+const usd = (v: number) => `${v < 0.01 && v > 0 ? "<0,01" : v.toLocaleString("cs-CZ", { maximumFractionDigits: 2 })} $`;
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+// sledované = rozpracované zakázky, u kterých hlídáme změny
+const ACTIVE: Status[] = ["maybe", "bid", "sent"];
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -59,21 +87,16 @@ const scoreLabel = (s: number) => (s < 0 ? "bez AI" : s >= 75 ? "sedí" : s >= 5
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const today = () => new Date().toISOString().slice(0, 10);
 
-// Skóre se pamatují podle textu „Co nabízím“ – po jeho změně AI hodnotí znovu.
+// Skóre se pamatují podle textu „Co nabízím“ (lib/profile-key.ts) – po jeho změně AI hodnotí znovu.
 const SCORE_CAP = 5000;
-const profileKey = (s: string) => {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return String(h >>> 0);
-};
 const loadScores = (profile: string) =>
   load<Record<string, Record<string, Score>>>("zr-scores", {})[profileKey(profile)] ?? {};
 function saveScores(profile: string, add: Record<string, Score>) {
   const all = load<Record<string, Record<string, Score>>>("zr-scores", {});
   const key = profileKey(profile);
-  // nejnovější nakonec, nejstarší nad limit pryč
+  // nejnovější nakonec, nejstarší nad limit pryč; od ostatních profilů nechat nejvýš dva
   const merged = Object.entries({ ...all[key], ...add }).slice(-SCORE_CAP);
-  save("zr-scores", { ...all, [key]: Object.fromEntries(merged) });
+  save("zr-scores", { [key]: Object.fromEntries(merged), ...Object.fromEntries(Object.entries(all).filter(([k]) => k !== key).slice(0, 2)) });
 }
 
 function download(name: string, text: string, type: string) {
@@ -133,25 +156,64 @@ export default function Home() {
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [marked, setMarked] = useState<Record<string, ScoredTender>>({});
   const [detail, setDetail] = useState<ScoredTender | null>(null);
+  const [competitor, setCompetitor] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
+  const [kept, setKept] = useState<Kept>(EMPTY_KEPT);
+  const [spent, setSpent] = useState(0);
+  const [prefs, setPrefs] = useState<{ model: Model; budget: number }>({ model: "opus", budget: 5 });
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const last = load<{ form?: typeof form }>("zr-form", {});
     if (last.form) setForm(last.form);
+    const local = () => {
+      setStatuses(load("zr-status", {}));
+      setMarked(load("zr-marked", {}));
+      setKept({ ...EMPTY_KEPT, ...load<Partial<Kept>>("zr-kept", {}) });
+      const sp = load<{ month: string; usd: number }>("zr-spend", { month: "", usd: 0 });
+      setSpent(sp.month === thisMonth() ? sp.usd : 0);
+    };
     fetch("/api/state")
       .then((r) => r.json())
       .then((s: ServerState) => {
         setServer(s);
+        setPrefs(load("zr-prefs", { model: s.model ?? "opus", budget: s.budget ?? 5 }));
         if (s.db) {
           setStatuses(s.statuses ?? {});
           setMarked(Object.fromEntries((s.marked ?? []).map((t) => [t.id, t])));
-        } else {
-          setStatuses(load("zr-status", {}));
-          setMarked(load("zr-marked", {}));
-        }
+          setKept({ ...EMPTY_KEPT, ...s.kept });
+          setSpent(s.spend ?? 0);
+        } else local();
       })
-      .catch(() => setStatuses(load("zr-status", {})));
+      .catch(local)
+      .finally(() => setReady(true));
   }, []);
+
+  const keep: Keep = (kind, id, value) => {
+    setKept((cur) => {
+      const part = { ...cur[kind] } as Record<string, unknown>;
+      if (value === null || value === "") delete part[id];
+      else part[id] = value;
+      const next = { ...cur, [kind]: part };
+      if (!server.db) save("zr-kept", next);
+      return next;
+    });
+    if (server.db) post("/api/state", { kept: { kind, id, value } });
+  };
+
+  const onCost = (c: number) => {
+    if (!c) return;
+    setSpent((cur) => {
+      const next = cur + c;
+      if (!server.db) save("zr-spend", { month: thisMonth(), usd: next });
+      return next;
+    });
+  };
+  const ai: Ai = { model: prefs.model, noAi: spent >= prefs.budget, onCost };
+  const savePrefs = (p: typeof prefs) => {
+    setPrefs(p);
+    save("zr-prefs", p);
+  };
 
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   useEffect(() => {
@@ -175,6 +237,39 @@ export default function Home() {
     });
     if (server.db) post("/api/state", { status: { tender: t, value: s } });
   };
+
+  // změny u sledovaných zakázek: uložit seznam změn a novou podobu zakázky
+  const applyChanges = (found: { tender: ScoredTender; changes: Change[] }[]) => {
+    for (const f of found) {
+      keep("changes", f.tender.id, [...(kept.changes[f.tender.id] ?? []), ...f.changes]);
+      applyStatus(f.tender, statuses[f.tender.id]);
+    }
+    if (found.length)
+      setToast({ text: `Změna u ${found.length} ${found.length === 1 ? "sledované zakázky" : "sledovaných zakázek"} – viz Moje zakázky` });
+  };
+  const active = () => Object.values(marked).filter((t) => ACTIVE.includes(statuses[t.id]));
+  const checkResults = (results: ScoredTender[]) => {
+    const byId = new Map(results.map((r) => [r.id, r]));
+    applyChanges(
+      active().flatMap((t) => {
+        const now = byId.get(t.id);
+        const changes = now ? diff(t, now) : [];
+        return changes.length ? [{ tender: { ...t, ...now, score: t.score, reason: t.reason }, changes }] : [];
+      }),
+    );
+  };
+
+  // jednou denně porovnat sledované zakázky s čerstvými daty z profilů zadavatelů
+  useEffect(() => {
+    if (!ready || load("zr-checked", "") === today()) return;
+    const list = active();
+    save("zr-checked", today());
+    if (!list.length) return;
+    post("/api/changes", { tenders: list })
+      .then((r) => r.json())
+      .then((d) => applyChanges(d.found ?? []))
+      .catch(() => {});
+  }, [ready]);
 
   const setStatus = (t: ScoredTender, s: Status) => {
     const prev = statuses[t.id] ?? "new";
@@ -251,25 +346,42 @@ export default function Home() {
           setStatus={setStatus}
           openDetail={setDetail}
           profily={server.profily?.ok}
+          ai={ai}
+          onResults={checkResults}
         />
       )}
-      {tab === "board" && <BoardTab statuses={statuses} marked={marked} setStatus={setStatus} openDetail={setDetail} />}
-      {tab === "market" && <MarketTab form={form} />}
+      {tab === "board" && (
+        <BoardTab statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
+      )}
+      {tab === "market" && <MarketTab form={form} openCompetitor={setCompetitor} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
       <footer className="foot">
         Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
       </footer>
     </main>
-      {settings && <Settings close={() => setSettings(false)} />}
+      {settings && (
+        <Settings
+          close={() => setSettings(false)}
+          prefs={prefs}
+          setPrefs={savePrefs}
+          spent={spent}
+          server={server}
+        />
+      )}
       {detail && (
         <Detail
-          t={detail}
+          t={marked[detail.id] ?? detail}
           profile={form.profile}
           status={statuses[detail.id] ?? "new"}
           setStatus={setStatus}
+          kept={kept}
+          keep={keep}
+          ai={ai}
+          openCompetitor={setCompetitor}
           close={() => setDetail(null)}
         />
       )}
+      {competitor && <Competitor name={competitor} close={() => setCompetitor(null)} />}
       {toast && (
         <div className="toast" role="status">
           <span>{toast.text}</span>
@@ -297,7 +409,14 @@ const VERSION = process.env.APP_VERSION;
 type Theme = "auto" | "light" | "dark";
 const THEMES: Record<Theme, string> = { auto: "Podle systému", light: "Světlý", dark: "Tmavý" };
 
-function Settings({ close }: { close: () => void }) {
+function Settings(props: {
+  close: () => void;
+  prefs: { model: Model; budget: number };
+  setPrefs: (p: { model: Model; budget: number }) => void;
+  spent: number;
+  server: ServerState;
+}) {
+  const { close, prefs, setPrefs, spent, server } = props;
   const [theme, setTheme] = useState<Theme>("auto");
   useEffect(() => {
     setTheme((document.documentElement.dataset.theme as Theme) ?? "auto");
@@ -316,6 +435,7 @@ function Settings({ close }: { close: () => void }) {
     if (t === "auto") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = t;
   };
+  const pct = Math.min(100, (spent / prefs.budget) * 100);
 
   return (
     <div className="drawer-bg" onClick={close}>
@@ -334,6 +454,47 @@ function Settings({ close }: { close: () => void }) {
             </button>
           ))}
         </div>
+
+        <h3 className="sec">AI a útrata</h3>
+        <div className="budget">
+          <div className="budget-row">
+            <b>{usd(spent)}</b>
+            <span>
+              z {prefs.budget} $ tento měsíc{server.db ? "" : " (v tomto prohlížeči)"}
+            </span>
+          </div>
+          <div className="meter">
+            <span style={{ width: `${pct}%`, background: pct >= 100 ? "var(--bad)" : pct >= 80 ? "var(--mid)" : "var(--good)" }} />
+          </div>
+          {spent >= prefs.budget && (
+            <p className="note">Limit je vyčerpaný: nové zakázky se zobrazí bez AI hodnocení, rozbory jsou vypnuté.</p>
+          )}
+        </div>
+        <label>Model pro hodnocení a rozbory</label>
+        <div className="flow">
+          {(Object.keys(MODEL_LABEL) as Model[]).map((m) => (
+            <button key={m} className={prefs.model === m ? "on" : ""} onClick={() => setPrefs({ ...prefs, model: m })}>
+              {MODEL_LABEL[m]}
+            </button>
+          ))}
+        </div>
+        <label>Měsíční limit</label>
+        <select value={prefs.budget} onChange={(e) => setPrefs({ ...prefs, budget: Number(e.target.value) })}>
+          {[1, 2, 5, 10, 20].map((b) => (
+            <option key={b} value={b}>
+              {b} $
+            </option>
+          ))}
+        </select>
+        <p className="note">
+          Limit hlídá appka. Pevný strop nastav i v console.anthropic.com → Settings → Limits, ten platí vždy.
+        </p>
+
+        <h3 className="sec">Připojení</h3>
+        <Check ok={server.ai} label="AI hodnocení (ANTHROPIC_API_KEY)" />
+        <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
+        <Check ok={server.email && server.cron} label="Ranní e-mail (RESEND_API_KEY, ALERT_EMAIL, CRON_SECRET)" />
+
         <h3 className="sec">O aplikaci</h3>
         <p className="note">
           Zakázky radar, verze <b>{VERSION}</b>
@@ -427,6 +588,19 @@ const CMP: Record<Sort, (a: ScoredTender, b: ScoredTender) => number> = {
   new: (a, b) => (b.published ?? "").localeCompare(a.published ?? ""),
 };
 
+const regionLabel = (x: string) =>
+  x === "Praha" ? "Praha" : x === "Vysočina" ? "Kraj Vysočina" : x === "celostátní" ? "Celostátní" : x === "neznámý" ? "Kraj neznámý" : `${x} kraj`;
+
+// filtr hodnoty; zakázky bez uvedené hodnoty ukazujeme vždy, dokud není vybráno „jen s hodnotou“
+type ValueRange = "all" | "s" | "m" | "l" | "xl";
+const VALUES: Record<ValueRange, { label: string; test: (v: number | null) => boolean }> = {
+  all: { label: "Jakákoli hodnota", test: () => true },
+  s: { label: "do 500 tis. Kč", test: (v) => !v || v <= 500_000 },
+  m: { label: "do 2 mil. Kč", test: (v) => !v || v <= 2_000_000 },
+  l: { label: "do 5 mil. Kč", test: (v) => !v || v <= 5_000_000 },
+  xl: { label: "nad 5 mil. Kč", test: (v) => !!v && v > 5_000_000 },
+};
+
 function SearchTab(props: {
   form: Form;
   statuses: Record<string, Status>;
@@ -434,25 +608,31 @@ function SearchTab(props: {
   setStatus: (t: ScoredTender, s: Status) => void;
   openDetail: (t: ScoredTender) => void;
   profily?: number;
+  ai: Ai;
+  onResults: (results: ScoredTender[]) => void;
 }) {
-  const { form, statuses, marked, setStatus, openDetail, profily } = props;
+  const { form, statuses, marked, setStatus, openDetail, profily, ai, onResults } = props;
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [stats, setStats] = useState<{ total: number; open: number; scored: number; cached: number } | null>(null);
+  const [stats, setStats] = useState<{ total: number; open: number; scored: number; cached: number; cost: number } | null>(null);
   const [results, setResults] = useState<ScoredTender[]>([]);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Status | "all">("all");
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("all");
   const [sort, setSort] = useState<Sort>("score");
+  const [region, setRegion] = useState("all");
+  const [value, setValue] = useState<ValueRange>("all");
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setResults(load("zr-results", []));
     setFresh(new Set(load<string[]>("zr-fresh", [])));
     setSort(load("zr-sort", "score"));
+    setRegion(load("zr-region", "all"));
+    setValue(load("zr-value", "all"));
   }, []);
 
   useEffect(() => {
@@ -474,7 +654,7 @@ function SearchTab(props: {
       const known = loadScores(form.profile);
       const data = await Promise.all(
         (["open", "upcoming"] as const).map(async (mode) => {
-          const res = await post("/api/search", { ...form, mode, known }, ctrl.signal);
+          const res = await post("/api/search", { ...form, mode, known, model: ai.model, noAi: ai.noAi }, ctrl.signal);
           const d = await res.json();
           if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
           return d as {
@@ -482,6 +662,7 @@ function SearchTab(props: {
             open: number;
             scored: number;
             cached: number;
+            cost: number;
             newScores: Record<string, Score>;
             warnings?: string[];
             results: ScoredTender[];
@@ -495,9 +676,11 @@ function SearchTab(props: {
       const added = before.size ? all.filter((r) => !before.has(r.id)).map((r) => r.id) : [];
       setFresh(new Set(added));
       setWarnings([...new Set(data.flatMap((d) => d.warnings ?? []))]);
-      const sum = (k: "total" | "open" | "scored" | "cached") => data[0][k] + data[1][k];
-      setStats({ total: sum("total"), open: sum("open"), scored: sum("scored"), cached: sum("cached") });
+      const sum = (k: "total" | "open" | "scored" | "cached" | "cost") => data[0][k] + data[1][k];
+      setStats({ total: sum("total"), open: sum("open"), scored: sum("scored"), cached: sum("cached"), cost: sum("cost") });
+      ai.onCost(sum("cost"));
       setResults(all);
+      onResults(all);
       save("zr-results", all);
       save("zr-fresh", added);
       save("zr-form", { form });
@@ -523,11 +706,14 @@ function SearchTab(props: {
   const q = norm(query.trim());
   const shown = pool
     .filter((r) => source === "all" || r.source === source)
+    .filter((r) => region === "all" || r.region === region || (region === "neznámý" && !r.region))
+    .filter((r) => VALUES[value].test(r.value))
     .filter((r) => !q || norm(`${r.title} ${r.buyer} ${r.product} ${r.reason}`).includes(q))
     .sort(CMP[sort]);
   const count = (s: Status) => Object.values(statuses).filter((x) => x === s).length;
   const sources = [...new Set(results.map((r) => r.source))];
-  const narrowed = Boolean(q) || source !== "all";
+  const narrowed = Boolean(q) || source !== "all" || region !== "all" || value !== "all";
+  const regions = REGIONS.filter((x) => results.some((r) => (r.region ?? "neznámý") === x));
 
   const bids = Object.values(marked)
     .filter((t) => statuses[t.id] === "bid" && t.deadline && t.deadline >= today())
@@ -589,6 +775,7 @@ function SearchTab(props: {
               AI hodnotila {stats.scored.toLocaleString("cs-CZ")}, {stats.cached.toLocaleString("cs-CZ")} skóre vzala z paměti.
             </span>
           )}
+          {stats.cost > 0 && <> Stálo to {usd(stats.cost)}.</>}
         </p>
       )}
       {(results.length > 0 || Object.keys(statuses).length > 0) && !loading && (
@@ -618,6 +805,38 @@ function SearchTab(props: {
                 ))}
               </select>
             )}
+            {regions.length > 1 && (
+              <select
+                value={region}
+                onChange={(e) => {
+                  setRegion(e.target.value);
+                  save("zr-region", e.target.value);
+                }}
+                aria-label="Kraj"
+              >
+                <option value="all">Všechny kraje</option>
+                {regions.map((x) => (
+                  <option key={x} value={x}>
+                    {regionLabel(x)} (
+                    {results.filter((r) => (r.region ?? "neznámý") === x).length})
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value as ValueRange);
+                save("zr-value", e.target.value);
+              }}
+              aria-label="Hodnota"
+            >
+              {(Object.keys(VALUES) as ValueRange[]).map((v) => (
+                <option key={v} value={v}>
+                  {VALUES[v].label}
+                </option>
+              ))}
+            </select>
             <select value={sort} onChange={(e) => changeSort(e.target.value as Sort)}>
               {(Object.keys(SORTS) as Sort[]).map((s) => (
                 <option key={s} value={s}>
@@ -654,6 +873,8 @@ function SearchTab(props: {
                   onClick={() => {
                     setQuery("");
                     setSource("all");
+                    setRegion("all");
+                    setValue("all");
                   }}
                 >
                   Zrušit filtr
@@ -713,6 +934,7 @@ function TenderCard(props: {
           {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
           {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
           {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
+          {t.region && t.region !== "neznámý" && <span className="tag">{t.region}</span>}
         </div>
         <h3>
           <button className="title" onClick={() => openDetail(t)}>
@@ -745,6 +967,15 @@ function TenderCard(props: {
   );
 }
 
+const CHANGE_LABEL: Record<Change["field"], string> = { deadline: "Lhůta", title: "Název", value: "Hodnota", description: "Popis" };
+
+const changeValue = (c: Change, v: string) =>
+  c.field === "deadline" && /^\d{4}-\d\d-\d\d/.test(v)
+    ? new Date(v).toLocaleDateString("cs-CZ")
+    : c.field === "value" && Number(v)
+      ? money(Number(v))
+      : v;
+
 const VERDICT: Record<Analysis["verdict"], { label: string; cls: string }> = {
   go: { label: "Podat nabídku", cls: "good" },
   consider: { label: "Zvážit", cls: "mid" },
@@ -758,19 +989,25 @@ function Detail(props: {
   profile: string;
   status: Status;
   setStatus: (t: ScoredTender, s: Status) => void;
+  kept: Kept;
+  keep: Keep;
+  ai: Ai;
+  openCompetitor: (name: string) => void;
   close: () => void;
 }) {
-  const { t, profile, status, setStatus, close } = props;
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { t, profile, status, setStatus, kept, keep, ai, openCompetitor, close } = props;
+  const analysis = kept.analysis[t.id] ?? null;
+  const draft = kept.drafts[t.id] ?? null;
+  const changes = kept.changes[t.id] ?? [];
+  const [busy, setBusy] = useState<"analysis" | "draft" | null>(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
+  const [copied, setCopied] = useState(false);
   const [similar, setSimilar] = useState<Market | null>(null);
   const [simBusy, setSimBusy] = useState(false);
 
   useEffect(() => {
-    setAnalysis(load<Record<string, Analysis>>("zr-analysis", {})[t.id] ?? null);
-    setNote(load<Record<string, string>>("zr-notes", {})[t.id] ?? "");
+    setNote(kept.notes[t.id] ?? "");
     setSimilar(null);
     setError("");
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
@@ -782,29 +1019,40 @@ function Detail(props: {
     };
   }, [t.id]);
 
-  const saveNote = (v: string) => {
-    setNote(v);
-    const all = load<Record<string, string>>("zr-notes", {});
-    if (v.trim()) all[t.id] = v;
-    else delete all[t.id];
-    save("zr-notes", all);
-  };
+  // poznámka se uloží až po chvíli bez psaní, ať se databáze nevolá po každém písmenu
+  useEffect(() => {
+    if (note === (kept.notes[t.id] ?? "")) return;
+    const id = setTimeout(() => keep("notes", t.id, note.trim() ? note : null), 700);
+    return () => clearTimeout(id);
+  }, [note]);
 
-  async function analyze() {
-    setBusy(true);
+  async function runAi(kind: "analysis" | "draft") {
+    setBusy(kind);
     setError("");
     try {
-      const res = await post("/api/analyze", { profile, tender: t });
+      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
-      setAnalysis(d);
-      save("zr-analysis", { ...load("zr-analysis", {}), [t.id]: d });
+      ai.onCost(d.cost ?? 0);
+      if (kind === "draft") keep("drafts", t.id, d.data);
+      else keep("analysis", t.id, d.data);
     } catch (e: any) {
       setError(e.message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
+  const analyze = () => runAi("analysis");
+
+  const draftText = (d: Draft) =>
+    [
+      `Osnova nabídky: ${t.title}`,
+      ...d.outline.flatMap((o, i) => [``, `${i + 1}. ${o.heading}`, ...o.points.map((p) => `   - ${p}`)]),
+      ``,
+      `Průvodní dopis`,
+      ``,
+      d.coverLetter,
+    ].join("\n");
 
   async function loadSimilar() {
     setSimBusy(true);
@@ -858,6 +1106,25 @@ function Detail(props: {
         </dl>
         {t.reason && <p className="reason">{t.reason}</p>}
 
+        {changes.length > 0 && (
+          <div className="changes">
+            <div className="mine-head">
+              <b>Změny od uložení</b>
+              <button className="link" onClick={() => keep("changes", t.id, null)}>
+                Beru na vědomí
+              </button>
+            </div>
+            {changes.map((c, i) => (
+              <div key={i} className="change">
+                <span>{new Date(c.at).toLocaleDateString("cs-CZ")}</span>
+                <span>
+                  {CHANGE_LABEL[c.field]}: <s>{changeValue(c, c.from) || "–"}</s> → <b>{changeValue(c, c.to)}</b>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="drawer-links">
           <a className="btn" href={t.url} target="_blank" rel="noreferrer">
             Otevřít zakázku ↗
@@ -875,15 +1142,19 @@ function Detail(props: {
         </div>
 
         <h3 className="sec">AI rozbor</h3>
-        {!analysis && !busy && (
+        {!analysis && busy !== "analysis" && (
           <div className="ai-cta">
-            <span>Přečte stránku zakázky a řekne, co chtějí, jaké mají podmínky, rizika a co nabídnout.</span>
-            <button className="primary" onClick={analyze}>
+            <span>
+              {ai.noAi
+                ? "Měsíční limit za AI je vyčerpaný, změníš ho v Nastavení."
+                : "Přečte stránku zakázky a řekne, co chtějí, jaké mají podmínky, rizika a co nabídnout."}
+            </span>
+            <button className="primary" onClick={analyze} disabled={ai.noAi || busy !== null}>
               Udělat rozbor
             </button>
           </div>
         )}
-        {busy && (
+        {busy === "analysis" && (
           <div className="ai-cta">
             <div className="radar" aria-hidden="true" />
             <span>Čtu zakázku a připravuji rozbor, asi 30 vteřin…</span>
@@ -902,9 +1173,62 @@ function Detail(props: {
             <h4>Co nabídnout</h4>
             <p>{analysis.offer}</p>
             <AnalysisList title="Na co se zeptat zadavatele" items={analysis.questions} />
-            <button className="link" onClick={analyze}>
-              Udělat rozbor znovu
+            {busy !== "analysis" && !ai.noAi && (
+              <button className="link" onClick={analyze}>
+                Udělat rozbor znovu
+              </button>
+            )}
+          </div>
+        )}
+
+        <h3 className="sec">Návrh nabídky</h3>
+        {!draft && busy !== "draft" && (
+          <div className="ai-cta">
+            <span>Osnova nabídky na míru této zakázce a průvodní dopis. Použije i rozbor, pokud je hotový.</span>
+            <button className="primary" onClick={() => runAi("draft")} disabled={ai.noAi || busy !== null}>
+              Navrhnout
             </button>
+          </div>
+        )}
+        {busy === "draft" && (
+          <div className="ai-cta">
+            <div className="radar" aria-hidden="true" />
+            <span>Píšu osnovu a dopis, asi 30 vteřin…</span>
+          </div>
+        )}
+        {draft && (
+          <div className="analysis">
+            <ol className="outline">
+              {draft.outline.map((o) => (
+                <li key={o.heading}>
+                  <b>{o.heading}</b>
+                  <ul>
+                    {o.points.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
+            <h4>Průvodní dopis</h4>
+            <p className="letter">{draft.coverLetter}</p>
+            <div className="drawer-links">
+              <button
+                onClick={() =>
+                  navigator.clipboard.writeText(draftText(draft)).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  })
+                }
+              >
+                {copied ? "Zkopírováno" : "Kopírovat celé"}
+              </button>
+              {busy !== "draft" && !ai.noAi && (
+                <button className="link" onClick={() => runAi("draft")}>
+                  Navrhnout znovu
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -920,7 +1244,7 @@ function Detail(props: {
           className="notes"
           placeholder="Kontakt na zadavatele, cena, kdo pomůže s nabídkou…"
           value={note}
-          onChange={(e) => saveNote(e.target.value)}
+          onChange={(e) => setNote(e.target.value)}
         />
 
         <h3 className="sec">Ceny podobných zakázek</h3>
@@ -941,10 +1265,10 @@ function Detail(props: {
               .
             </p>
             {similar.topWinners.slice(0, 5).map((w) => (
-              <div key={w.name} className="mine-row">
+              <button key={w.name} className="mine-row" onClick={() => openCompetitor(w.name)} title="Profil konkurenta">
                 <span>{w.name}</span>
                 <span className="note">{w.wins}× výhra</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -979,10 +1303,11 @@ const COLUMNS: { s: Status | "top"; label: string }[] = [
 function BoardTab(props: {
   statuses: Record<string, Status>;
   marked: Record<string, ScoredTender>;
+  changes: Record<string, Change[]>;
   setStatus: (t: ScoredTender, s: Status) => void;
   openDetail: (t: ScoredTender) => void;
 }) {
-  const { statuses, marked, setStatus, openDetail } = props;
+  const { statuses, marked, changes, setStatus, openDetail } = props;
   const [results, setResults] = useState<ScoredTender[]>([]);
   const [over, setOver] = useState<string | null>(null);
   useEffect(() => setResults(load("zr-results", [])), []);
@@ -1030,6 +1355,11 @@ function BoardTab(props: {
                   draggable
                   onDragStart={(e) => e.dataTransfer.setData("text/plain", t.id)}
                 >
+                  {changes[t.id]?.length ? (
+                    <span className="tag changed">
+                      změna: {[...new Set(changes[t.id].map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}
+                    </span>
+                  ) : null}
                   <button className="title" onClick={() => openDetail(t)}>
                     {t.title || "(bez názvu)"}
                   </button>
@@ -1152,7 +1482,7 @@ type Market = {
   awards: Award[];
 };
 
-function MarketTab({ form }: { form: Form }) {
+function MarketTab({ form, openCompetitor }: { form: Form; openCompetitor: (name: string) => void }) {
   const [days, setDays] = useState(730);
   const [useKeywords, setUseKeywords] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -1234,7 +1564,9 @@ function MarketTab({ form }: { form: Form }) {
                 {data.topWinners.map((w) => (
                   <tr key={w.name}>
                     <td>
-                      {w.name}
+                      <button className="link name" onClick={() => openCompetitor(w.name)} title="Profil konkurenta">
+                        {w.name}
+                      </button>
                       <div className="bar" style={{ width: `${(w.wins / data.topWinners[0].wins) * 100}%` }} />
                     </td>
                     <td>{w.wins}</td>
@@ -1259,13 +1591,138 @@ function MarketTab({ form }: { form: Form }) {
                   <span>{money(a.value, a.currency)}</span>
                   <span>{a.published}</span>
                 </div>
-                <p className="reason">Vyhrál: {a.winners.join(", ") || "neuvedeno"}</p>
+                <p className="reason">
+                  Vyhrál:{" "}
+                  {a.winners.length
+                    ? a.winners.map((w, i) => (
+                        <span key={w}>
+                          {i > 0 && ", "}
+                          <button className="link name" onClick={() => openCompetitor(w)}>
+                            {w}
+                          </button>
+                        </span>
+                      ))
+                    : "neuvedeno"}
+                </p>
               </div>
             ))}
           </div>
         </>
       )}
     </>
+  );
+}
+
+type CompetitorData = {
+  name: string;
+  count: number;
+  total: number;
+  topBuyers: { buyer: string; wins: number }[];
+  byYear: { year: string; wins: number }[];
+  awards: Award[];
+};
+
+function Competitor({ name, close }: { name: string; close: () => void }) {
+  const [data, setData] = useState<CompetitorData | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setData(null);
+    setError("");
+    post("/api/competitor", { name })
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        setData(d);
+      })
+      .catch((e) => setError(e.message));
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [name]);
+
+  const maxYear = Math.max(1, ...(data?.byYear ?? []).map((y) => y.wins));
+  return (
+    <div className="drawer-bg" onClick={close}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={name} onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <span className="tag">Profil konkurenta</span>
+          <button className="icon" onClick={close} aria-label="Zavřít">
+            ×
+          </button>
+        </div>
+        <h2 className="drawer-title">{name}</h2>
+        <p className="drawer-buyer">Zakázky nad evropským limitem za posledních 5 let (TED)</p>
+        {error && <div className="warn">{error}</div>}
+        {!data && !error && (
+          <div className="ai-cta">
+            <div className="radar" aria-hidden="true" />
+            <span>Hledám výhry v TED…</span>
+          </div>
+        )}
+        {data && (
+          <>
+            <dl className="facts">
+              <div>
+                <dt>Vyhraných zakázek</dt>
+                <dd>{data.count}</dd>
+              </div>
+              <div>
+                <dt>Objem (podíl, Kč)</dt>
+                <dd>{data.total ? moneyShort(data.total) : "–"}</dd>
+              </div>
+              <div>
+                <dt>Zadavatelů</dt>
+                <dd>{new Set(data.awards.map((a) => a.buyer)).size}</dd>
+              </div>
+            </dl>
+            {data.byYear.length > 0 && (
+              <>
+                <h3 className="sec">Výhry po letech</h3>
+                <div className="years">
+                  {data.byYear.map((y) => (
+                    <div key={y.year} className="year">
+                      <span className="year-bar" style={{ height: `${(y.wins / maxYear) * 100}%` }} title={`${y.wins}×`} />
+                      <small>
+                        {y.year}
+                        <br />
+                        {y.wins}×
+                      </small>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {data.topBuyers.length > 0 && (
+              <>
+                <h3 className="sec">Pro koho nejčastěji</h3>
+                {data.topBuyers.map((b) => (
+                  <div key={b.buyer} className="mine-row">
+                    <span>{b.buyer}</span>
+                    <span className="note">{b.wins}×</span>
+                  </div>
+                ))}
+              </>
+            )}
+            <h3 className="sec">Poslední výhry</h3>
+            {data.awards.length ? (
+              data.awards.slice(0, 20).map((a) => (
+                <a key={a.id} className="mine-row" href={a.url} target="_blank" rel="noreferrer">
+                  <span>{a.title}</span>
+                  <span className="note">{a.value ? moneyShort(a.value) : a.published}</span>
+                </a>
+              ))
+            ) : (
+              <p className="note">TED neeviduje žádnou výhru. Menší zakázky (pod evropským limitem) tu nejsou vidět.</p>
+            )}
+          </>
+        )}
+      </aside>
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { askJson, type ModelChoice } from "./ai";
+import { REGIONS } from "./regions";
 import type { ScoredTender, Tender } from "./types";
 
-const client = new Anthropic();
 const BATCH = 40;
 
 const SCHEMA = {
@@ -16,8 +16,9 @@ const SCHEMA = {
           score: { type: "integer" },
           product: { type: "string" },
           reason: { type: "string" },
+          region: { type: "string", enum: [...REGIONS] },
         },
-        required: ["id", "score", "product", "reason"],
+        required: ["id", "score", "product", "reason", "region"],
         additionalProperties: false,
       },
     },
@@ -32,9 +33,12 @@ Ke každé zakázce vrať:
   Snižuj skóre, pokud zakázka vyžaduje rozsah, reference nebo obrat, který malá firma nesplní, nebo jde hlavně o hardware/stavbu.
 - product: který produkt/služba dodavatele sedí (krátce), nebo "–".
 - reason: jedna věta česky, proč.
+- region: kraj, kde sídlí zadavatel (podle názvu obce, města nebo instituce). Ministerstva a celostátní úřady = "celostátní", když nevíš = "neznámý".
 Vrať výsledek pro každé id ze vstupu.`;
 
-async function scoreBatch(profile: string, batch: Tender[]): Promise<ScoredTender[]> {
+type Row = { id: string; score: number; product: string; reason: string; region: string };
+
+async function scoreBatch(profile: string, batch: Tender[], model: ModelChoice) {
   const items = batch.map((t) => ({
     id: t.id,
     nazev: t.title,
@@ -43,41 +47,29 @@ async function scoreBatch(profile: string, batch: Tender[]): Promise<ScoredTende
     cpv: t.cpv.slice(0, 6).join(", "),
     popis: t.description.slice(0, 800),
   }));
-
-  const response = await client.beta.messages.create({
-    model: "claude-opus-5-5",
-    max_tokens: 16000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
+  const { data, cost } = await askJson<{ results: Row[] }>({
+    model,
     system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKY (JSON):\n${JSON.stringify(items)}`,
-      },
-    ],
-  } as any);
-
-  if (response.stop_reason === "refusal") throw new Error("AI odmítla dávku zpracovat");
-  const text = response.content.flatMap((b: any) => (b.type === "text" ? [b.text] : [])).join("");
-  const parsed: { results: { id: string; score: number; product: string; reason: string }[] } = JSON.parse(text);
-  const byId = new Map(parsed.results.map((r) => [r.id, r]));
-
-  return batch.map((t) => {
+    schema: SCHEMA,
+    content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKY (JSON):\n${JSON.stringify(items)}`,
+  });
+  const byId = new Map(data.results.map((r) => [r.id, r]));
+  const tenders: ScoredTender[] = batch.map((t) => {
     const r = byId.get(t.id);
     return {
       ...t,
       score: r ? Math.max(0, Math.min(100, r.score)) : 0,
       product: r?.product ?? "–",
       reason: r?.reason ?? "AI nevrátila hodnocení",
+      region: r?.region ?? "neznámý",
     };
   });
+  return { tenders, cost };
 }
 
-export async function scoreTenders(profile: string, tenders: Tender[]): Promise<ScoredTender[]> {
+export async function scoreTenders(profile: string, tenders: Tender[], model: ModelChoice) {
   const batches: Tender[][] = [];
   for (let i = 0; i < tenders.length; i += BATCH) batches.push(tenders.slice(i, i + BATCH));
-  const results = await Promise.all(batches.map((b) => scoreBatch(profile, b)));
-  return results.flat();
+  const results = await Promise.all(batches.map((b) => scoreBatch(profile, b, model)));
+  return { tenders: results.flatMap((r) => r.tenders), cost: results.reduce((a, r) => a + r.cost, 0) };
 }

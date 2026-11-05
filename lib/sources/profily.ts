@@ -35,6 +35,13 @@ export function profilyInfo() {
   return d ? { updated: d.updated, profiles: d.profiles, ok: d.ok, open: d.tenders.length } : null;
 }
 
+/** Aktuální podoba zakázek z profilů podle id – pro hlídání změn u sledovaných zakázek. */
+export function profilyById(ids: string[]): Map<string, { title: string; deadline: string | null; description: string }> {
+  const d = load();
+  const want = new Set(ids);
+  return new Map((d?.tenders ?? []).filter((t) => want.has(t.id)).map((t) => [t.id, t]));
+}
+
 export function fetchProfily(opts: { keywords: string[]; cpv: string[]; days: number }): Tender[] {
   const d = load();
   if (!d) return [];

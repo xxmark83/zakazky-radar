@@ -128,19 +128,40 @@ export async function fetchTedAwards(opts: { cpv: string[]; keywords: string[]; 
     ...(ft ? [ft] : []),
   ].join(" AND ");
   const notices = await search(query, AWARD_FIELDS, 500);
-  return notices.map((n) => {
-    const id = n["publication-number"];
-    const value = Number(n["total-value"]);
-    return {
-      id: `ted-${id}`,
-      title: pickLang(n["title-proc"]) || pickLang(n["notice-title"]),
-      buyer: pickLang(n["buyer-name"]),
-      published: (n["publication-date"] ?? "").slice(0, 10) || null,
-      winners: Array.from(new Set(pickLangList(n["winner-name"]))),
-      value: Number.isFinite(value) && value > 0 ? value : null,
-      currency: (n["total-value-cur"] ?? [])[0] ?? null,
-      cpv: Array.from(new Set<string>(n["classification-cpv"] ?? [])),
-      url: noticeUrl(id),
-    };
-  });
+  return notices.map(toAward);
+}
+
+function toAward(n: any): Award {
+  const id = n["publication-number"];
+  const value = Number(n["total-value"]);
+  return {
+    id: `ted-${id}`,
+    title: pickLang(n["title-proc"]) || pickLang(n["notice-title"]),
+    buyer: pickLang(n["buyer-name"]),
+    published: (n["publication-date"] ?? "").slice(0, 10) || null,
+    winners: Array.from(new Set(pickLangList(n["winner-name"]))),
+    value: Number.isFinite(value) && value > 0 ? value : null,
+    currency: (n["total-value-cur"] ?? [])[0] ?? null,
+    cpv: Array.from(new Set<string>(n["classification-cpv"] ?? [])),
+    url: noticeUrl(id),
+  };
+}
+
+/** Všechny zakázky v ČR, které firma vyhrála (podle názvu vítěze v TED). */
+export async function fetchTedByWinner(name: string, days = 1825): Promise<Award[]> {
+  // právní formu vynecháme, TED ji píše různě (s.r.o., s. r. o., spol. s r.o.)
+  const core = name
+    .replace(/,?\s*(spol\.\s*s\s*r\.\s*o\.|s\.\s*r\.\s*o\.|a\.\s*s\.|v\.\s*o\.\s*s\.|k\.\s*s\.|z\.\s*s\.|s\.\s*p\.|se)\s*$/i, "")
+    .replace(/["\\]/g, "")
+    .trim();
+  if (core.length < 3) return [];
+  const query = [...base(days), "notice-type IN (can-standard can-social)", `winner-name~"${core}"`].join(" AND ");
+  const notices = await search(query, AWARD_FIELDS, 300);
+  // hledání ~ je přibližné (najde i podobná jména), necháme jen výhry této firmy
+  const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const want = norm(core);
+  return notices
+    .map(toAward)
+    .filter((a) => a.winners.some((w) => norm(w).includes(want)))
+    .sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""));
 }
