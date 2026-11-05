@@ -3,7 +3,7 @@ import { fetchNen } from "./sources/nen";
 import { fetchProfily } from "./sources/profily";
 import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { scoreTenders } from "./score";
-import type { ScoredTender, SearchRequest, Tender } from "./types";
+import type { Score, ScoredTender, SearchRequest, Tender } from "./types";
 
 export const splitList = (s: string) =>
   s
@@ -13,7 +13,15 @@ export const splitList = (s: string) =>
 
 export const parseCpv = (s: string) => s.split(/[\s,;]+/).filter((c) => /^\d{8}$/.test(c));
 
-export type SearchResult = { total: number; open: number; warnings: string[]; results: ScoredTender[] };
+export type SearchResult = {
+  total: number;
+  open: number;
+  scored: number; // kolik zakázek AI hodnotila teď
+  cached: number; // kolik skóre se vzalo z minula
+  newScores: Record<string, Score>; // nová skóre všech zakázek (i pod limitem), klient si je zapamatuje
+  warnings: string[];
+  results: ScoredTender[];
+};
 
 export async function runSearch(body: SearchRequest): Promise<SearchResult> {
   const days = Math.min(Math.max(Number(body.days) || 30, 1), 365);
@@ -54,12 +62,22 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
     return {
       total: tenders.length,
       open: open.length,
+      scored: 0,
+      cached: 0,
+      newScores: {},
       warnings,
       results: open.map((t) => ({ ...t, score: -1, product: "–", reason: "" })),
     };
   }
 
-  const scored = await scoreTenders(body.profile, open);
-  const results = scored.filter((t) => t.score >= (body.minScore ?? 0)).sort((a, b) => b.score - a.score);
-  return { total: tenders.length, open: open.length, warnings, results };
+  // co už AI s tímto profilem hodnotila, se znovu neposílá
+  const known = body.known ?? {};
+  const fresh = open.filter((t) => !known[t.id]);
+  const scored = new Map((await scoreTenders(body.profile, fresh)).map((t) => [t.id, t]));
+  const all = open.map((t) => scored.get(t.id) ?? { ...t, ...known[t.id] });
+  const results = all.filter((t) => t.score >= (body.minScore ?? 0)).sort((a, b) => b.score - a.score);
+  const newScores = Object.fromEntries(
+    [...scored.values()].map((t) => [t.id, { score: t.score, product: t.product, reason: t.reason }]),
+  );
+  return { total: tenders.length, open: open.length, scored: fresh.length, cached: open.length - fresh.length, newScores, warnings, results };
 }

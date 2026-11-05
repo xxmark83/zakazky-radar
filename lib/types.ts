@@ -38,12 +38,26 @@ export type Profile = {
   cpv: string; // CPV kódy oddělené čárkou/mezerou
 };
 
+export type Score = Pick<ScoredTender, "score" | "product" | "reason">;
+
 export type SearchRequest = Profile & {
   mode: "open" | "upcoming";
   days: number; // jak staré zveřejnění brát
   minScore: number;
+  known?: Record<string, Score>; // skóre z minulých hledání se stejným profilem – AI je nehodnotí znovu
 };
 
 export type WatchedProfile = Profile & { minScore: number; watch: boolean };
 
-export type Status = "new" | "maybe" | "bid" | "no";
+// maybe = zvažuji, bid = připravuji nabídku, sent = podáno, won/lost = výsledek
+export type Status = "new" | "maybe" | "bid" | "sent" | "won" | "lost" | "no";
+
+export type Analysis = {
+  summary: string;
+  requirements: string[];
+  risks: string[];
+  verdict: "go" | "consider" | "skip";
+  verdictReason: string;
+  offer: string;
+  questions: string[];
+};
