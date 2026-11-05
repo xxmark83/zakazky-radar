@@ -133,6 +133,7 @@ export default function Home() {
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [marked, setMarked] = useState<Record<string, ScoredTender>>({});
   const [detail, setDetail] = useState<ScoredTender | null>(null);
+  const [settings, setSettings] = useState(false);
 
   useEffect(() => {
     const last = load<{ form?: typeof form }>("zr-form", {});
@@ -193,6 +194,7 @@ export default function Home() {
             </svg>
             <span>Zakázky radar</span>
           </div>
+          <div className="top-right">
           <nav className="tabs">
             {(Object.keys(TABS) as Tab[]).map((t) => (
               <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
@@ -201,6 +203,19 @@ export default function Home() {
               </button>
             ))}
           </nav>
+          <button className="icon gear" onClick={() => setSettings(true)} aria-label="Nastavení" title="Nastavení">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2-1.2L14.5 3h-4l-.4 2.6a7.4 7.4 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"
+              />
+            </svg>
+          </button>
+          </div>
         </div>
       </header>
     <main>
@@ -241,7 +256,11 @@ export default function Home() {
       {tab === "board" && <BoardTab statuses={statuses} marked={marked} setStatus={setStatus} openDetail={setDetail} />}
       {tab === "market" && <MarketTab form={form} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
+      <footer className="foot">
+        Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
+      </footer>
     </main>
+      {settings && <Settings close={() => setSettings(false)} />}
       {detail && (
         <Detail
           t={detail}
@@ -272,6 +291,57 @@ export default function Home() {
 
 // na mobilu se celé názvy nevejdou do jednoho řádku
 const TAB_SHORT: Record<Tab, string> = { search: "Zakázky", board: "Moje", market: "Trh", watch: "Hlídání" };
+
+const VERSION = process.env.APP_VERSION;
+
+type Theme = "auto" | "light" | "dark";
+const THEMES: Record<Theme, string> = { auto: "Podle systému", light: "Světlý", dark: "Tmavý" };
+
+function Settings({ close }: { close: () => void }) {
+  const [theme, setTheme] = useState<Theme>("auto");
+  useEffect(() => {
+    setTheme((document.documentElement.dataset.theme as Theme) ?? "auto");
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const choose = (t: Theme) => {
+    setTheme(t);
+    // skript v layout.tsx čte zr-theme při načtení stránky
+    try {
+      if (t === "auto") localStorage.removeItem("zr-theme");
+      else localStorage.setItem("zr-theme", t);
+    } catch {}
+    if (t === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+  };
+
+  return (
+    <div className="drawer-bg" onClick={close}>
+      <aside className="drawer settings" role="dialog" aria-modal="true" aria-label="Nastavení" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <h2 className="drawer-title">Nastavení</h2>
+          <button className="icon" onClick={close} aria-label="Zavřít">
+            ×
+          </button>
+        </div>
+        <h3 className="sec">Vzhled</h3>
+        <div className="flow">
+          {(Object.keys(THEMES) as Theme[]).map((t) => (
+            <button key={t} className={theme === t ? "on" : ""} onClick={() => choose(t)}>
+              {THEMES[t]}
+            </button>
+          ))}
+        </div>
+        <h3 className="sec">O aplikaci</h3>
+        <p className="note">
+          Zakázky radar, verze <b>{VERSION}</b>
+        </p>
+      </aside>
+    </div>
+  );
+}
 
 const HEADINGS: Record<Tab, string> = {
   search: "Zakázky, které sedí na tvou nabídku",

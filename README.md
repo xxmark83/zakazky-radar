@@ -51,3 +51,13 @@ cp .env.example .env.local
 npm install
 npm run dev
 ```
+
+## Verze
+Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
+
+- **1.8** – Nastavení (ozubené kolo vpravo nahoře): světlý / tmavý / podle systému; číslo verze na webu.
+- **1.7** – detail zakázky s AI rozborem, záložka Moje zakázky (přehled a nástěnka), paměť AI skóre.
+- **1.6** – sběr profilů zadavatelů: oprava NEN, limit Tender areny, střídání po dnech.
+- **1.5** – průběh hledání, řazení, export do Excelu a kalendáře, nové od minula.
+- **1.4** – nový vzhled, zakázky ze všech profilů zadavatelů.
+- **1.0–1.3** – MVP (TED, Hlídač, AI hodnocení), e-maily, průzkum trhu, NEN, logo.
