@@ -1,5 +1,6 @@
 import { fetchHlidac } from "./sources/hlidac";
 import { fetchNen } from "./sources/nen";
+import { fetchDns } from "./sources/dns";
 import { fetchProfily } from "./sources/profily";
 import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { pickModel } from "./ai";
@@ -40,6 +41,8 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
     ["NEN", kind === "open" ? fetchNen({ keywords }) : Promise.resolve([])],
     ["Hlídač státu", fetchHlidac({ keywords, days, kind })],
     ["Profily zadavatelů", Promise.resolve(kind === "open" ? fetchProfily({ keywords, cpv, days }) : [])],
+    // DNS běží roky, takže se nefiltrují podle data zveřejnění
+    ["DNS", Promise.resolve(kind === "open" ? fetchDns({ keywords, cpv }) : [])],
   ];
   const settled = await Promise.allSettled(sources.map(([, p]) => p));
   const tenders: Tender[] = [];

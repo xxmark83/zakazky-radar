@@ -1,6 +1,6 @@
 export type Tender = {
   id: string;
-  source: "TED" | "NEN" | "Hlídač státu" | "Profily zadavatelů";
+  source: "TED" | "NEN" | "Hlídač státu" | "Profily zadavatelů" | "DNS";
   country?: "CZ" | "SK"; // chybí = Česko
   region?: string; // kraj z oficiálních dat (TED); jinak ho určí AI
   kind: "open" | "upcoming"; // otevřená výzva / připravovaná (PIN, tržní konzultace)
@@ -31,7 +31,7 @@ export type Award = {
   currency: string | null;
   cpv: string[];
   url: string;
-  source?: "TED" | "ISVZ";
+  source?: "TED" | "ISVZ" | "Smlouvy";
   offers?: number | null; // počet podaných nabídek (jen ISVZ)
 };
 

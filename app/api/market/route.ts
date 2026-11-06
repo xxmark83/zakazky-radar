@@ -1,5 +1,6 @@
 import { parseCpv, splitList } from "@/lib/search";
 import { isvzAwards, isvzInfo, mergeAwards } from "@/lib/sources/isvz";
+import { smlouvyAwards, smlouvyInfo } from "@/lib/sources/smlouvy";
 import { fetchTedAwards } from "@/lib/sources/ted";
 
 export const maxDuration = 120;
@@ -13,7 +14,8 @@ export async function POST(req: Request) {
     const keywords = splitList(body.keywords ?? "");
     // české výsledky z ISVZ (i podlimitní), TED doplní nadlimitní a slovenské
     const ted = await fetchTedAwards({ cpv, keywords, days, countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"] });
-    const awards = mergeAwards(isvzAwards({ cpv, keywords, days }), ted);
+    // Registr smluv nemá CPV – bere se jen při hledání podle klíčových slov
+    const awards = mergeAwards(isvzAwards({ cpv, keywords, days }), ted, smlouvyAwards({ keywords, days }));
     const withOffers = awards.filter((a) => typeof a.offers === "number" && a.offers > 0);
 
     const czk = awards.filter((a) => a.value && a.currency === "CZK").map((a) => a.value!).sort((a, b) => a - b);
@@ -33,6 +35,7 @@ export async function POST(req: Request) {
     return Response.json({
       count: awards.length,
       isvz: isvzInfo(),
+      smlouvy: smlouvyInfo(),
       offers: withOffers.length
         ? {
             avg: withOffers.reduce((s, a) => s + a.offers!, 0) / withOffers.length,

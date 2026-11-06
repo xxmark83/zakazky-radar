@@ -1,4 +1,5 @@
 import { isvzByWinner, mergeAwards } from "@/lib/sources/isvz";
+import { smlouvyByWinner } from "@/lib/sources/smlouvy";
 import { fetchTedByWinner } from "@/lib/sources/ted";
 
 export const maxDuration = 60;
@@ -8,7 +9,7 @@ export async function POST(req: Request) {
   const { name, slovakia } = (await req.json()) as { name: string; slovakia?: boolean };
   try {
     const ted = await fetchTedByWinner(name, 1825, slovakia ? ["CZE", "SVK"] : ["CZE"]);
-    const awards = mergeAwards(isvzByWinner(name), ted).sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""));
+    const awards = mergeAwards(isvzByWinner(name), ted, smlouvyByWinner(name)).sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""));
     const czk = awards.filter((a) => a.value && a.currency === "CZK");
     const buyers = new Map<string, number>();
     for (const a of awards) buyers.set(a.buyer, (buyers.get(a.buyer) ?? 0) + 1);

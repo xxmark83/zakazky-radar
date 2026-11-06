@@ -54,9 +54,14 @@ export function isvzByWinner(name: string, days = 1825): Award[] {
     .map(toAward);
 }
 
-/** Stejné řízení bývá v TED i v ISVZ – necháme ISVZ (má cenu smlouvy a počet nabídek). */
-export function mergeAwards(isvz: Award[], ted: Award[]): Award[] {
+/** Stejné řízení bývá ve více zdrojích – necháme první (ISVZ má cenu smlouvy a počet nabídek). */
+export function mergeAwards(...lists: Award[][]): Award[] {
   const key = (a: Award) => `${norm(a.title).slice(0, 40)}|${norm(a.buyer).slice(0, 12)}`;
-  const seen = new Set(isvz.map(key));
-  return [...isvz, ...ted.filter((a) => !seen.has(key(a)))];
+  const seen = new Set<string>();
+  return lists.flat().filter((a) => {
+    const k = key(a);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }

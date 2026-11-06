@@ -20,8 +20,10 @@ jak sedí na moji nabídku (Kotva CRM, vzdělávací portál…).
 | NEN – nen.nipez.cz | veřejný seznam zakázek (hledání v názvu) | není potřeba |
 | **Profily zadavatelů** – všech cca 12 000 v ČR | kraje, města, obce, školy, nemocnice, státní firmy na Tender areně, eGORDIONu, E-ZAKu, Vhodném uveřejnění, NEN… vč. zakázek malého rozsahu | není potřeba |
 | Tender arena + eGORDION – seznam nových za 24 h | všechny nové zakázky ~4 200 zadavatelů jedním dotazem denně | není potřeba |
-| **Otevřená data ISVZ** – isvz.nipez.cz/opendata | výsledky řízení (i podlimitní): vítěz, cena smlouvy, počet nabídek; měsíčně, jen IT, software, vzdělávání (`scripts/isvz.mjs`) | není potřeba |
+| **Otevřená data ISVZ** – isvz.nipez.cz/opendata | výsledky řízení (i podlimitní): vítěz, cena smlouvy, počet nabídek; měsíčně, jen IT, software, vzdělávání (`scripts/isvz.mjs`). Server z GitHubu neodpovídá, stahuje se z běžného počítače. | není potřeba |
 | Hlídač státu – hlidacstatu.cz/api | doplňkově | token zdarma po registraci |
+| **Dynamické nákupní systémy** – z otevřených dat ISVZ | DNS z IT a vzdělávání, do kterých se lze přidat kdykoli; ukazují se mezi zakázkami | není potřeba |
+| **Registr smluv** – data.smlouvy.gov.cz | smlouvy z IT (i bez soutěže, nad 50 tis. Kč) pro průzkum trhu a profil konkurenta; denně (`scripts/smlouvy.mjs`) | není potřeba |
 | TED – Slovensko (volitelně v Nastavení) | slovenské nadlimitní zakázky + výsledky | není potřeba |
 
 ### Jak se sbírají profily zadavatelů
@@ -60,6 +62,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.12** – dynamické nákupní systémy mezi zakázkami, Registr smluv v průzkumu trhu a profilu konkurenta,
+  šetrný sběr z Vhodného uveřejnění (Crawl-Delay 30 s, opravené adresy).
 - **1.11** – výsledky řízení z otevřených dat ISVZ v Průzkumu trhu a v profilu konkurenta (i malé zakázky, počet
   nabídek), kraj u TED z oficiálního kódu NUTS, veřejné repo a večerní sběr profilů až 5 hodin.
 - **1.10** – zdroje ve dvou skupinách: Česká republika (vždy) a Slovenská republika (volitelně v Nastavení, zatím TED).

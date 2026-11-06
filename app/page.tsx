@@ -330,6 +330,7 @@ export default function Home() {
           <span className="chip">
             {server.profily ? `${server.profily.ok.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}
           </span>
+          <span className="chip">dynamické nákupní systémy</span>
           {prefs.slovakia && (
             <>
               <span className="chip-group">Slovensko</span>
@@ -955,7 +956,7 @@ function TenderCard(props: {
       <div className="tender-body">
         <div className="tags">
           {fresh && <span className="tag fresh">nová</span>}
-          <span className="tag">{t.source}</span>
+          <span className="tag">{t.source === "DNS" ? "Dynamický nákupní systém" : t.source}</span>
           {t.country === "SK" && <span className="tag sk">SK</span>}
           {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
           {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
@@ -975,7 +976,14 @@ function TenderCard(props: {
         {t.reason && <p className="reason">{t.reason}</p>}
         <div className="tender-foot">
           <div className="foot-left">
-            <Deadline d={t.deadline} />
+            {t.source === "DNS" ? (
+              <span className="deadline">
+                přidat se lze kdykoli
+                {t.deadline && <small>systém běží do {new Date(t.deadline).toLocaleDateString("cs-CZ")}</small>}
+              </span>
+            ) : (
+              <Deadline d={t.deadline} />
+            )}
             <button className="link" onClick={() => openDetail(t)}>
               detail a AI rozbor
             </button>
@@ -1504,6 +1512,7 @@ function Report(props: {
 type Market = {
   count: number;
   isvz: { months: string[]; count: number } | null;
+  smlouvy: { count: number } | null;
   offers: { avg: number; single: number; count: number } | null;
   prices: { count: number; p25: number | null; median: number | null; p75: number | null; min: number | null; max: number | null };
   topWinners: { name: string; wins: number; total: number }[];
@@ -1537,7 +1546,7 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
     <>
       <p className="note lead">
         Kdo a za kolik vyhrál podobné zakázky: výsledky řízení z otevřených dat ISVZ (i malé zakázky, cena smlouvy, počet
-        nabídek) a z TED. Ukáže reálné ceny a konkurenci.
+        nabídek), z TED a smlouvy z Registru smluv (i bez soutěže). Ukáže reálné ceny a konkurenci.
       </p>
       <div className="row" style={{ marginTop: 8 }}>
         <div>
@@ -1592,7 +1601,8 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
           {data.isvz && data.isvz.months.length > 0 && (
             <p className="note">
               ISVZ: {data.isvz.count.toLocaleString("cs-CZ")} smluv z IT, softwaru a vzdělávání, {data.isvz.months[0]} až{" "}
-              {data.isvz.months.at(-1)}. Ceny jsou bez DPH.
+              {data.isvz.months.at(-1)}
+              {data.smlouvy ? `, Registr smluv: ${data.smlouvy.count.toLocaleString("cs-CZ")} smluv z IT` : ""}. Ceny jsou bez DPH.
             </p>
           )}
 
@@ -1709,7 +1719,7 @@ function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean
         </div>
         <h2 className="drawer-title">{name}</h2>
         <p className="drawer-buyer">
-          Výhry za posledních 5 let: ISVZ (české zakázky z IT, softwaru a vzdělávání) a TED (
+          Výhry a smlouvy: ISVZ a Registr smluv (české zakázky a smlouvy z IT) a TED (
           {slovakia ? "Česko a Slovensko" : "Česko"}, nad evropským limitem)
         </p>
         {error && <div className="warn">{error}</div>}
@@ -1772,7 +1782,7 @@ function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean
                 </a>
               ))
             ) : (
-              <p className="note">Žádná výhra v ISVZ ani TED. Zakázky malého rozsahu se do registru hlásí jen zčásti.</p>
+              <p className="note">Žádná výhra ani smlouva. Zakázky malého rozsahu se do registrů hlásí jen zčásti.</p>
             )}
           </>
         )}
