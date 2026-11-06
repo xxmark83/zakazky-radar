@@ -107,7 +107,9 @@ try {
       details++;
     } catch (e) {
       if (e instanceof Blocked) throw e;
-      console.log(`${t.url}: ${e.message}`);
+      // „externí zakázky“ (z jiných portálů) mají detail jen po přihlášení – necháme údaje z RSS a dál to nezkoušíme
+      if (/HTTP (401|404|410)/.test(e.message)) byId.set(t.id, { ...t, detail: true });
+      else console.log(`${t.url}: ${e.message}`);
     }
   }
 } catch (e) {

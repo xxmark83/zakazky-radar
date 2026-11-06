@@ -1,20 +1,40 @@
 // Service worker Zakázek radaru. Statické soubory Next.js (/_next/static, mají v názvu otisk obsahu)
 // bere z mezipaměti, takže appka z plochy naběhne rychle. Stránky a API jdou vždy na server – data jsou čerstvá.
-const CACHE = "zr-static-v2";
+const CACHE = "zr-static-v3";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== DATA).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
 
+// offline: stránka appky a uložená data (stav, sledovaní) – vždy napřed ze sítě, bez sítě z poslední kopie
+const DATA = "zr-data-v1";
+const OFFLINE = ["/api/state", "/api/buyers", "/api/competitors"];
+
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== "GET" || url.origin !== location.origin || !url.pathname.startsWith("/_next/static/")) return;
+  if (e.request.method !== "GET" || url.origin !== location.origin) return;
+  if (e.request.mode === "navigate" || OFFLINE.includes(url.pathname)) {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          // přihlašovací stránku (přesměrování) neukládat
+          if (res.ok && !res.redirected) {
+            const copy = res.clone();
+            caches.open(DATA).then((c) => c.put(e.request.mode === "navigate" ? "/" : url.pathname, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request.mode === "navigate" ? "/" : url.pathname).then((hit) => hit || Response.error())),
+    );
+    return;
+  }
+  if (!url.pathname.startsWith("/_next/static/")) return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const hit = await cache.match(e.request);

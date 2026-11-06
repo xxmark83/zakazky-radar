@@ -631,6 +631,22 @@ label.link.upload { display: inline; margin: 0; cursor: pointer; color: var(--ac
 .outcome { margin-top: 14px; display: grid; gap: 2px; }
 .outcome label { margin-top: 10px; }
 
+/* vysvětlení skóre */
+button.score-col { border: 0; background: none; padding: 0; cursor: help; border-radius: 12px; }
+button.score-col:active { transform: none; }
+.tender { position: relative; }
+.why {
+  position: absolute; z-index: 6; top: 70px; left: 12px; width: min(360px, calc(100% - 24px)); padding: 12px 14px;
+  border-radius: 12px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  font-size: 13.5px; cursor: default; animation: fade .12s;
+}
+.why ul { margin: 6px 0; padding-left: 18px; display: grid; gap: 3px; }
+/* detail: Zpět na mobilu, export */
+button.back { display: none; border: 0; background: none; padding: 4px 0; color: var(--accent); font-weight: 600; }
+.export { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 22px; }
+.export button { display: inline-flex; align-items: center; gap: 8px; }
+.warn.offline { margin: 0 0 14px; }
+
 /* přihlášení */
 main.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .login-card { width: min(380px, 100%); padding: 28px 24px; display: grid; }
@@ -671,7 +687,19 @@ h3.sec, .drawer-title { scroll-margin-top: 64px; }
 main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 
 @media (max-width: 560px) {
-  .drawer { padding: 14px 16px 40px; }
+  .drawer { padding: 0 16px 40px; }
+  /* detail přes celou obrazovku jako stránka: nahoře lišta se Zpět, křížek není potřeba */
+  .drawer-bg { background: none; }
+  .drawer { box-shadow: none; animation: slide .18s ease-out; }
+  .drawer-head {
+    position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line); align-items: center;
+  }
+  .drawer-head:has(button.back) button.icon { display: none; }
+  button.back { display: inline-block; }
+  .drawer-head .tags { margin: 0; }
+  .jump { top: 52px; }
   .ai-cta { flex-wrap: wrap; }
   .ai-cta button.primary { width: 100%; }
   /* záložky dole, kam dosáhne palec; nahoře zůstane logo a nastavení */

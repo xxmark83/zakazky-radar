@@ -1,6 +1,9 @@
+import { isvzByWinner } from "./sources/isvz";
 import { profilyByBuyer } from "./sources/profily";
-import type { WatchedBuyer } from "./store";
-import type { ScoredTender, Tender } from "./types";
+import { smlouvyByWinner } from "./sources/smlouvy";
+import { fetchTedByWinner } from "./sources/ted";
+import type { WatchedBuyer, WatchedCompetitor } from "./store";
+import type { Award, ScoredTender, Tender } from "./types";
 
 // Nové zakázky sledovaných zadavatelů: z profilů zadavatelů a Vhodného uveřejnění (podle názvu)
 // a s tokenem i z Hlídače státu (podle IČO, zachytí i NEN a Věstník).
@@ -57,4 +60,24 @@ export async function buyerTenders(buyers: WatchedBuyer[]): Promise<ScoredTender
     })
     .sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""))
     .map((t) => ({ ...t, score: -1, reason: "", product: "" }));
+}
+
+/** Čerstvé výhry a smlouvy sledovaných konkurentů (TED, Registr smluv, ISVZ) za posledních `days` dní. */
+export async function competitorWins(list: WatchedCompetitor[], days = 14): Promise<{ name: string; awards: Award[] }[]> {
+  const out = await Promise.all(
+    list.map(async (c) => {
+      const ted = await fetchTedByWinner(c.name, days).catch(() => []);
+      const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+      const all = [...ted, ...smlouvyByWinner(c.name, days), ...isvzByWinner(c.name, days)].filter(
+        (a) => !a.published || a.published >= since,
+      );
+      const seen = new Set<string>();
+      const awards = all.filter((a) => {
+        const k = `${a.title.toLowerCase()}|${a.buyer.toLowerCase()}`;
+        return !seen.has(k) && Boolean(seen.add(k));
+      });
+      return { name: c.name, awards };
+    }),
+  );
+  return out.filter((x) => x.awards.length);
 }

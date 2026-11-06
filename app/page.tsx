@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
+import { makeDocx, type Block } from "@/lib/docx";
 import { MB_LOGO } from "@/lib/logo";
 import { PRESETS } from "@/lib/presets";
 import { diff } from "@/lib/diff";
@@ -267,6 +268,50 @@ export default function Home() {
     loadBuyers();
   };
 
+  // sledovaní konkurenti
+  const [competitors, setCompetitors] = useState<{ name: string; added: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/competitors")
+      .then((r) => r.json())
+      .then((d) => d.competitors && setCompetitors(d.competitors))
+      .catch(() => {});
+  }, []);
+  const toggleCompetitor = async (name: string) => {
+    const watched = competitors.some((c) => c.name === name);
+    const res = await post("/api/competitors", watched ? { remove: name } : { add: name });
+    const d = await res.json();
+    if (!res.ok) return setToast({ text: d.error ?? "Nepodařilo se uložit" });
+    setCompetitors(d.competitors);
+    setToast({ text: watched ? `Už nesleduješ ${name}` : `Sleduješ ${name} – dám vědět, když vyhraje` });
+  };
+
+  // offline: appka z plochy ukáže poslední uložená data (service worker), tady jen upozornění
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const on = () => setOffline(!navigator.onLine);
+    on();
+    window.addEventListener("online", on);
+    window.addEventListener("offline", on);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", on);
+    };
+  }, []);
+
+  // detail jako krok v historii: tlačítko/gesto Zpět na telefonu detail zavře, místo aby odešlo z appky
+  const detailOpen = Boolean(detail);
+  useEffect(() => {
+    if (!detailOpen) return;
+    // stav Next.js zachovat (bez něj by Next při Zpět načetl stránku znovu)
+    history.pushState({ ...history.state, zrDetail: true }, "");
+    const back = () => setDetail(null);
+    window.addEventListener("popstate", back);
+    return () => {
+      window.removeEventListener("popstate", back);
+      if (history.state?.zrDetail) history.back();
+    };
+  }, [detailOpen]);
+
   // poslední návštěva: co je novější, je „nové od minula“. Pauza nad 30 min = nová návštěva.
   const [since, setSince] = useState<string | null>(null);
   useEffect(() => {
@@ -464,7 +509,9 @@ export default function Home() {
           </div>
         </div>
       </header>
+    <KeywordsCtx.Provider value={form.keywords}>
     <main className={`${tab === "search" && hasResults ? "compact" : ""} ${split ? "split" : ""}`}>
+      {offline && <div className="warn offline">Jsi offline – vidíš poslední uložená data. Hledání a AI počkají na připojení.</div>}
       <PullToRefresh disabled={Boolean(detail || settings || competitor)} />
       <section className="hero">
         <h1>{HEADINGS[tab]}</h1>
@@ -530,12 +577,22 @@ export default function Home() {
       )}
       {tab === "market" && <MarketTab form={form} slovakia={prefs.slovakia} openCompetitor={setCompetitor} />}
       {tab === "watch" && (
-        <WatchTab form={form} server={server} setServer={setServer} buyers={buyers} toggleBuyer={toggleBuyer} />
+        <WatchTab
+          form={form}
+          server={server}
+          setServer={setServer}
+          buyers={buyers}
+          toggleBuyer={toggleBuyer}
+          competitors={competitors}
+          toggleCompetitor={toggleCompetitor}
+          openCompetitor={setCompetitor}
+        />
       )}
       <footer className="foot">
         Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
       </footer>
     </main>
+    </KeywordsCtx.Provider>
       {settings && (
         <Settings
           close={() => setSettings(false)}
@@ -563,7 +620,15 @@ export default function Home() {
           close={() => setDetail(null)}
         />
       )}
-      {competitor && <Competitor name={competitor} slovakia={prefs.slovakia} close={() => setCompetitor(null)} />}
+      {competitor && (
+        <Competitor
+          name={competitor}
+          slovakia={prefs.slovakia}
+          watching={competitors.some((c) => c.name === competitor)}
+          toggle={() => toggleCompetitor(competitor)}
+          close={() => setCompetitor(null)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           <span>{toast.text}</span>
@@ -1330,6 +1395,57 @@ function Deadline({ d, short, icon }: { d: string | null; short?: boolean; icon?
 }
 
 const SWIPE = 90; // px, od kolika se potažení počítá
+// klíčová slova aktuálního hledání – pro vysvětlení skóre na kartě
+const KeywordsCtx = createContext("");
+
+// „Proč 92?“: oblast, shoda slov s tím, co hledáš, a zdůvodnění AI
+function ScoreWhy({ t, close }: { t: ScoredTender; close: () => void }) {
+  const keywords = useContext(KeywordsCtx);
+  const text = norm(`${t.title} ${t.description}`);
+  // shoda i v jiném tvaru slova: porovnáváme bez posledních dvou písmen („portálu“ ~ „portál“)
+  const stem = (k: string) => (k.length > 5 ? k.slice(0, -2) : k);
+  const hits = keywords
+    .split(",")
+    .map((k) => k.trim())
+    .filter((k) => k && text.includes(stem(norm(k))));
+  return (
+    <div className="why" role="dialog" aria-label="Proč toto skóre" onClick={(e) => e.stopPropagation()}>
+      <b>Proč {t.score < 0 ? "bez skóre" : t.score}?</b>
+      {t.score < 0 ? (
+        <p>AI tuto zakázku nehodnotila (vyčerpaný limit nebo chybí klíč).</p>
+      ) : (
+        <ul>
+          <li>
+            <span className="hint">Hodnocení:</span> {scoreLabel(t.score)} (
+            {t.score >= 75 ? "75 a víc = sedí" : t.score >= 50 ? "50–74 = částečně" : "pod 50 = slabě"})
+          </li>
+          {t.product && t.product !== "–" && (
+            <li>
+              <span className="hint">Co z nabídky sedí:</span> {t.product}
+            </li>
+          )}
+          <li>
+            <span className="hint">Shoda slov:</span>{" "}
+            {hits.length ? hits.slice(0, 6).join(", ") : "žádné z klíčových slov, AI soudila podle obsahu"}
+          </li>
+          {t.reason && (
+            <li>
+              <span className="hint">AI:</span> {t.reason}
+            </li>
+          )}
+          {t.value ? (
+            <li>
+              <span className="hint">Hodnota:</span> {money(t.value, t.currency)}
+            </li>
+          ) : null}
+        </ul>
+      )}
+      <button className="link" onClick={close}>
+        Zavřít
+      </button>
+    </div>
+  );
+}
 
 function TenderCard(props: {
   t: ScoredTender;
@@ -1340,6 +1456,7 @@ function TenderCard(props: {
   selected?: boolean;
 }) {
   const { t, fresh, status, setStatus, openDetail, selected } = props;
+  const [why, setWhy] = useState(false);
   // potažení prstem: doprava = Zvažuji, doleva = Ne. Svislý pohyb nechá stránku rolovat.
   const [dx, setDx] = useState(0);
   const touch = useRef<{ x: number; y: number; lock?: "h" | "v" } | null>(null);
@@ -1390,12 +1507,21 @@ function TenderCard(props: {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        <div className="score-col">
+        <button
+          className="score-col"
+          title="Proč toto skóre?"
+          aria-expanded={why}
+          onClick={(e) => {
+            e.stopPropagation();
+            setWhy(!why);
+          }}
+        >
           <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
             <span>{t.score < 0 ? "–" : t.score}</span>
           </div>
           <small style={{ color: scoreColor(t.score) }}>{scoreLabel(t.score)}</small>
-        </div>
+        </button>
+        {why && <ScoreWhy t={t} close={() => setWhy(false)} />}
         <div className="tender-body">
           <div className="tender-top">
             <div className="tags">
@@ -1551,6 +1677,46 @@ function Detail(props: {
   }
   const analyze = () => runAi("analysis");
 
+  // všechny podklady k nabídce v jednom Wordu
+  function exportWord() {
+    const checks = kept.checks[t.id];
+    const items = [...(analysis?.checklist ?? []), ...(checks?.extra ?? [])];
+    const blocks: Block[] = [
+      { h1: t.title || "(bez názvu)" },
+      {
+        p: [
+          `Zadavatel: ${t.buyer}`,
+          `Lhůta: ${t.deadline ? new Date(t.deadline).toLocaleDateString("cs-CZ") : "neuvedena"}`,
+          `Předpokládaná hodnota: ${money(t.value, t.currency)}`,
+          `Odkaz: ${t.url}`,
+        ].join("\n"),
+        muted: true,
+      },
+    ];
+    if (analysis) {
+      blocks.push({ h2: `Rozbor: ${VERDICT[analysis.verdict].label}` }, { p: `${analysis.verdictReason}\n\n${analysis.summary}` });
+      if (analysis.requirements.length) blocks.push({ h2: "Podmínky a kvalifikace" }, { bullets: analysis.requirements });
+      if (analysis.criteria?.length) blocks.push({ h2: "Hodnoticí kritéria" }, { bullets: analysis.criteria });
+      if (analysis.risks.length) blocks.push({ h2: "Rizika" }, { bullets: analysis.risks });
+      blocks.push({ h2: "Co nabídnout" }, { p: analysis.offer });
+      if (analysis.questions.length) blocks.push({ h2: "Dotazy na zadavatele" }, { bullets: analysis.questions });
+    }
+    if (items.length) blocks.push({ h2: "Co připravit do nabídky" }, { checks: items.map((i) => ({ text: i, done: Boolean(checks?.done[i]) })) });
+    if (draft) {
+      blocks.push({ h2: "Osnova nabídky" });
+      for (const o of draft.outline) blocks.push({ p: o.heading }, { bullets: o.points });
+      blocks.push({ h2: "Průvodní dopis" }, { p: draft.coverLetter });
+    }
+    if (kept.notes[t.id]) blocks.push({ h2: "Poznámky" }, { p: kept.notes[t.id] });
+    if (!analysis && !draft) blocks.push({ p: "Tip: udělej nejdřív AI rozbor a návrh nabídky, podklady budou úplnější.", muted: true });
+    const url = URL.createObjectURL(makeDocx(blocks));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `podklady-${(t.title || "zakazka").slice(0, 40).replace(/[^\p{L}\p{N}]+/gu, "-")}.docx`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   // vlastní dokumentace (když ji portál nepustí): PDF, Word nebo ZIP, dohromady do 4 MB (limit požadavku)
   async function upload(files: FileList | null) {
     if (!files?.length) return;
@@ -1606,6 +1772,9 @@ function Detail(props: {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="drawer-head">
+          <button className="back" onClick={close}>
+            ← Zpět
+          </button>
           <div className="tags">
             <span className="tag">{t.source}</span>
             {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
@@ -1773,6 +1942,13 @@ function Detail(props: {
         ) : null}
 
         <PriceHelper t={t} results={kept.results} marked={marked} />
+
+        <div className="export">
+          <button onClick={exportWord}>
+            <Icon n="download" size={16} /> Stáhnout podklady do Wordu
+          </button>
+          <span className="hint">rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
+        </div>
 
         <h3 className="sec">Návrh nabídky</h3>
         {!draft && busy !== "draft" && (
@@ -2807,7 +2983,8 @@ type CompetitorData = {
   awards: Award[];
 };
 
-function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean; close: () => void }) {
+function Competitor(props: { name: string; slovakia: boolean; watching: boolean; toggle: () => void; close: () => void }) {
+  const { name, slovakia, watching, toggle, close } = props;
   const [data, setData] = useState<CompetitorData | null>(null);
   const [error, setError] = useState("");
 
@@ -2841,6 +3018,10 @@ function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean
           </button>
         </div>
         <h2 className="drawer-title">{name}</h2>
+        <button className={`ghost follow ${watching ? "on" : ""}`} onClick={toggle}>
+          <Icon n={watching ? "check" : "eye"} size={14} />
+          {watching ? "Sleduješ – dám vědět, když vyhraje" : "Sledovat konkurenta"}
+        </button>
         <p className="drawer-buyer">
           Výhry a smlouvy: ISVZ a Registr smluv (české zakázky a smlouvy z IT) a TED (
           {slovakia ? "Česko a Slovensko" : "Česko"}, nad evropským limitem)
@@ -2920,8 +3101,11 @@ function WatchTab(props: {
   setServer: (s: ServerState) => void;
   buyers: Buyers;
   toggleBuyer: (name: string) => void;
+  competitors: { name: string; added: string }[];
+  toggleCompetitor: (name: string) => void;
+  openCompetitor: (name: string) => void;
 }) {
-  const { form, server, setServer, buyers, toggleBuyer } = props;
+  const { form, server, setServer, buyers, toggleBuyer, competitors, toggleCompetitor, openCompetitor } = props;
   const profiles = server.profiles ?? [];
   const [msg, setMsg] = useState("");
 
@@ -2973,6 +3157,28 @@ function WatchTab(props: {
                     <span className="hint"> · {buyers.tenders.filter((t) => t.buyer === b.name).length} otevřených</span>
                   </span>
                   <button className="link state" onClick={() => toggleBuyer(b.name)}>
+                    Přestat sledovat
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="note">Zatím nikoho nesleduješ.</p>
+            )}
+          </div>
+          <h2>Sledovaní konkurenti</h2>
+          <p className="note">
+            Ráno dám vědět, když vyhrají zakázku nebo podepíšou smlouvu (TED, Registr smluv, ISVZ). Přidáš je v profilu
+            konkurenta – klikni na jméno dodavatele v Průzkumu trhu nebo v historii zadavatele.
+          </p>
+          <div className="card">
+            {competitors.length ? (
+              competitors.map((c) => (
+                <div key={c.name} className="check ok">
+                  <Icon n="eye" size={16} />
+                  <button className="link name" onClick={() => openCompetitor(c.name)}>
+                    {c.name}
+                  </button>
+                  <button className="link state" onClick={() => toggleCompetitor(c.name)}>
                     Přestat sledovat
                   </button>
                 </div>

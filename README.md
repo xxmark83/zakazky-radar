@@ -63,6 +63,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.24** – „Proč 92?“ po kliknutí na skóre, offline režim (poslední data bez signálu), detail na mobilu přes celou
+  obrazovku se Zpět (i systémové Zpět), sledování konkurentů (výhry ráno v e-mailu a na telefonu), pondělní přehled
+  týdne e-mailem, export podkladů nabídky do Wordu; Vhodné uveřejnění: externí zakázky bez opakovaného čtení detailu.
 - **1.23** – AI rozbor čte zadávací dokumentaci (odkazy z XML profilu zadavatele nebo ze stránky zakázky; PDF celé,
   z Wordu text, ZIP rozbalí; jde i nahrát ručně), hodnoticí kritéria, checklist „co připravit“ s odškrtáváním,
   doporučená cena (předpokládaná hodnota, ceny podobných zakázek, vlastní výsledky), zápis výsledku po výhře či prohře.

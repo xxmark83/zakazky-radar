@@ -1,4 +1,4 @@
-import type { Change, ScoredTender } from "./types";
+import type { Award, Change, ScoredTender } from "./types";
 
 const FIELD: Record<Change["field"], string> = { deadline: "lhůta", title: "název", value: "hodnota", description: "popis" };
 
@@ -10,6 +10,7 @@ export async function sendAlert(
     changed: { tender: ScoredTender; changes: Change[] }[];
     deadlines: ScoredTender[];
     buyers?: { buyer: string; tenders: ScoredTender[] }[];
+    competitors?: { name: string; awards: Award[] }[];
   } = { changed: [], deadlines: [] },
 ) {
   const key = process.env.RESEND_API_KEY;
@@ -49,17 +50,29 @@ ${c.changes.map((ch) => `<div style="font-size:14px">${FIELD[ch.field]}: <s>${es
         )
         .join("")}`
     : "";
+  const competitors = extra.competitors ?? [];
+  const competitorsHtml = competitors.length
+    ? `<h3 style="margin:20px 0 8px">Sledovaní konkurenti</h3>${competitors
+        .flatMap((c) =>
+          c.awards.map(
+            (a) => `<div style="${box}"><b>${esc(c.name)}</b> – <a href="${esc(a.url)}" style="color:#16181d">${esc(a.title)}</a>
+<div style="color:#666;font-size:13px">${esc(a.buyer)} · ${a.value ? `${Math.round(a.value).toLocaleString("cs-CZ")} ${a.currency ?? ""}` : "cena neuvedena"} · ${a.published ?? ""}</div></div>`,
+          ),
+        )
+        .join("")}`
+    : "";
   const parts = [
     count ? `${count} nových zakázek` : "",
     extra.deadlines.length ? `${extra.deadlines.length}× blížící se lhůta` : "",
     extra.changed.length ? `${extra.changed.length}× změna` : "",
     buyers.length ? `${buyers.reduce((n, g) => n + g.tenders.length, 0)}× od sledovaných zadavatelů` : "",
+    competitors.length ? `${competitors.reduce((n, c) => n + c.awards.length, 0)}× konkurence` : "",
   ].filter(Boolean);
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px">
 <h2 style="margin:0 0 4px">Zakázky radar: ${parts.join(", ")}</h2>
 <p style="color:#666;margin:0 0 16px"><a href="${esc(appUrl)}">Otevřít aplikaci</a></p>
-${deadlinesHtml}${changesHtml}${buyersHtml}
+${deadlinesHtml}${changesHtml}${buyersHtml}${competitorsHtml}
 ${groups
   .map(
     (g) => `<h3 style="margin:20px 0 8px">${esc(g.profile)}</h3>
@@ -76,15 +89,63 @@ ${t.kind === "upcoming" ? '<span style="color:#1f5eff"> připravovaná</span>' :
   )
   .join("")}</div>`;
 
+  await send(`Zakázky radar: ${parts.join(", ")}`, html);
+}
+
+async function send(subject: string, html: string) {
+  const key = process.env.RESEND_API_KEY;
+  const to = process.env.ALERT_EMAIL;
+  if (!key || !to) throw new Error("Chybí RESEND_API_KEY nebo ALERT_EMAIL");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: process.env.ALERT_FROM ?? "Zakázky radar <onboarding@resend.dev>",
-      to: [to],
-      subject: `Zakázky radar: ${parts.join(", ")}`,
-      html,
-    }),
+    body: JSON.stringify({ from: process.env.ALERT_FROM ?? "Zakázky radar <onboarding@resend.dev>", to: [to], subject, html }),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+export type Weekly = {
+  counts: { maybe: number; bid: number; sent: number; won: number; lost: number };
+  deadlines: ScoredTender[];
+  results: { title: string; won: boolean; price: number | null; winner: string }[];
+  buyers: number;
+  competitorWins: number;
+  spend: number | null;
+};
+
+/** Pondělní přehled týdne: rozpracované zakázky, lhůty na 14 dní, výsledky, sledovaní, útrata. */
+export async function sendWeekly(w: Weekly, appUrl: string) {
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  const tile = (v: string | number, l: string) =>
+    `<td style="padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px"><div style="font-size:22px;font-weight:800">${v}</div><div style="color:#666;font-size:13px">${l}</div></td>`;
+  const decided = w.counts.won + w.counts.lost;
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px">
+<h2 style="margin:0 0 4px">Týden v zakázkách</h2>
+<p style="color:#666;margin:0 0 16px"><a href="${esc(appUrl)}">Otevřít aplikaci</a></p>
+<table style="border-collapse:separate;border-spacing:6px;width:100%"><tr>
+${tile(w.counts.maybe, "zvažuješ")}${tile(w.counts.bid, "připravuješ")}${tile(w.counts.sent, "podáno, čeká")}
+</tr><tr>
+${tile(decided ? `${Math.round((w.counts.won / decided) * 100)} %` : "–", `úspěšnost (${w.counts.won} z ${decided})`)}${tile(w.buyers, "zakázek od sledovaných zadavatelů")}${tile(w.competitorWins, "výher konkurence za týden")}
+</tr></table>
+<h3 style="margin:20px 0 8px">Lhůty v příštích 14 dnech</h3>
+${
+  w.deadlines.length
+    ? w.deadlines
+        .map(
+          (t) =>
+            `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px"><a href="${esc(t.url)}" style="font-weight:600;color:#16181d">${esc(t.title)}</a><div style="color:#666;font-size:13px">${esc(t.buyer)} · lhůta ${t.deadline}</div></div>`,
+        )
+        .join("")
+    : '<p style="color:#666">Žádné.</p>'
+}
+${
+  w.results.length
+    ? `<h3 style="margin:20px 0 8px">Výsledky za týden</h3>${w.results
+        .map((r) => `<div style="font-size:14px;margin-bottom:4px">${r.won ? "✅ Výhra" : "❌ Nevyšlo"} – ${esc(r.title)}${r.won ? "" : r.winner ? ` (vyhrál ${esc(r.winner)})` : ""}${r.price ? `, ${Math.round(r.price).toLocaleString("cs-CZ")} Kč` : ""}</div>`)
+        .join("")}`
+    : ""
+}
+${w.spend !== null ? `<p style="color:#666;font-size:13px;margin-top:20px">Útrata za AI tento měsíc: ${w.spend.toFixed(2)} $</p>` : ""}
+</div>`;
+  await send("Zakázky radar: týden v zakázkách", html);
 }

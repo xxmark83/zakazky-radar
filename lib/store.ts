@@ -99,6 +99,15 @@ export async function saveBuyers(list: WatchedBuyer[]) {
   if (redis) await redis.set("zr:buyers", list);
 }
 
+// sledovaní konkurenti: upozornit, když vyhrají nebo podepíšou smlouvu
+export type WatchedCompetitor = { name: string; added: string };
+export async function getCompetitors(): Promise<WatchedCompetitor[]> {
+  return redis ? ((await redis.get<WatchedCompetitor[]>("zr:competitors")) ?? []) : [];
+}
+export async function saveCompetitors(list: WatchedCompetitor[]) {
+  if (redis) await redis.set("zr:competitors", list);
+}
+
 // jen známé klíče z prohlížeče, ať se do databáze nedá zapsat cokoli
 export const UI_KEYS = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme", "zr-visit"];
 

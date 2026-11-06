@@ -1,11 +1,11 @@
-import { sendAlert } from "@/lib/email";
+import { sendAlert, sendWeekly } from "@/lib/email";
 import { sendPush } from "@/lib/push";
-import { buyerTenders } from "@/lib/watch";
+import { buyerTenders, competitorWins } from "@/lib/watch";
 import { PRESETS } from "@/lib/presets";
 import { runSearch } from "@/lib/search";
-import { filterUnseen, getBuyers, getKept, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
+import { filterUnseen, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
 import { changesFromProfily } from "@/lib/track";
-import type { Change, ScoredTender, Status, WatchedProfile } from "@/lib/types";
+import type { Award, Change, Outcome, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
 export const maxDuration = 300;
 
@@ -85,6 +85,18 @@ export async function GET(req: Request) {
     log.push(`sledovaní zadavatelé: ${buyerNews.reduce((n, g) => n + g.tenders.length, 0)} nových`);
   }
 
+  // sledovaní konkurenti: nové výhry a smlouvy (id s předponou, ať se nepletou se zakázkami)
+  const competitorNews: { name: string; awards: Award[] }[] = [];
+  if (redis) {
+    const wins = await competitorWins(await getCompetitors());
+    const unseen = await filterUnseen(wins.flatMap((c) => c.awards.map((a) => `c:${a.id}`)));
+    for (const c of wins) {
+      const fresh = c.awards.filter((a) => unseen.has(`c:${a.id}`));
+      if (fresh.length) competitorNews.push({ name: c.name, awards: fresh });
+    }
+    log.push(`konkurenti: ${competitorNews.reduce((n, c) => n + c.awards.length, 0)} nových výher`);
+  }
+
   // upozornění na telefon: shrnutí nových, každá blížící se lhůta, každý sledovaný zadavatel
   if (redis) {
     const count = groups.reduce((n, g) => n + g.tenders.length, 0);
@@ -101,16 +113,58 @@ export async function GET(req: Request) {
       pushed += await sendPush({ title: "Blíží se lhůta", body: `${t.deadline!.split("-").reverse().join(". ")} – ${t.title}`, url: "/", tag: `lhuta-${t.id}` });
     for (const g of buyerNews)
       pushed += await sendPush({ title: g.buyer, body: `Nová zakázka: ${g.tenders[0].title}`, url: "/", tag: `zadavatel-${g.buyer}` });
+    for (const c of competitorNews)
+      pushed += await sendPush({ title: `Konkurent: ${c.name}`, body: `Vyhrál: ${c.awards[0].title}`, url: "/", tag: `konkurent-${c.name}` });
     log.push(`upozornění na telefon: ${pushed}`);
   }
 
-  if (groups.length || changed.length || deadlines.length || buyerNews.length) {
+  const appUrlEarly = process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : new URL(req.url).origin;
+
+  // v pondělí navíc přehled týdne
+  if (redis && new Date().getUTCDay() === 1) {
+    try {
+      const state = await getState();
+      const statuses = (state.db ? state.statuses : {}) as Record<string, Status>;
+      const marked = await getMarkedTenders();
+      const kept = await getKept();
+      const count = (st: Status) => Object.values(statuses).filter((x) => x === st).length;
+      const in14 = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+      const week = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+      const byId = new Map(marked.map((t) => [t.id, t]));
+      await sendWeekly(
+        {
+          counts: { maybe: count("maybe"), bid: count("bid"), sent: count("sent"), won: count("won"), lost: count("lost") },
+          deadlines: marked
+            .filter((t) => ["maybe", "bid"].includes(statuses[t.id]) && t.deadline && t.deadline >= today && t.deadline <= in14)
+            .sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
+          results: Object.entries((kept?.results ?? {}) as Record<string, Outcome>)
+            .filter(([, r]) => r.date >= week)
+            .map(([id, r]) => ({ title: byId.get(id)?.title ?? id, won: r.winner === "my", price: r.price, winner: r.winner })),
+          buyers: (await buyerTenders(await getBuyers())).length,
+          competitorWins: (await competitorWins(await getCompetitors(), 7)).reduce((n, c) => n + c.awards.length, 0),
+          spend: await getSpend(),
+        },
+        appUrlEarly,
+      );
+      log.push("týdenní přehled odeslán");
+    } catch (e: any) {
+      log.push(`týdenní přehled selhal: ${e.message}`);
+    }
+  }
+
+  if (groups.length || changed.length || deadlines.length || buyerNews.length || competitorNews.length) {
     const appUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : new URL(req.url).origin;
     try {
-      await sendAlert(groups, appUrl, { changed, deadlines, buyers: buyerNews });
-      await markSeen([...groups, ...buyerNews].flatMap((g) => g.tenders.map((t) => t.id)));
+      await sendAlert(groups, appUrl, { changed, deadlines, buyers: buyerNews, competitors: competitorNews });
+      await markSeen([
+        ...[...groups, ...buyerNews].flatMap((g) => g.tenders.map((t) => t.id)),
+        ...competitorNews.flatMap((c) => c.awards.map((a) => `c:${a.id}`)),
+      ]);
       log.push("e-mail odeslán");
     } catch (e: any) {
       log.push(`e-mail selhal: ${e.message}`);
