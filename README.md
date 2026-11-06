@@ -62,6 +62,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.14** – přehlednější vzhled: ikony v záložkách a u voleb, číslo rozpracovaných zakázek u Moje zakázky,
+  souhrn hledání v dlaždicích, panel filtrů, který zůstává nahoře, karta zakázky s lhůtou vpravo nahoře
+  a údaji s ikonami (zadavatel, hodnota, kraj), celá karta otevírá detail, barevné sloupce nástěnky.
 - **1.13** – nová volba Kybernetická bezpečnost (GAP analýza NIS2, SIEM a SOC, endpoint, antivirus, EDR/XDR),
   krátké zkratky v průzkumu trhu jen jako celé slovo, Registr smluv sbírá i smlouvy z kyberbezpečnosti.
 - **1.12** – dynamické nákupní systémy mezi zakázkami, Registr smluv v průzkumu trhu a profilu konkurenta,

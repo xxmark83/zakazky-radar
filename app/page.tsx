@@ -18,11 +18,41 @@ const STATUS_LABEL: Record<Status, string> = {
   no: "Ne",
 };
 // tlačítka u zakázky ve výsledcích hledání
-const ACTIONS: { s: Status; label: string }[] = [
-  { s: "maybe", label: "Zvažuji" },
-  { s: "bid", label: "Podám" },
-  { s: "no", label: "Ne" },
+const ACTIONS: { s: Status; label: string; icon: IconName }[] = [
+  { s: "maybe", label: "Zvažuji", icon: "star" },
+  { s: "bid", label: "Podám", icon: "check" },
+  { s: "no", label: "Ne", icon: "x" },
 ];
+// tenké čárové ikony (24×24), aby se dalo rychle zorientovat bez čtení
+const ICONS = {
+  search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm10 2-4.35-4.35",
+  board: "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v13h-4z",
+  chart: "M3 3v18h18M8 17v-6M13 17V7M18 17v-4",
+  bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0",
+  building: "M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M2 21h20M8 7h4M8 11h4M8 15h4",
+  money: "M3 6h18v12H3zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  pin: "M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12Zm0-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-15v5l3 2",
+  sparkle: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z",
+  star: "M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z",
+  check: "M20 6 9 17l-5-5",
+  x: "M18 6 6 18M6 6l12 12",
+  download: "M12 3v12m0 0-4-4m4 4 4-4M4 21h16",
+  users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
+  cap: "M22 10 12 5 2 10l10 5 10-5ZM6 12v5c3 2 9 2 12 0v-5",
+  shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3-10 2 2 4-4",
+  arrow: "M5 12h14m-6-6 6 6-6 6",
+  radar: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-4a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm0-6 7-7",
+};
+type IconName = keyof typeof ICONS;
+function Icon({ n, size = 16 }: { n: IconName; size?: number }) {
+  return (
+    <svg className="ic" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+      <path d={ICONS[n]} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 type Tab = "search" | "board" | "market" | "watch";
 const TABS: Record<Tab, string> = {
   search: "Zakázky",
@@ -30,6 +60,7 @@ const TABS: Record<Tab, string> = {
   market: "Průzkum trhu",
   watch: "Hlídání",
 };
+const TAB_ICON: Record<Tab, IconName> = { search: "search", board: "board", market: "chart", watch: "bell" };
 
 type ServerState = {
   db: boolean;
@@ -280,6 +311,9 @@ export default function Home() {
     else if (s === "won") setToast({ text: "Gratuluji k výhře!" });
   };
 
+  // rozpracované zakázky – číslo u záložky Moje zakázky
+  const working = Object.values(statuses).filter((s) => s === "maybe" || s === "bid" || s === "sent").length;
+
   return (
     <>
       <header className="top">
@@ -294,8 +328,10 @@ export default function Home() {
           <nav className="tabs">
             {(Object.keys(TABS) as Tab[]).map((t) => (
               <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+                <Icon n={TAB_ICON[t]} />
                 <span className="long">{TABS[t]}</span>
                 <span className="short">{TAB_SHORT[t]}</span>
+                {t === "board" && working > 0 && <span className="badge">{working}</span>}
               </button>
             ))}
           </nav>
@@ -324,23 +360,18 @@ export default function Home() {
         </p>
         {tab !== "board" && (
         <div className="sources">
-          <span className="chip-group">Česko</span>
-          <span className="chip">TED</span>
-          <span className="chip">NEN</span>
-          <span className="chip">
-            {server.profily ? `${server.profily.ok.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}
+          <span>
+            <span className="live" aria-hidden="true" />
+            <b>Česko:</b> TED, NEN,{" "}
+            {server.profily ? `${server.profily.ok.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}, dynamické
+            nákupní systémy
           </span>
-          <span className="chip">dynamické nákupní systémy</span>
           {prefs.slovakia && (
-            <>
-              <span className="chip-group">Slovensko</span>
-              <span className="chip">TED</span>
-            </>
+            <span>
+              <b>Slovensko:</b> TED
+            </span>
           )}
-          {server.profily && (
-            <span className="chip muted">aktualizováno {new Date(server.profily.updated).toLocaleDateString("cs-CZ")}</span>
-          )}
-          {server.db && <span className="chip muted">databáze připojena</span>}
+          {server.profily && <span className="muted">aktualizováno {new Date(server.profily.updated).toLocaleDateString("cs-CZ")}</span>}
         </div>
         )}
       </section>
@@ -537,6 +568,12 @@ const HEADINGS: Record<Tab, string> = {
   watch: "Hlídání e-mailem",
 };
 
+const PRESET_ICON: Record<string, IconName> = {
+  "CRM a zákaznické portály": "users",
+  "Vzdělávací portál": "cap",
+  "Kybernetická bezpečnost": "shield",
+};
+
 const PRESET_HINT: Record<string, string> = {
   "CRM a zákaznické portály": "Malé CRM, klientské a občanské portály, helpdesk",
   "Vzdělávací portál": "E-learning, LMS, povinná školení zaměstnanců",
@@ -548,11 +585,25 @@ type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
 function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) => void; tab: Tab }) {
   return (
     <div className="card">
+      <div className="step">Co hledáš</div>
       <div className="presets">
         {PRESETS.map((p) => (
-          <button key={p.name} className={`preset ${form.name === p.name ? "on" : ""}`} onClick={() => setForm({ ...form, ...p })}>
-            <b>{p.name}</b>
-            <span>{PRESET_HINT[p.name] ?? p.keywords}</span>
+          <button
+            key={p.name}
+            className={`preset ${form.name === p.name ? "on" : ""}`}
+            onClick={() => setForm({ ...form, ...p })}
+            aria-pressed={form.name === p.name}
+          >
+            <span className="preset-ic">
+              <Icon n={PRESET_ICON[p.name] ?? "search"} size={20} />
+            </span>
+            <span className="preset-text">
+              <b>{p.name}</b>
+              <span>{PRESET_HINT[p.name] ?? p.keywords}</span>
+            </span>
+            <span className="preset-check">
+              <Icon n="check" size={14} />
+            </span>
           </button>
         ))}
       </div>
@@ -765,6 +816,7 @@ function SearchTab(props: {
         </div>
       ) : (
         <button className="primary big" onClick={search}>
+          <Icon n="search" size={18} />
           {results.length ? "Hledat znovu" : "Najít zakázky"}
         </button>
       )}
@@ -793,31 +845,46 @@ function SearchTab(props: {
       )}
 
       {stats && !loading && (
-        <p className="stats">
-          Prošel jsem {stats.open.toLocaleString("cs-CZ")} aktuálních zakázek, vhodných je {results.length}
-          {fresh.size > 0 && <>, z toho {fresh.size} nových od minula</>}.
-          {stats.cached > 0 && (
-            <span className="saved">
-              {" "}
-              AI hodnotila {stats.scored.toLocaleString("cs-CZ")}, {stats.cached.toLocaleString("cs-CZ")} skóre vzala z paměti.
+        <div className="summary">
+          <div>
+            <b>{stats.open.toLocaleString("cs-CZ")}</b>
+            <span>aktuálních zakázek prošlo</span>
+          </div>
+          <div className="hl">
+            <b>{results.length}</b>
+            <span>vhodných pro tebe</span>
+          </div>
+          <div className={fresh.size ? "new" : ""}>
+            <b>{fresh.size}</b>
+            <span>nových od minula</span>
+          </div>
+          <div>
+            <b>{usd(stats.cost)}</b>
+            <span>
+              {stats.cached > 0 ? `za AI, ${stats.cached.toLocaleString("cs-CZ")} skóre z paměti` : "útrata za AI"}
             </span>
-          )}
-          {stats.cost > 0 && <> Stálo to {usd(stats.cost)}.</>}
-        </p>
+          </div>
+        </div>
       )}
       {(results.length > 0 || Object.keys(statuses).length > 0) && !loading && (
-        <>
-          <div className="filters">
-            {(["all", "maybe", "bid", "no"] as const).map((f) => (
-              <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
-                {f === "all" ? "Vše" : STATUS_LABEL[f]}
-                {f !== "all" && count(f) > 0 && <span className="count">{count(f)}</span>}
-              </button>
-            ))}
+        <div className="filterbar">
+          <div className="filterbar-top">
+            <div className="filters">
+              {(["all", "maybe", "bid", "no"] as const).map((f) => (
+                <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+                  {f === "all" ? "Vše" : STATUS_LABEL[f]}
+                  {f !== "all" && count(f) > 0 && <span className="count">{count(f)}</span>}
+                </button>
+              ))}
+            </div>
+            <button className="ghost" onClick={() => exportCsv(shown)} disabled={!shown.length} title="Stáhnout zobrazené zakázky pro Excel">
+              <Icon n="download" /> Excel
+            </button>
           </div>
           <div className="toolbar">
             <input
               type="search"
+              className="find"
               placeholder="Hledat v názvu, zadavateli…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -871,11 +938,8 @@ function SearchTab(props: {
                 </option>
               ))}
             </select>
-            <button onClick={() => exportCsv(shown)} disabled={!shown.length} title="Stáhnout zobrazené zakázky pro Excel">
-              Excel
-            </button>
           </div>
-        </>
+        </div>
       )}
       <div className="list">
         {loading && [0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}
@@ -914,8 +978,11 @@ function SearchTab(props: {
               </>
             ) : (
               <>
+                <span className="empty-ic">
+                  <Icon n="radar" size={28} />
+                </span>
                 <b>Zatím nic</b>
-                <span>Klikni na Najít zakázky, hledání trvá asi minutu.</span>
+                <span>Vyber, co hledáš, a klikni na Najít zakázky. Hledání trvá asi minutu.</span>
               </>
             )}
           </div>
@@ -927,11 +994,18 @@ function SearchTab(props: {
 
 const daysLeft = (d: string | null) => (d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400_000) : null);
 
-function Deadline({ d, short }: { d: string | null; short?: boolean }) {
+function Deadline({ d, short, icon }: { d: string | null; short?: boolean; icon?: boolean }) {
   const left = daysLeft(d);
-  if (left === null) return <span className="deadline none">lhůta neuvedena</span>;
+  if (left === null)
+    return (
+      <span className="deadline none">
+        {icon && <Icon n="clock" size={14} />}
+        lhůta neuvedena
+      </span>
+    );
   return (
     <span className={`deadline ${left <= 3 ? "urgent" : left <= 7 ? "soon" : ""}`}>
+      {icon && <Icon n="clock" size={14} />}
       {left <= 0 ? "končí dnes" : `${short ? "" : "lhůta "}za ${left} ${left === 1 ? "den" : left < 5 ? "dny" : "dní"}`}
       <small>{new Date(d!).toLocaleDateString("cs-CZ")}</small>
     </span>
@@ -947,7 +1021,10 @@ function TenderCard(props: {
 }) {
   const { t, fresh, status, setStatus, openDetail } = props;
   return (
-    <article className={`card tender ${status === "no" ? "dim" : ""} ${status !== "new" ? `is-${status}` : ""}`}>
+    <article
+      className={`card tender ${status === "no" ? "dim" : ""} ${status !== "new" ? `is-${status}` : ""}`}
+      onClick={() => openDetail(t)}
+    >
       <div className="score-col">
         <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
           <span>{t.score < 0 ? "–" : t.score}</span>
@@ -955,14 +1032,22 @@ function TenderCard(props: {
         <small style={{ color: scoreColor(t.score) }}>{scoreLabel(t.score)}</small>
       </div>
       <div className="tender-body">
-        <div className="tags">
-          {fresh && <span className="tag fresh">nová</span>}
-          <span className="tag">{t.source === "DNS" ? "Dynamický nákupní systém" : t.source}</span>
-          {t.country === "SK" && <span className="tag sk">SK</span>}
-          {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
-          {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
-          {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
-          {t.region && t.region !== "neznámý" && <span className="tag">{t.region}</span>}
+        <div className="tender-top">
+          <div className="tags">
+            {fresh && <span className="tag fresh">nová</span>}
+            {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
+            {t.country === "SK" && <span className="tag sk">SK</span>}
+            {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
+            {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
+          </div>
+          {t.source === "DNS" ? (
+            <span className="deadline open">
+              <Icon n="clock" size={14} />
+              přidat se lze kdykoli
+            </span>
+          ) : (
+            <Deadline d={t.deadline} icon />
+          )}
         </div>
         <h3>
           <button className="title" onClick={() => openDetail(t)}>
@@ -970,28 +1055,43 @@ function TenderCard(props: {
           </button>
         </h3>
         <div className="meta">
-          <span>{t.buyer}</span>
-          {t.value ? <span>{money(t.value, t.currency)}</span> : null}
-          {t.published && <span>zveřejněno {new Date(t.published).toLocaleDateString("cs-CZ")}</span>}
+          <span>
+            <Icon n="building" size={14} />
+            {t.buyer}
+          </span>
+          {t.value ? (
+            <span>
+              <Icon n="money" size={14} />
+              {money(t.value, t.currency)}
+            </span>
+          ) : null}
+          {t.region && t.region !== "neznámý" && (
+            <span>
+              <Icon n="pin" size={14} />
+              {regionLabel(t.region)}
+            </span>
+          )}
+          <span className="src">{t.source === "DNS" ? "dynamický nákupní systém" : t.source}</span>
         </div>
-        {t.reason && <p className="reason">{t.reason}</p>}
-        <div className="tender-foot">
-          <div className="foot-left">
-            {t.source === "DNS" ? (
-              <span className="deadline">
-                přidat se lze kdykoli
-                {t.deadline && <small>systém běží do {new Date(t.deadline).toLocaleDateString("cs-CZ")}</small>}
-              </span>
-            ) : (
-              <Deadline d={t.deadline} />
-            )}
-            <button className="link" onClick={() => openDetail(t)}>
-              detail a AI rozbor
-            </button>
-          </div>
-          <div className="actions">
-            {ACTIONS.map(({ s, label }) => (
-              <button key={s} className={`${s} ${status === s ? "on" : ""}`} onClick={() => setStatus(t, status === s ? "new" : s)}>
+        {t.reason && (
+          <p className="reason">
+            <Icon n="sparkle" size={14} />
+            <span>{t.reason}</span>
+          </p>
+        )}
+        <div className="tender-foot" onClick={(e) => e.stopPropagation()}>
+          <button className="link more-link" onClick={() => openDetail(t)}>
+            Detail a AI rozbor <Icon n="arrow" size={14} />
+          </button>
+          <div className="actions" role="group" aria-label="Co s zakázkou">
+            {ACTIONS.map(({ s, label, icon }) => (
+              <button
+                key={s}
+                className={`${s} ${status === s ? "on" : ""}`}
+                onClick={() => setStatus(t, status === s ? "new" : s)}
+                aria-pressed={status === s}
+              >
+                <Icon n={icon} size={14} />
                 {label}
               </button>
             ))}
@@ -1380,7 +1480,10 @@ function BoardTab(props: {
               }}
             >
               <header>
-                <b>{c.label}</b>
+                <b>
+                  <i className="dot" aria-hidden="true" />
+                  {c.label}
+                </b>
                 <span className="count">{list.length}</span>
               </header>
               {list.map((t) => (
