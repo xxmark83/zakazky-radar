@@ -10,7 +10,7 @@ export async function GET() {
     kept,
     spend,
     budget: Number(process.env.AI_BUDGET_USD) || 5,
-    model: process.env.AI_MODEL === "haiku" ? "haiku" : "opus",
+    model: process.env.AI_MODEL === "opus" ? "opus" : "haiku",
     email: Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL),
     cron: Boolean(process.env.CRON_SECRET),
     ai: Boolean(process.env.ANTHROPIC_API_KEY),

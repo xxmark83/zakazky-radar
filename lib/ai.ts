@@ -2,14 +2,15 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
 
-// Opus je přesnější, Haiku asi 40× levnější. Volí se v Nastavení, výchozí je AI_MODEL nebo opus.
+// Opus je přesnější, Haiku asi 40× levnější. Volí se v Nastavení, výchozí je AI_MODEL nebo haiku
+// (do limitu 5 $ měsíčně se Opus při denním hledání sotva vejde).
 export type ModelChoice = "opus" | "haiku";
 const MODELS: Record<ModelChoice, { id: string; input: number; output: number }> = {
   opus: { id: "claude-opus-5-5", input: 4, output: 20 }, // $ za milion tokenů
   haiku: { id: "claude-haiku-5-5", input: 0.1, output: 0.5 },
 };
 export const pickModel = (m?: string): ModelChoice =>
-  m === "haiku" || m === "opus" ? m : process.env.AI_MODEL === "haiku" ? "haiku" : "opus";
+  m === "haiku" || m === "opus" ? m : process.env.AI_MODEL === "opus" ? "opus" : "haiku";
 
 export type AiResult<T> = { data: T; cost: number };
 

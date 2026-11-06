@@ -160,7 +160,7 @@ export default function Home() {
   const [settings, setSettings] = useState(false);
   const [kept, setKept] = useState<Kept>(EMPTY_KEPT);
   const [spent, setSpent] = useState(0);
-  const [prefs, setPrefs] = useState<{ model: Model; budget: number }>({ model: "opus", budget: 5 });
+  const [prefs, setPrefs] = useState<{ model: Model; budget: number }>({ model: "haiku", budget: 5 });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -177,7 +177,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((s: ServerState) => {
         setServer(s);
-        setPrefs(load("zr-prefs", { model: s.model ?? "opus", budget: s.budget ?? 5 }));
+        setPrefs(load("zr-prefs", { model: s.model ?? "haiku", budget: s.budget ?? 5 }));
         if (s.db) {
           setStatuses(s.statuses ?? {});
           setMarked(Object.fromEntries((s.marked ?? []).map((t) => [t.id, t])));
