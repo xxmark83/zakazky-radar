@@ -33,7 +33,7 @@ jobs:
         run: |
           git config user.name "xxmark83"
           git config user.email "142055462+xxmark83@users.noreply.github.com"
-          git add data/isvz-vysledky.json
+          git add data/isvz-vysledky.json data/isvz-dns.json
           git diff --cached --quiet || git commit -m "Výsledky zakázek z ISVZ $(date -u +%F)"
           git pull --rebase -q
           git push

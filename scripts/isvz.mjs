@@ -3,15 +3,18 @@
 // Data vycházejí jednou měsíčně (5. den) jako ZIP s JSON kolem 1 GB, proto se čtou proudem a ukládají
 // se jen smlouvy z oborů, které nás zajímají (CPV níže), bez osobních údajů kontaktních osob.
 //
+// Ze stejného zdroje bere i dynamické nákupní systémy (DNS) – do těch se dá přidat kdykoli → data/isvz-dns.json.
+//
 // node scripts/isvz.mjs                 – stáhne minulý měsíc a přidá ho do data/isvz-vysledky.json
 // node scripts/isvz.mjs 2025-01 2026-09 – stáhne rozsah měsíců (první naplnění)
-// ISVZ_FILE=VZ-09-2026.json node scripts/isvz.mjs – zpracuje už stažený soubor (pro ladění)
-import { spawn } from "node:child_process";
+// ISVZ_FILE=VZ-09-2026.json ISVZ_DNS_FILE=DNS-09-2026.json node scripts/isvz.mjs – už stažené soubory (ladění)
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 const OUT = "data/isvz-vysledky.json";
+const DNS_OUT = "data/isvz-dns.json";
 const UA = "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)";
 const KEEP_MONTHS = 36;
 // software (48), IT služby (72), výzkum a poradenství (73), obchodní služby (79), vzdělávání (80)
@@ -94,54 +97,105 @@ function awards(rec) {
   return out;
 }
 
-async function processFile(stream) {
+// dynamický nákupní systém: dodavatel se může zapojit kdykoli po celou dobu trvání
+function dns(rec) {
+  const d = rec.dynamicky_nakupni_system;
+  if (!d) return null;
+  const zp = d.zadavaci_postup_pro_zavedeni_dynamickeho_nakupniho_systemu ?? {};
+  const subj = d.predmet_verejne_zakazky_zadavany_v_dynamickem_nakupnim_systemu ?? {};
+  const cats = d.kategorie_dynamickeho_nakupniho_systemu ?? [];
+  const cpv = [
+    subj.hlavni_kod_CPV,
+    ...(subj.vedlejsi_kod_CPV ?? []),
+    ...cats.map((c) => c.predmet_kategorie?.hlavni_kod_CPV),
+  ].filter(Boolean);
+  if (!cpv.some((c) => CPV.some((p) => c.startsWith(p)))) return null;
+  const buyer = zp.zadavatel_zadavaciho_postupu?.zadavatele?.[0] ?? {};
+  // konec trvání: datum, nebo začátek + doba (roky/měsíce), nebo bez omezení
+  const t = d.doba_trvani ?? {};
+  let end = day(t.datum_konce_doby_trvani);
+  if (!end && t.datum_zacatku_doby_trvani && t.doba_trvani) {
+    const e = new Date(t.datum_zacatku_doby_trvani);
+    if (/rok/i.test(t.doba_trvani_jednotka ?? "")) e.setUTCFullYear(e.getUTCFullYear() + Number(t.doba_trvani));
+    else if (/měsíc/i.test(t.doba_trvani_jednotka ?? "")) e.setUTCMonth(e.getUTCMonth() + Number(t.doba_trvani));
+    else if (/den/i.test(t.doba_trvani_jednotka ?? "")) e.setUTCDate(e.getUTCDate() + Number(t.doba_trvani));
+    end = e.toISOString().slice(0, 10);
+  }
+  const cancelled = Boolean(zp.vysledekZadavacihoPostupuDNS?.oduvodneni_zruseni_zadavaciho_postupu) || /zrušen/i.test(zp.stav ?? "");
+  return {
+    id: `dns-${d.identifikator_NIPEZ}`,
+    title: d.nazev_dynamickeho_nakupniho_systemu,
+    buyer: buyer.subjekt?.nazev_subjektu ?? "",
+    nuts: buyer.subjekt?.kod_NUTS ?? subj.mista_plneni?.[0]?.nuts ?? null,
+    started: day(t.datum_zacatku_doby_trvani ?? zp.datum_zahajeni_zadavaciho_postupu),
+    end,
+    cancelled,
+    cpv: [...new Set(cpv)],
+    categories: cats.map((c) => c.predmet_kategorie?.popis_predmetu?.slice(0, 160)).filter(Boolean).slice(0, 10),
+    description: (subj.popis_predmetu ?? "").slice(0, 800),
+    url:
+      zp.specifikace_podani?.internetova_adresa_pro_podani ??
+      zp.informace_o_zadavaci_dokumentaci?.[0]?.zadavaci_dokumentace_je_dostupna_na ??
+      buyer.adresa_profilu ??
+      "",
+    updated: day(d.casova_znacka),
+  };
+}
+
+async function processFile(stream, kind) {
   const rows = [];
   let n = 0;
   for await (const raw of records(stream)) {
     n++;
-    if (!raw.includes("dodavatele_se_kterymi_byla_uzavrena_smlouva")) continue;
+    if (kind === "VZ" && !raw.includes("dodavatele_se_kterymi_byla_uzavrena_smlouva")) continue;
     try {
-      rows.push(...awards(JSON.parse(raw)));
+      const rec = JSON.parse(raw);
+      if (kind === "VZ") rows.push(...awards(rec));
+      else {
+        const r = dns(rec);
+        if (r) rows.push(r);
+      }
     } catch {}
   }
-  console.log(`  ${n} zakázek, ${rows.length} smluv z vybraných oborů`);
+  console.log(`  ${kind}: ${n} záznamů, ${rows.length} z vybraných oborů`);
   return rows;
 }
 
-async function month(ym) {
+async function download(kind, ym) {
   const [y, m] = ym.split("-");
-  const url = `https://isvz.nipez.cz/sites/default/files/content/opendata-rvz/VZ-${m}-${y}.zip`;
+  const url = `https://isvz.nipez.cz/sites/default/files/content/opendata-rvz/${kind}-${m}-${y}.zip`;
   const dir = mkdtempSync(path.join(tmpdir(), "isvz-"));
   try {
     console.log(`${ym}: stahuji ${url}`);
-    const res = await fetch(url, { headers: { "User-Agent": UA } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const zip = path.join(dir, "vz.zip");
-    writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
-    const unzip = spawn("unzip", ["-p", zip]);
-    return await processFile(unzip.stdout);
+    const zip = path.join(dir, "data.zip");
+    // curl s opakováním: velké soubory ze státního serveru občas spadnou uprostřed
+    const r = spawnSync("curl", ["-fsS", "--retry", "3", "--retry-delay", "10", "--max-time", "900", "-A", UA, "-o", zip, url], {
+      encoding: "utf8",
+    });
+    if (r.status !== 0) throw new Error(`curl ${r.status}: ${(r.stderr || "").trim()}`);
+    return await processFile(spawn("unzip", ["-p", zip]).stdout, kind);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 const prev = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : { months: [], awards: [] };
-let list;
-if (process.env.ISVZ_FILE) {
+const prevDns = existsSync(DNS_OUT) ? JSON.parse(readFileSync(DNS_OUT, "utf8")).systems : [];
+const done = []; // [měsíc, smlouvy, DNS]
+if (process.env.ISVZ_FILE || process.env.ISVZ_DNS_FILE) {
   const { createReadStream } = await import("node:fs");
-  const rows = await processFile(createReadStream(process.env.ISVZ_FILE));
-  list = [["soubor", rows]];
+  const vz = process.env.ISVZ_FILE ? await processFile(createReadStream(process.env.ISVZ_FILE), "VZ") : [];
+  const d = process.env.ISVZ_DNS_FILE ? await processFile(createReadStream(process.env.ISVZ_DNS_FILE), "DNS") : [];
+  done.push(["soubor", vz, d]);
 } else {
   const args = process.argv.slice(2);
   const last = new Date();
   last.setUTCDate(1);
   last.setUTCMonth(last.getUTCMonth() - 1);
   const lastYm = last.toISOString().slice(0, 7);
-  const wanted = args.length ? months(args[0], args[1] ?? args[0]) : [lastYm];
-  list = [];
-  for (const ym of wanted) {
+  for (const ym of args.length ? months(args[0], args[1] ?? args[0]) : [lastYm]) {
     try {
-      list.push([ym, await month(ym)]);
+      done.push([ym, await download("VZ", ym), await download("DNS", ym)]);
     } catch (e) {
       console.log(`${ym}: chyba ${e.message}`);
     }
@@ -149,13 +203,20 @@ if (process.env.ISVZ_FILE) {
 }
 
 const merged = new Map(prev.awards.map((a) => [a.id, a]));
-for (const [, rows] of list) for (const r of rows) merged.set(r.id, r);
+for (const [, rows] of done) for (const r of rows) merged.set(r.id, r);
 const cutoff = new Date();
 cutoff.setUTCMonth(cutoff.getUTCMonth() - KEEP_MONTHS);
 const awardsOut = [...merged.values()]
   .filter((a) => !a.published || a.published >= cutoff.toISOString().slice(0, 10))
   .sort((a, b) => (b.published ?? "").localeCompare(a.published ?? ""));
-const monthsOut = [...new Set([...prev.months, ...list.map(([ym]) => ym).filter((x) => x !== "soubor")])].sort();
-
+const monthsOut = [...new Set([...prev.months, ...done.map(([ym]) => ym).filter((x) => x !== "soubor")])].sort();
 writeFileSync(OUT, JSON.stringify({ updated: new Date().toISOString(), cpv: CPV, months: monthsOut, awards: awardsOut }));
 console.log(`Hotovo: ${awardsOut.length} smluv, měsíce ${monthsOut[0] ?? "–"} až ${monthsOut.at(-1) ?? "–"}`);
+
+// DNS: novější záznam téhož systému přepíše starší; zrušené a skončené vypadnou
+const today = new Date().toISOString().slice(0, 10);
+const systems = new Map(prevDns.map((d) => [d.id, d]));
+for (const [, , rows] of done) for (const r of rows) if (!systems.has(r.id) || (r.updated ?? "") >= (systems.get(r.id).updated ?? "")) systems.set(r.id, r);
+const dnsOut = [...systems.values()].filter((d) => !d.cancelled && (!d.end || d.end >= today));
+writeFileSync(DNS_OUT, JSON.stringify({ updated: new Date().toISOString(), cpv: CPV, systems: dnsOut }));
+console.log(`Hotovo: ${dnsOut.length} aktivních dynamických nákupních systémů`);
