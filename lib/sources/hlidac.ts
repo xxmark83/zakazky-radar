@@ -2,11 +2,13 @@ import type { Tender } from "../types";
 
 // Hlídač státu – agreguje i podlimitní zakázky z profilů zadavatelů a Věstníku.
 // Token zdarma po registraci (nekomerční užití; komerční dle jejich podmínek).
-const URL = "https://api.hlidacstatu.cz/api/v2/verejnezakazky/hledat";
+// API v2: /api/v2/vz/hledat (dokumentace api.hlidacstatu.cz/swagger/v2/swagger.json), nejvýš 4 dotazy za sekundu.
+const URL = "https://api.hlidacstatu.cz/api/v2/vz/hledat";
 
 function first<T>(...vals: T[]): T | undefined {
   return vals.find((v) => v !== undefined && v !== null && (v as any) !== "");
 }
+const day = (v: unknown) => (typeof v === "string" && v ? v.slice(0, 10) : null);
 
 export async function fetchHlidac(opts: {
   keywords: string[];
@@ -17,36 +19,36 @@ export async function fetchHlidac(opts: {
   if (!token || !opts.keywords.length) return [];
 
   const since = new Date(Date.now() - opts.days * 86400_000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
   const seen = new Map<string, Tender>();
 
   for (const kw of opts.keywords.slice(0, 8)) {
     const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
-    const dotaz = `${early}${kw} AND zverejneno:[${since} TO *]`;
-    const res = await fetch(`${URL}?dotaz=${encodeURIComponent(dotaz)}&strana=1`, {
-      headers: { Authorization: `Token ${token}` },
-      cache: "no-store",
-    });
+    const q = new URLSearchParams({ dotaz: `${early}${kw}`, zverejnenoOd: since, strana: "1", razeni: "1" });
+    const res = await fetch(`${URL}?${q}`, { headers: { Authorization: `Token ${token}` }, cache: "no-store" });
     if (!res.ok) throw new Error(`Hlídač státu ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const data = await res.json();
-    const rows: any[] = data.Results ?? data.results ?? [];
+    const rows: any[] = data.results ?? data.Results ?? [];
     for (const r of rows) {
-      const id = String(first(r.Id, r.id) ?? "");
-      if (!id || seen.has(id)) continue;
-      const value = Number(first(r.OdhadovanaHodnotaBezDPH, r.KonecnaHodnotaBezDPH));
-      const urls: string[] = r.UrlZakazky ?? [];
-      seen.set(id, {
+      const id = String(first(r.id, r.Id) ?? "");
+      if (!id || seen.has(`hs-${id}`)) continue;
+      const s = r.souhrn ?? {};
+      const deadline = day(first(s.lhutaDoruceni, s.lhutaPrihlaseni));
+      if (opts.kind === "open" && deadline && deadline < today) continue;
+      const value = Number(first(s.predpokladanaHodnotaBezDPH, r.predpokladanaHodnotaBezDPHVCZK, s.konecnaHodnotaBezDPH));
+      seen.set(`hs-${id}`, {
         id: `hs-${id}`,
         source: "Hlídač státu",
         kind: opts.kind,
-        title: first(r.NazevZakazky, r.nazevZakazky) ?? "(bez názvu)",
-        buyer: first(r.Zadavatel?.Jmeno, r.zadavatel?.jmeno) ?? "",
-        published: (first(r.DatumUverejneni, r.datumUverejneni) ?? "").slice(0, 10) || null,
-        deadline: (first(r.LhutaDoruceni, r.lhutaDoruceni) ?? "").slice(0, 10) || null,
+        title: first(r.nazevVerejneZakazky) ?? "(bez názvu)",
+        buyer: first(s.nazevZadavatele) ?? "",
+        published: day(s.datumUverejneni),
+        deadline,
         value: Number.isFinite(value) && value > 0 ? value : null,
-        currency: value ? "CZK" : null,
-        cpv: (r.CPV ?? []).map((c: any) => (typeof c === "string" ? c : c.Kod)).filter(Boolean),
-        description: String(first(r.PopisZakazky, r.popisZakazky) ?? "").slice(0, 1500),
-        url: urls[0] ?? `https://www.hlidacstatu.cz/verejnezakazky/zakazka/${id}`,
+        currency: value ? (s.mena ?? "CZK") : null,
+        cpv: (s.cpvKody ?? []).filter((c: unknown) => typeof c === "string"),
+        description: String(first(r.predmet?.popisPredmetu) ?? "").slice(0, 1500),
+        url: `https://www.hlidacstatu.cz/verejnezakazky/zakazka/${id}`,
       });
     }
   }

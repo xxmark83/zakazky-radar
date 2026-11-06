@@ -649,35 +649,70 @@ const PRESET_HINT: Record<string, string> = {
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
 
+// více oblastí najednou: jeden společný popis pro AI, sjednocená klíčová slova a CPV
+const JOIN = " + ";
+const PRESET_SHORT: Record<string, string> = {
+  "CRM a zákaznické portály": "CRM a portály",
+  "Vzdělávací portál": "Vzdělávání",
+  "Kybernetická bezpečnost": "Kyberbezpečnost",
+};
+const selectedPresets = (name: string) => name.split(JOIN).filter((n) => PRESETS.some((p) => p.name === n));
+function combine(names: string[]) {
+  const list = PRESETS.filter((p) => names.includes(p.name));
+  if (list.length === 1) return { ...list[0] };
+  const uniq = (parts: string[], sep: RegExp) => [...new Set(parts.flatMap((x) => x.split(sep)).map((x) => x.trim()).filter(Boolean))];
+  return {
+    name: list.map((p) => p.name).join(JOIN),
+    profile:
+      "Nabízím několik oblastí. Hodnoť každou zakázku podle té, která na ni sedí nejlépe, a v poli product ji uveď.\n\n" +
+      list.map((p) => `${p.name}: ${p.profile}`).join("\n\n"),
+    keywords: uniq(list.map((p) => p.keywords), /,/).join(", "),
+    cpv: uniq(list.map((p) => p.cpv), /[\s,;]+/).join(" "),
+  };
+}
+
 function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f: Form) => void; tab: Tab; compact?: boolean }) {
   const [open, setOpen] = useState(false);
+  const selected = selectedPresets(form.name);
+  const toggle = (name: string) => {
+    const next = selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name];
+    if (!next.length) return; // aspoň jedna oblast zůstane
+    // pořadí podle karet, ať je název vždy stejný (a paměť AI skóre ho pozná)
+    setForm({ ...form, ...combine(PRESETS.map((p) => p.name).filter((n) => next.includes(n))) });
+  };
+  const all = selected.length === PRESETS.length;
   return (
     <div className={`card profile ${compact && !open ? "folded" : ""}`}>
       {compact && (
         <button className="profile-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
           <span className="preset-ic">
-            <Icon n={PRESET_ICON[form.name] ?? "search"} size={18} />
+            <Icon n={selected.length === 1 ? (PRESET_ICON[selected[0]] ?? "search") : "radar"} size={18} />
           </span>
           <span>
             <small>Hledáš</small>
-            <b>{form.name}</b>
+            <b>{selected.length > 1 ? selected.map((n) => PRESET_SHORT[n] ?? n).join(", ") : form.name}</b>
           </span>
           <span className="chev" aria-hidden="true">
             {open ? "▴" : "▾"}
           </span>
         </button>
       )}
-      <div className="step">Co hledáš</div>
+      <div className="step">
+        <span>Co hledáš – vyber jednu nebo víc oblastí</span>
+        <button
+          className="link"
+          onClick={() => setForm({ ...form, ...combine(all ? [PRESETS[0].name] : PRESETS.map((p) => p.name)) })}
+        >
+          {all ? "Jen první" : "Vybrat všechny tři"}
+        </button>
+      </div>
       <div className="presets">
         {PRESETS.map((p) => (
           <button
             key={p.name}
-            className={`preset ${form.name === p.name ? "on" : ""}`}
-            onClick={() => {
-              setForm({ ...form, ...p });
-              setOpen(false);
-            }}
-            aria-pressed={form.name === p.name}
+            className={`preset ${selected.includes(p.name) ? "on" : ""}`}
+            onClick={() => toggle(p.name)}
+            aria-pressed={selected.includes(p.name)}
           >
             <span className="preset-ic">
               <Icon n={PRESET_ICON[p.name] ?? "search"} size={20} />

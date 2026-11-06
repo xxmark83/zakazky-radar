@@ -63,6 +63,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.20** – v „Co hledáš“ jde vybrat víc oblastí najednou (i všechny tři), AI hodnotí podle té, která sedí;
+  Hlídač státu: zakázky přes nové API v2 (/api/v2/vz/hledat), stará adresa vracela 404.
 - **1.19.2** – naplánovaná úloha na Macu (`scripts/mac-sync.sh`, launchd každé 3 h): Vhodné uveřejnění a jednou
   měsíčně ISVZ, výsledky nahraje na GitHub. Vypnutí: `launchctl bootout gui/$(id -u)/cz.xxmark83.zakazky-radar`.
 - **1.19.1** – Vhodné uveřejnění blokuje servery GitHubu, sběr z RSS běží z Macu; zakázky bez detailu jen 35 dní.

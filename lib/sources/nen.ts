@@ -37,7 +37,8 @@ export const terms = (keywords: string[]) => {
     .flatMap((k) => k.split(/\s+/))
     .filter((w) => w.length >= 3 && !STOP.has(w.toLowerCase()))
     .map((w) => (w.length >= 8 ? w.slice(0, -2) : w).toLowerCase());
-  return [...new Set([...words, ...ALWAYS])].slice(0, 16);
+  // víc oblastí najednou = víc slov; NEN se ptáme postupně, 24 slov se vejde do limitu hledání
+  return [...new Set([...words, ...ALWAYS])].slice(0, 24);
 };
 
 async function page(term: string, n: number) {
