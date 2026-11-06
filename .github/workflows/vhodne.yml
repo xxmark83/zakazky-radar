@@ -1,10 +1,9 @@
 name: Zakázky z Vhodného uveřejnění
 
-# Každé 3 hodiny přečte RSS nových zakázek na vhodne-uverejneni.cz a doplní detaily (zadavatel, lhůta).
-# Mezi dotazy drží 30 s podle jejich robots.txt. Výsledek data/vhodne.json čte appka spolu s profily.
+# Přečte RSS nových zakázek na vhodne-uverejneni.cz a doplní detaily (zadavatel, lhůta), 30 s mezi dotazy.
+# Servery GitHubu se k nim nepřipojí (blokují je), proto se scripts/vhodne.mjs pouští z Macu; tady jen ručně
+# pro případ, že blokaci zruší.
 on:
-  schedule:
-    - cron: "41 */3 * * *"
   workflow_dispatch:
 
 permissions:

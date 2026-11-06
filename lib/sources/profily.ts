@@ -39,7 +39,11 @@ function load(): Data | null {
     const data: Data = JSON.parse(raw);
     if (vu) {
       const known = new Set(data.tenders.map(key));
-      const extra = (JSON.parse(vu).tenders as Row[]).filter((t) => !known.has(key(t)));
+      // zakázky bez detailu (zadavatel, lhůta) bereme jen 35 dní od zveřejnění, pak už většinou nejdou podat
+      const old = new Date(Date.now() - 35 * 86400_000).toISOString().slice(0, 10);
+      const extra = (JSON.parse(vu).tenders as (Row & { detail?: boolean })[]).filter(
+        (t) => !known.has(key(t)) && (t.detail || (t.published ?? "") >= old),
+      );
       data.tenders = [...data.tenders, ...extra];
     }
     cache = { size, data };

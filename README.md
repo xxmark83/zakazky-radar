@@ -20,7 +20,7 @@ jak sedí na moji nabídku (Kotva CRM, vzdělávací portál…).
 | NEN – nen.nipez.cz | veřejný seznam zakázek (hledání v názvu) | není potřeba |
 | **Profily zadavatelů** – všech cca 12 000 v ČR | kraje, města, obce, školy, nemocnice, státní firmy na Tender areně, eGORDIONu, E-ZAKu, Vhodném uveřejnění, NEN… vč. zakázek malého rozsahu | není potřeba |
 | Tender arena + eGORDION – seznam nových za 24 h | všechny nové zakázky ~4 200 zadavatelů jedním dotazem denně | není potřeba |
-| Vhodné uveřejnění – RSS nových zakázek | ~1 600 zadavatelů (hlavně obce); každé 3 h, detail kvůli zadavateli a lhůtě (`scripts/vhodne.mjs`) | není potřeba |
+| Vhodné uveřejnění – RSS nových zakázek | ~1 600 zadavatelů (hlavně obce); detail kvůli zadavateli a lhůtě (`scripts/vhodne.mjs`, z Macu – GitHub blokují) | není potřeba |
 | **Otevřená data ISVZ** – isvz.nipez.cz/opendata | výsledky řízení (i podlimitní): vítěz, cena smlouvy, počet nabídek; měsíčně, jen IT, software, vzdělávání (`scripts/isvz.mjs`). Server z GitHubu neodpovídá, stahuje se z běžného počítače. | není potřeba |
 | Hlídač státu – hlidacstatu.cz/api | doplňkově | token zdarma po registraci |
 | **Dynamické nákupní systémy** – z otevřených dat ISVZ | DNS z IT a vzdělávání, do kterých se lze přidat kdykoli; ukazují se mezi zakázkami | není potřeba |
@@ -63,6 +63,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.19.1** – Vhodné uveřejnění blokuje servery GitHubu, sběr z RSS běží z Macu; zakázky bez detailu jen 35 dní.
 - **1.19** – Vhodné uveřejnění přes jejich RSS (každé 3 h, 30 s mezi dotazy) místo 1 600 profilů zvlášť, opravy adres
   profilů z registru (NEN, E-ZAK, e-zakazky), neaktivní profily E-ZAK se 30 dní přeskakují.
 - **1.18** – PWA (ikona na plochu, celá obrazovka, rychlé spuštění), na mobilu po hledání sbalené volby a výsledky
