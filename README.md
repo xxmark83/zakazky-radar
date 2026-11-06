@@ -63,6 +63,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.19.2** – naplánovaná úloha na Macu (`scripts/mac-sync.sh`, launchd každé 3 h): Vhodné uveřejnění a jednou
+  měsíčně ISVZ, výsledky nahraje na GitHub. Vypnutí: `launchctl bootout gui/$(id -u)/cz.xxmark83.zakazky-radar`.
 - **1.19.1** – Vhodné uveřejnění blokuje servery GitHubu, sběr z RSS běží z Macu; zakázky bez detailu jen 35 dní.
 - **1.19** – Vhodné uveřejnění přes jejich RSS (každé 3 h, 30 s mezi dotazy) místo 1 600 profilů zvlášť, opravy adres
   profilů z registru (NEN, E-ZAK, e-zakazky), neaktivní profily E-ZAK se 30 dní přeskakují.
