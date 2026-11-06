@@ -556,6 +556,12 @@ function Settings(props: {
         <p className="note">
           Zakázky radar, verze <b>{VERSION}</b>
         </p>
+        <button
+          className="ghost logout"
+          onClick={() => fetch("/api/logout", { method: "POST" }).finally(() => location.replace("/login"))}
+        >
+          Odhlásit toto zařízení
+        </button>
       </aside>
     </div>
   );

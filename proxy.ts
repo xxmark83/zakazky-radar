@@ -1,16 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { COOKIE, validSession } from "@/lib/session";
 
-// Jednoduché heslo (Basic Auth), aby nikdo cizí nepálil kredit za AI.
-export function proxy(req: NextRequest) {
+// Přihlášení heslem APP_PASSWORD, aby nikdo cizí nepálil kredit za AI. Bez hesla je appka otevřená (lokální vývoj).
+const PUBLIC = ["/login", "/api/login", "/api/cron", "/icon.svg"]; // cron se ověřuje vlastním CRON_SECRET
+
+export async function proxy(req: NextRequest) {
   const password = process.env.APP_PASSWORD;
-  // cron se ověřuje vlastním CRON_SECRET
-  if (!password || req.nextUrl.pathname.startsWith("/api/cron")) return NextResponse.next();
-  const auth = req.headers.get("authorization") ?? "";
-  const [, encoded] = auth.split(" ");
-  const pass = encoded ? atob(encoded).split(":").slice(1).join(":") : "";
-  if (pass === password) return NextResponse.next();
-  return new NextResponse("Přihlášení vyžadováno", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Zakazky radar"' },
-  });
+  const path = req.nextUrl.pathname;
+  if (!password || PUBLIC.includes(path) || path.startsWith("/_next/")) return NextResponse.next();
+  if (await validSession(req.cookies.get(COOKIE)?.value, password)) return NextResponse.next();
+
+  if (path.startsWith("/api/")) {
+    return Response.json({ error: "Přihlášení vypršelo, obnov stránku a přihlas se znovu." }, { status: 401 });
+  }
+  const login = new URL("/login", req.url);
+  if (path !== "/") login.searchParams.set("next", path + req.nextUrl.search);
+  return NextResponse.redirect(login);
 }
