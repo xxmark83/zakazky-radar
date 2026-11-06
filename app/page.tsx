@@ -407,9 +407,21 @@ export default function Home() {
     const prev = statuses[t.id] ?? "new";
     applyStatus(t, s);
     if (s === "no") setToast({ text: "Zakázka skryta", undo: () => applyStatus(t, prev) });
+    else if (s === "maybe") setToast({ text: "Zvažuješ – najdeš v Moje zakázky", undo: () => applyStatus(t, prev) });
     else if (s === "bid") setToast({ text: "Přidáno do Moje zakázky → Připravuji" });
     else if (s === "won") setToast({ text: "Gratuluji k výhře!" });
   };
+
+  // na široké obrazovce je detail vedle seznamu, ne přes něj
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1200px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const split = Boolean(detail && wide);
 
   // rozpracované zakázky – číslo u záložky Moje zakázky
   const working = Object.values(statuses).filter((s) => s === "maybe" || s === "bid" || s === "sent").length;
@@ -450,7 +462,7 @@ export default function Home() {
           </div>
         </div>
       </header>
-    <main className={tab === "search" && hasResults ? "compact" : ""}>
+    <main className={`${tab === "search" && hasResults ? "compact" : ""} ${split ? "split" : ""}`}>
       <PullToRefresh disabled={Boolean(detail || settings || competitor)} />
       <section className="hero">
         <h1>{HEADINGS[tab]}</h1>
@@ -498,6 +510,8 @@ export default function Home() {
       {tab === "search" && (
         <SearchTab
           since={since}
+          activeId={detail?.id ?? null}
+          wide={wide}
           key={synced}
           form={form}
           statuses={statuses}
@@ -541,6 +555,7 @@ export default function Home() {
           ai={ai}
           openCompetitor={setCompetitor}
           watching={buyers.buyers.some((b) => b.name === (marked[detail.id] ?? detail).buyer)}
+          split={wide}
           toggleBuyer={toggleBuyer}
           close={() => setDetail(null)}
         />
@@ -869,6 +884,8 @@ const VALUES: Record<ValueRange, { label: string; test: (v: number | null) => bo
 
 function SearchTab(props: {
   since: string | null;
+  activeId: string | null;
+  wide: boolean;
   form: Form;
   statuses: Record<string, Status>;
   marked: Record<string, ScoredTender>;
@@ -878,7 +895,7 @@ function SearchTab(props: {
   ai: Ai;
   onResults: (results: ScoredTender[]) => void;
 }) {
-  const { since, form, statuses, marked, setStatus, openDetail, profily, ai, onResults } = props;
+  const { since, activeId, wide, form, statuses, marked, setStatus, openDetail, profily, ai, onResults } = props;
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
@@ -982,6 +999,45 @@ function SearchTab(props: {
   const isNew = (t: ScoredTender) => filter === "all" && isNewSince(t, since, fresh);
   const newer = shown.filter(isNew);
   const older = shown.filter((t) => !isNew(t));
+  const ordered = [...newer, ...older];
+
+  // klávesy: ↑↓ nebo J/K výběr, Enter detail, Z/P/N stav, / hledání, ? nápověda
+  const [sel, setSel] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
+  useEffect(() => {
+    if (activeId) setSel(activeId);
+  }, [activeId]);
+  const keys = useRef({ ordered, sel, wide, statuses });
+  keys.current = { ordered, sel, wide, statuses };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable) return;
+      const { ordered, sel, wide, statuses } = keys.current;
+      const i = ordered.findIndex((t) => t.id === sel);
+      const cur = ordered[i];
+      const move = (n: number) => {
+        const next = ordered[Math.max(0, Math.min(ordered.length - 1, (i < 0 ? -1 : i) + n))];
+        if (!next) return;
+        setSel(next.id);
+        document.getElementById(`card-${next.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        if (wide) openDetail(next); // vedle seznamu se detail rovnou přepíná
+      };
+      const k = e.key.toLowerCase();
+      if (k === "arrowdown" || k === "j") move(1);
+      else if (k === "arrowup" || k === "k") move(-1);
+      else if (k === "enter" && cur) openDetail(cur);
+      else if (k === "z" && cur) setStatus(cur, statuses[cur.id] === "maybe" ? "new" : "maybe");
+      else if (k === "p" && cur) setStatus(cur, statuses[cur.id] === "bid" ? "new" : "bid");
+      else if (k === "n" && cur) setStatus(cur, statuses[cur.id] === "no" ? "new" : "no");
+      else if (k === "/") document.querySelector<HTMLInputElement>("input.find")?.focus();
+      else if (k === "?") setHelp((h) => !h);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const sources = [...new Set(results.map((r) => r.source))];
   const narrowed = Boolean(q) || source !== "all" || region !== "all" || value !== "all";
   const active = [q, source !== "all", region !== "all", value !== "all"].filter(Boolean).length;
@@ -1177,12 +1233,34 @@ function SearchTab(props: {
                     fresh={fresh.has(t.id)}
                     status={statuses[t.id] ?? "new"}
                     setStatus={setStatus}
-                    openDetail={openDetail}
+                    openDetail={(x) => {
+                      setSel(x.id);
+                      openDetail(x);
+                    }}
+                    selected={sel === t.id}
                   />
                 ))}
               </Fragment>
             ) : null,
           )}
+        {help && (
+          <div className="drawer-bg" onClick={() => setHelp(false)}>
+            <div className="card keys-help" role="dialog" aria-label="Klávesové zkratky" onClick={(e) => e.stopPropagation()}>
+              <b>Klávesové zkratky</b>
+              {KEYS.map(([k, l]) => (
+                <div key={k}>
+                  <kbd>{k}</kbd> <span>{l}</span>
+                </div>
+              ))}
+              <button onClick={() => setHelp(false)}>Zavřít</button>
+            </div>
+          </div>
+        )}
+        {shown.length > 0 && !loading && (
+          <p className="keys-hint">
+            Tip: šipkami ↑↓ procházíš, Z / P / N mění stav, <button className="link" onClick={() => setHelp(true)}>všechny zkratky (?)</button>
+          </p>
+        )}
         {!shown.length && !loading && (
           <div className="empty">
             {narrowed ? (
@@ -1213,6 +1291,17 @@ function SearchTab(props: {
   );
 }
 
+const KEYS: [string, string][] = [
+  ["↑ ↓ / J K", "předchozí a další zakázka"],
+  ["Enter", "otevřít detail"],
+  ["Z", "zvažuji"],
+  ["P", "podám (připravuji)"],
+  ["N", "ne, skrýt"],
+  ["/", "hledat v seznamu"],
+  ["Esc", "zavřít detail"],
+  ["?", "tahle nápověda"],
+];
+
 // zakázka je „nová od minula“, když přibyla při posledním hledání nebo byla zveřejněna po poslední návštěvě
 const isNewSince = (t: ScoredTender, since: string | null, fresh: Set<string>) =>
   fresh.has(t.id) || Boolean(since && t.published && t.published >= since.slice(0, 10));
@@ -1237,93 +1326,142 @@ function Deadline({ d, short, icon }: { d: string | null; short?: boolean; icon?
   );
 }
 
+const SWIPE = 90; // px, od kolika se potažení počítá
+
 function TenderCard(props: {
   t: ScoredTender;
   fresh: boolean;
   status: Status;
   setStatus: (t: ScoredTender, s: Status) => void;
   openDetail: (t: ScoredTender) => void;
+  selected?: boolean;
 }) {
-  const { t, fresh, status, setStatus, openDetail } = props;
+  const { t, fresh, status, setStatus, openDetail, selected } = props;
+  // potažení prstem: doprava = Zvažuji, doleva = Ne. Svislý pohyb nechá stránku rolovat.
+  const [dx, setDx] = useState(0);
+  const touch = useRef<{ x: number; y: number; lock?: "h" | "v" } | null>(null);
+  const swiped = useRef(false);
+  const onTouchStart = (e: React.TouchEvent) => {
+    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const t0 = touch.current;
+    if (!t0) return;
+    const x = e.touches[0].clientX - t0.x;
+    const y = e.touches[0].clientY - t0.y;
+    if (!t0.lock) {
+      if (Math.abs(x) < 10 && Math.abs(y) < 10) return;
+      t0.lock = Math.abs(x) > Math.abs(y) * 1.3 ? "h" : "v";
+    }
+    if (t0.lock === "h") setDx(x);
+  };
+  const onTouchEnd = () => {
+    if (touch.current?.lock === "h") {
+      swiped.current = true;
+      if (dx > SWIPE) setStatus(t, status === "maybe" ? "new" : "maybe");
+      else if (dx < -SWIPE) setStatus(t, "no");
+    }
+    touch.current = null;
+    setDx(0);
+  };
   return (
-    <article
-      className={`card tender ${status === "no" ? "dim" : ""} ${status !== "new" ? `is-${status}` : ""}`}
-      onClick={() => openDetail(t)}
-    >
-      <div className="score-col">
-        <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
-          <span>{t.score < 0 ? "–" : t.score}</span>
-        </div>
-        <small style={{ color: scoreColor(t.score) }}>{scoreLabel(t.score)}</small>
-      </div>
-      <div className="tender-body">
-        <div className="tender-top">
-          <div className="tags">
-            {fresh && <span className="tag fresh">nová</span>}
-            {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
-            {t.country === "SK" && <span className="tag sk">SK</span>}
-            {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
-            {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
-          </div>
-          {t.source === "DNS" ? (
-            <span className="deadline open">
-              <Icon n="clock" size={14} />
-              přidat se lze kdykoli
-            </span>
-          ) : (
-            <Deadline d={t.deadline} icon />
-          )}
-        </div>
-        <h3>
-          <button className="title" onClick={() => openDetail(t)}>
-            {t.title || "(bez názvu)"}
-          </button>
-        </h3>
-        <div className="meta">
-          <span>
-            <Icon n="building" size={14} />
-            {t.buyer}
+    <div className={`swipe ${dx > SWIPE ? "go-right" : dx < -SWIPE ? "go-left" : ""}`} id={`card-${t.id}`}>
+      {dx !== 0 && (
+        <div className="swipe-under" aria-hidden="true">
+          <span className="right">
+            <Icon n="star" size={16} /> {status === "maybe" ? "Zrušit" : "Zvažuji"}
           </span>
-          {t.value ? (
-            <span>
-              <Icon n="money" size={14} />
-              {money(t.value, t.currency)}
-            </span>
-          ) : null}
-          {t.region && t.region !== "neznámý" && (
-            <span>
-              <Icon n="pin" size={14} />
-              {regionLabel(t.region)}
-            </span>
-          )}
-          <span className="src">{t.source === "DNS" ? "dynamický nákupní systém" : t.source}</span>
+          <span className="left">
+            Ne <Icon n="x" size={16} />
+          </span>
         </div>
-        {t.reason && (
-          <p className="reason">
-            <Icon n="sparkle" size={14} />
-            <span>{t.reason}</span>
-          </p>
-        )}
-        <div className="tender-foot" onClick={(e) => e.stopPropagation()}>
-          <button className="link more-link" onClick={() => openDetail(t)}>
-            Detail a AI rozbor <Icon n="arrow" size={14} />
-          </button>
-          <div className="actions" role="group" aria-label="Co s zakázkou">
-            {ACTIONS.map(({ s, label, icon }) => (
-              <button
-                key={s}
-                className={`${s} ${status === s ? "on" : ""}`}
-                onClick={() => setStatus(t, status === s ? "new" : s)}
-                aria-pressed={status === s}
-              >
-                <Icon n={icon} size={14} />
-                {label}
-              </button>
-            ))}
+      )}
+      <article
+        className={`card tender ${status === "no" ? "dim" : ""} ${status !== "new" ? `is-${status}` : ""} ${selected ? "selected" : ""} ${dx ? "dragging" : ""}`}
+        style={dx ? { transform: `translateX(${dx}px)` } : undefined}
+        onClick={() => {
+          if (swiped.current) return void (swiped.current = false);
+          openDetail(t);
+        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        <div className="score-col">
+          <div className="score" style={{ "--c": scoreColor(t.score), "--p": Math.max(t.score, 0) } as React.CSSProperties}>
+            <span>{t.score < 0 ? "–" : t.score}</span>
+          </div>
+          <small style={{ color: scoreColor(t.score) }}>{scoreLabel(t.score)}</small>
+        </div>
+        <div className="tender-body">
+          <div className="tender-top">
+            <div className="tags">
+              {fresh && <span className="tag fresh">nová</span>}
+              {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
+              {t.country === "SK" && <span className="tag sk">SK</span>}
+              {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
+              {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
+            </div>
+            {t.source === "DNS" ? (
+              <span className="deadline open">
+                <Icon n="clock" size={14} />
+                přidat se lze kdykoli
+              </span>
+            ) : (
+              <Deadline d={t.deadline} icon />
+            )}
+          </div>
+          <h3>
+            <button className="title" onClick={() => openDetail(t)}>
+              {t.title || "(bez názvu)"}
+            </button>
+          </h3>
+          <div className="meta">
+            <span>
+              <Icon n="building" size={14} />
+              {t.buyer}
+            </span>
+            {t.value ? (
+              <span>
+                <Icon n="money" size={14} />
+                {money(t.value, t.currency)}
+              </span>
+            ) : null}
+            {t.region && t.region !== "neznámý" && (
+              <span>
+                <Icon n="pin" size={14} />
+                {regionLabel(t.region)}
+              </span>
+            )}
+            <span className="src">{t.source === "DNS" ? "dynamický nákupní systém" : t.source}</span>
+          </div>
+          {t.reason && (
+            <p className="reason">
+              <Icon n="sparkle" size={14} />
+              <span>{t.reason}</span>
+            </p>
+          )}
+          <div className="tender-foot" onClick={(e) => e.stopPropagation()}>
+            <button className="link more-link" onClick={() => openDetail(t)}>
+              Detail a AI rozbor <Icon n="arrow" size={14} />
+            </button>
+            <div className="actions" role="group" aria-label="Co s zakázkou">
+              {ACTIONS.map(({ s, label, icon }) => (
+                <button
+                  key={s}
+                  className={`${s} ${status === s ? "on" : ""}`}
+                  onClick={() => setStatus(t, status === s ? "new" : s)}
+                  aria-pressed={status === s}
+                >
+                  <Icon n={icon} size={14} />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
-    </article>
+      </article>
+    </div>
   );
 }
 
@@ -1356,9 +1494,10 @@ function Detail(props: {
   openCompetitor: (name: string) => void;
   watching: boolean;
   toggleBuyer: (name: string) => void;
+  split: boolean;
   close: () => void;
 }) {
-  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, watching, toggleBuyer, close } = props;
+  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, watching, toggleBuyer, split, close } = props;
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
@@ -1375,12 +1514,13 @@ function Detail(props: {
     setError("");
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
+    if (!split) document.body.style.overflow = "hidden";
+    document.querySelector(".drawer")?.scrollTo({ top: 0 });
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [t.id]);
+  }, [t.id, split]);
 
   // poznámka se uloží až po chvíli bez psaní, ať se databáze nevolá po každém písmenu
   useEffect(() => {
@@ -1430,8 +1570,14 @@ function Detail(props: {
   }
 
   return (
-    <div className="drawer-bg" onClick={close}>
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={t.title} onClick={(e) => e.stopPropagation()}>
+    <div className={`drawer-bg ${split ? "split" : ""}`} onClick={close}>
+      <aside
+        className="drawer"
+        role="dialog"
+        aria-modal={!split}
+        aria-label={t.title}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="drawer-head">
           <div className="tags">
             <span className="tag">{t.source}</span>

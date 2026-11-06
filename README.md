@@ -63,6 +63,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.22** – mobil: záložky dole u palce, potažení karty doprava = Zvažuji, doleva = Ne (s Vrátit); počítač: detail
+  vedle seznamu na širokém displeji, klávesové zkratky (↑↓ J K, Enter, Z P N, /, ?).
 - **1.21** – obrazovka Dnes (nové od minula, lhůty tento týden, změny, tipy AI, sledovaní zadavatelé), čára „nové od
   poslední návštěvy“ ve výsledcích, sledování zadavatele (každá jeho nová zakázka v e-mailu i na telefonu), upozornění
   na telefon (Web Push, klíče si appka vytvoří sama), kalendář lhůt k odběru (ICS s připomenutím 3 dny předem).
