@@ -76,11 +76,13 @@ const first = (...v: any[]) => v.find((x) => x !== undefined && x !== null && x 
 async function hlidacPages(dotaz: string, token: string): Promise<Contract[]> {
   const out: Contract[] = [];
   for (let strana = 1; strana <= PAGES; strana++) {
-    const url = `https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?dotaz=${encodeURIComponent(dotaz)}&strana=${strana}`;
+    // razeni=5: nově uzavřené první (dokumentace api.hlidacstatu.cz/swagger/v2/swagger.json)
+    const url = `https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?dotaz=${encodeURIComponent(dotaz)}&strana=${strana}&razeni=5`;
     const res = await fetch(url, { headers: { Authorization: `Token ${token}`, "User-Agent": UA }, cache: "no-store" });
     if (!res.ok) throw new Error(`Hlídač státu ${res.status}`);
     const data = await res.json();
-    const rows: any[] = data.Results ?? data.results ?? [];
+    const rows: any[] = data.results ?? data.Results ?? [];
+    const total = Number(data.total ?? data.Total ?? 0);
     for (const r of rows) {
       const id = String(first(r.Id, r.id, r.identifikator?.idVerze) ?? "");
       if (!id) continue;
@@ -100,7 +102,7 @@ async function hlidacPages(dotaz: string, token: string): Promise<Contract[]> {
         matched: [],
       });
     }
-    if (rows.length < 25) break; // poslední stránka
+    if (!rows.length || (total && out.length >= total)) break; // poslední stránka
   }
   return out;
 }
