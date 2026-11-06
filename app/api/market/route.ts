@@ -8,7 +8,12 @@ export async function POST(req: Request) {
   const body = await req.json();
   const days = Math.min(Math.max(Number(body.days) || 730, 30), 1825);
   try {
-    const awards = await fetchTedAwards({ cpv: parseCpv(body.cpv ?? ""), keywords: splitList(body.keywords ?? ""), days });
+    const awards = await fetchTedAwards({
+      cpv: parseCpv(body.cpv ?? ""),
+      keywords: splitList(body.keywords ?? ""),
+      days,
+      countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"],
+    });
 
     const czk = awards.filter((a) => a.value && a.currency === "CZK").map((a) => a.value!).sort((a, b) => a - b);
     const q = (p: number) => (czk.length ? czk[Math.min(czk.length - 1, Math.floor(p * czk.length))] : null);

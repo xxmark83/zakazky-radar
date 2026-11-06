@@ -1,6 +1,7 @@
 export type Tender = {
   id: string;
   source: "TED" | "NEN" | "Hlídač státu" | "Profily zadavatelů";
+  country?: "CZ" | "SK"; // chybí = Česko
   kind: "open" | "upcoming"; // otevřená výzva / připravovaná (PIN, tržní konzultace)
   title: string;
   buyer: string;
@@ -48,6 +49,7 @@ export type SearchRequest = Profile & {
   known?: Record<string, Score>; // skóre z minulých hledání se stejným profilem – AI je nehodnotí znovu
   model?: "opus" | "haiku";
   noAi?: boolean; // měsíční limit vyčerpán – jen nové zakázky bez hodnocení
+  slovakia?: boolean; // přidat slovenské zakázky (zatím TED)
 };
 
 export type WatchedProfile = Profile & { minScore: number; watch: boolean };

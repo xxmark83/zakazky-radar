@@ -15,6 +15,7 @@ export const REGIONS = [
   "Zlínský",
   "Moravskoslezský",
   "celostátní",
+  "Slovensko",
   "neznámý",
 ] as const;
 export type Region = (typeof REGIONS)[number];

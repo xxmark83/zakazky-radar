@@ -36,7 +36,7 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
 
   // NEN nemá předběžná oznámení, hledá se jen u otevřených zakázek
   const sources: [string, Promise<Tender[]>][] = [
-    ["TED", kind === "upcoming" ? fetchTedUpcoming({ cpv, days }) : fetchTedOpen({ cpv, days })],
+    ["TED", (kind === "upcoming" ? fetchTedUpcoming : fetchTedOpen)({ cpv, days, countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"] })],
     ["NEN", kind === "open" ? fetchNen({ keywords }) : Promise.resolve([])],
     ["Hlídač státu", fetchHlidac({ keywords, days, kind })],
     ["Profily zadavatelů", Promise.resolve(kind === "open" ? fetchProfily({ keywords, cpv, days }) : [])],

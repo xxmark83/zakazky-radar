@@ -1,11 +1,15 @@
 import type { Award, Tender } from "../types";
 
 // TED (Tenders Electronic Daily) – oficiální, bezplatné API EU, bez klíče.
-// Obsahuje české zakázky nad evropským limitem (cca od 3–5 mil. Kč).
+// Obsahuje české (a volitelně slovenské) zakázky nad evropským limitem (cca od 3–5 mil. Kč).
 const TED_URL = "https://api.ted.europa.eu/v3/notices/search";
+
+// Česko je vždy, Slovensko jen když ho uživatel zapne v Nastavení
+export type Country = "CZE" | "SVK";
 
 const TENDER_FIELDS = [
   "publication-number",
+  "buyer-country",
   "notice-type",
   "title-proc",
   "notice-title",
@@ -35,13 +39,13 @@ type LangMap = Record<string, string | string[]> | undefined;
 
 function pickLang(v: LangMap): string {
   if (!v) return "";
-  const val = v.ces ?? v.eng ?? Object.values(v)[0];
+  const val = v.ces ?? v.slk ?? v.eng ?? Object.values(v)[0];
   return Array.isArray(val) ? val.join(" | ") : (val ?? "");
 }
 
 function pickLangList(v: LangMap): string[] {
   if (!v) return [];
-  const val = v.ces ?? v.eng ?? Object.values(v)[0];
+  const val = v.ces ?? v.slk ?? v.eng ?? Object.values(v)[0];
   return Array.isArray(val) ? val : val ? [val] : [];
 }
 
@@ -82,6 +86,7 @@ function toTender(n: any, kind: Tender["kind"]): Tender {
   return {
     id: `ted-${id}`,
     source: "TED",
+    country: (n["buyer-country"] ?? []).includes("SVK") ? "SK" : "CZ",
     kind,
     title: pickLang(n["title-proc"]) || pickLang(n["notice-title"]),
     buyer: pickLang(n["buyer-name"]),
@@ -95,16 +100,16 @@ function toTender(n: any, kind: Tender["kind"]): Tender {
   };
 }
 
-const base = (days: number) => [
-  "buyer-country=CZE",
+const base = (days: number, countries: Country[] = ["CZE"]) => [
+  `buyer-country IN (${countries.join(" ")})`,
   `publication-date>=${ymd(new Date(Date.now() - days * 86400_000))}`,
 ];
 const cpvPart = (cpv: string[]) => (cpv.length ? [`classification-cpv IN (${cpv.join(" ")})`] : []);
 
 /** Otevřené výzvy k podání nabídek. */
-export async function fetchTedOpen(opts: { cpv: string[]; days: number }): Promise<Tender[]> {
+export async function fetchTedOpen(opts: { cpv: string[]; days: number; countries?: Country[] }): Promise<Tender[]> {
   const query = [
-    ...base(opts.days),
+    ...base(opts.days, opts.countries),
     "notice-type IN (cn-standard cn-social cn-desg pin-cfc-standard pin-cfc-social)",
     ...cpvPart(opts.cpv),
   ].join(" AND ");
@@ -112,17 +117,17 @@ export async function fetchTedOpen(opts: { cpv: string[]; days: number }): Promi
 }
 
 /** Připravované zakázky: předběžná oznámení (PIN) a předběžné tržní konzultace. */
-export async function fetchTedUpcoming(opts: { cpv: string[]; days: number }): Promise<Tender[]> {
-  const early = `(notice-type IN (pin-only pin-buyer) OR FT~("tržní konzultace") OR FT~("tržních konzultací"))`;
-  const query = [...base(opts.days), early, ...cpvPart(opts.cpv)].join(" AND ");
+export async function fetchTedUpcoming(opts: { cpv: string[]; days: number; countries?: Country[] }): Promise<Tender[]> {
+  const early = `(notice-type IN (pin-only pin-buyer) OR FT~("tržní konzultace") OR FT~("tržních konzultací") OR FT~("prípravné trhové konzultácie"))`;
+  const query = [...base(opts.days, opts.countries), early, ...cpvPart(opts.cpv)].join(" AND ");
   return (await search(query, TENDER_FIELDS, 300)).map((n) => toTender(n, "upcoming"));
 }
 
 /** Výsledky zadávacích řízení – kdo a za kolik vyhrál. */
-export async function fetchTedAwards(opts: { cpv: string[]; keywords: string[]; days: number }): Promise<Award[]> {
+export async function fetchTedAwards(opts: { cpv: string[]; keywords: string[]; days: number; countries?: Country[] }): Promise<Award[]> {
   const ft = ftAny(opts.keywords);
   const query = [
-    ...base(opts.days),
+    ...base(opts.days, opts.countries),
     "notice-type IN (can-standard can-social)",
     ...cpvPart(opts.cpv),
     ...(ft ? [ft] : []),
@@ -148,14 +153,14 @@ function toAward(n: any): Award {
 }
 
 /** Všechny zakázky v ČR, které firma vyhrála (podle názvu vítěze v TED). */
-export async function fetchTedByWinner(name: string, days = 1825): Promise<Award[]> {
+export async function fetchTedByWinner(name: string, days = 1825, countries: Country[] = ["CZE"]): Promise<Award[]> {
   // právní formu vynecháme, TED ji píše různě (s.r.o., s. r. o., spol. s r.o.)
   const core = name
     .replace(/,?\s*(spol\.\s*s\s*r\.\s*o\.|s\.\s*r\.\s*o\.|a\.\s*s\.|v\.\s*o\.\s*s\.|k\.\s*s\.|z\.\s*s\.|s\.\s*p\.|se)\s*$/i, "")
     .replace(/["\\]/g, "")
     .trim();
   if (core.length < 3) return [];
-  const query = [...base(days), "notice-type IN (can-standard can-social)", `winner-name~"${core}"`].join(" AND ");
+  const query = [...base(days, countries), "notice-type IN (can-standard can-social)", `winner-name~"${core}"`].join(" AND ");
   const notices = await search(query, AWARD_FIELDS, 300);
   // hledání ~ je přibližné (najde i podobná jména), necháme jen výhry této firmy
   const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();

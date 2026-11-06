@@ -58,9 +58,10 @@ const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {} };
 type Keep = <K extends KeptKind>(kind: K, id: string, value: Kept[K][string] | null) => void;
 
 type Model = "opus" | "haiku";
+type Prefs = { model: Model; budget: number; slovakia: boolean };
 const MODEL_LABEL: Record<Model, string> = { opus: "Opus – přesnější", haiku: "Haiku – asi 40× levnější" };
 // co AI potřebuje vědět od komponent: model, jestli je limit vyčerpaný, a kam hlásit útratu
-type Ai = { model: Model; noAi: boolean; onCost: (usd: number) => void };
+type Ai = { model: Model; noAi: boolean; slovakia: boolean; onCost: (usd: number) => void };
 const usd = (v: number) => `${v < 0.01 && v > 0 ? "<0,01" : v.toLocaleString("cs-CZ", { maximumFractionDigits: 2 })} $`;
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 // sledované = rozpracované zakázky, u kterých hlídáme změny
@@ -160,7 +161,7 @@ export default function Home() {
   const [settings, setSettings] = useState(false);
   const [kept, setKept] = useState<Kept>(EMPTY_KEPT);
   const [spent, setSpent] = useState(0);
-  const [prefs, setPrefs] = useState<{ model: Model; budget: number }>({ model: "haiku", budget: 5 });
+  const [prefs, setPrefs] = useState<Prefs>({ model: "haiku", budget: 5, slovakia: false });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -177,7 +178,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((s: ServerState) => {
         setServer(s);
-        setPrefs(load("zr-prefs", { model: s.model ?? "haiku", budget: s.budget ?? 5 }));
+        setPrefs({ model: s.model ?? "haiku", budget: s.budget ?? 5, slovakia: false, ...load<Partial<Prefs>>("zr-prefs", {}) });
         if (s.db) {
           setStatuses(s.statuses ?? {});
           setMarked(Object.fromEntries((s.marked ?? []).map((t) => [t.id, t])));
@@ -209,7 +210,7 @@ export default function Home() {
       return next;
     });
   };
-  const ai: Ai = { model: prefs.model, noAi: spent >= prefs.budget, onCost };
+  const ai: Ai = { model: prefs.model, noAi: spent >= prefs.budget, slovakia: prefs.slovakia, onCost };
   const savePrefs = (p: typeof prefs) => {
     setPrefs(p);
     save("zr-prefs", p);
@@ -323,11 +324,18 @@ export default function Home() {
         </p>
         {tab !== "board" && (
         <div className="sources">
-          <span className="chip">TED (EU)</span>
+          <span className="chip-group">Česko</span>
+          <span className="chip">TED</span>
           <span className="chip">NEN</span>
           <span className="chip">
             {server.profily ? `${server.profily.ok.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}
           </span>
+          {prefs.slovakia && (
+            <>
+              <span className="chip-group">Slovensko</span>
+              <span className="chip">TED</span>
+            </>
+          )}
           {server.profily && (
             <span className="chip muted">aktualizováno {new Date(server.profily.updated).toLocaleDateString("cs-CZ")}</span>
           )}
@@ -353,7 +361,7 @@ export default function Home() {
       {tab === "board" && (
         <BoardTab statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
       )}
-      {tab === "market" && <MarketTab form={form} openCompetitor={setCompetitor} />}
+      {tab === "market" && <MarketTab form={form} slovakia={prefs.slovakia} openCompetitor={setCompetitor} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
       <footer className="foot">
         Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
@@ -381,7 +389,7 @@ export default function Home() {
           close={() => setDetail(null)}
         />
       )}
-      {competitor && <Competitor name={competitor} close={() => setCompetitor(null)} />}
+      {competitor && <Competitor name={competitor} slovakia={prefs.slovakia} close={() => setCompetitor(null)} />}
       {toast && (
         <div className="toast" role="status">
           <span>{toast.text}</span>
@@ -411,8 +419,8 @@ const THEMES: Record<Theme, string> = { auto: "Podle systému", light: "Světlý
 
 function Settings(props: {
   close: () => void;
-  prefs: { model: Model; budget: number };
-  setPrefs: (p: { model: Model; budget: number }) => void;
+  prefs: Prefs;
+  setPrefs: (p: Prefs) => void;
   spent: number;
   server: ServerState;
 }) {
@@ -454,6 +462,23 @@ function Settings(props: {
             </button>
           ))}
         </div>
+
+        <h3 className="sec">Zdroje zakázek</h3>
+        <div className="src-group">
+          <b>Česká republika</b>
+          <span>Vždy zapnuto: TED, NEN, profily zadavatelů (E-ZAK, Tender arena, eGORDION, PROEBIZ, Vhodné uveřejnění a další)</span>
+        </div>
+        <label className="src-group toggle">
+          <input
+            type="checkbox"
+            checked={prefs.slovakia}
+            onChange={(e) => setPrefs({ ...prefs, slovakia: e.target.checked })}
+          />
+          <span>
+            <b>Slovenská republika</b>
+            <span>Volitelně: TED (zakázky nad evropským limitem). Platí pro hledání, průzkum trhu i profil konkurenta.</span>
+          </span>
+        </label>
 
         <h3 className="sec">AI a útrata</h3>
         <div className="budget">
@@ -654,7 +679,7 @@ function SearchTab(props: {
       const known = loadScores(form.profile);
       const data = await Promise.all(
         (["open", "upcoming"] as const).map(async (mode) => {
-          const res = await post("/api/search", { ...form, mode, known, model: ai.model, noAi: ai.noAi }, ctrl.signal);
+          const res = await post("/api/search", { ...form, mode, known, model: ai.model, noAi: ai.noAi, slovakia: ai.slovakia }, ctrl.signal);
           const d = await res.json();
           if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
           return d as {
@@ -931,6 +956,7 @@ function TenderCard(props: {
         <div className="tags">
           {fresh && <span className="tag fresh">nová</span>}
           <span className="tag">{t.source}</span>
+          {t.country === "SK" && <span className="tag sk">SK</span>}
           {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
           {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
           {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
@@ -1482,7 +1508,8 @@ type Market = {
   awards: Award[];
 };
 
-function MarketTab({ form, openCompetitor }: { form: Form; openCompetitor: (name: string) => void }) {
+function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name: string) => void }) {
+  const { form, slovakia, openCompetitor } = props;
   const [days, setDays] = useState(730);
   const [useKeywords, setUseKeywords] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -1493,7 +1520,7 @@ function MarketTab({ form, openCompetitor }: { form: Form; openCompetitor: (name
     setLoading(true);
     setError("");
     try {
-      const res = await post("/api/market", { cpv: form.cpv, keywords: useKeywords ? form.keywords : "", days });
+      const res = await post("/api/market", { cpv: form.cpv, keywords: useKeywords ? form.keywords : "", days, slovakia });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       setData(d);
@@ -1622,14 +1649,14 @@ type CompetitorData = {
   awards: Award[];
 };
 
-function Competitor({ name, close }: { name: string; close: () => void }) {
+function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean; close: () => void }) {
   const [data, setData] = useState<CompetitorData | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setData(null);
     setError("");
-    post("/api/competitor", { name })
+    post("/api/competitor", { name, slovakia })
       .then(async (r) => {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error);
@@ -1656,7 +1683,9 @@ function Competitor({ name, close }: { name: string; close: () => void }) {
           </button>
         </div>
         <h2 className="drawer-title">{name}</h2>
-        <p className="drawer-buyer">Zakázky nad evropským limitem za posledních 5 let (TED)</p>
+        <p className="drawer-buyer">
+          Zakázky nad evropským limitem za posledních 5 let (TED, {slovakia ? "Česko a Slovensko" : "Česko"})
+        </p>
         {error && <div className="warn">{error}</div>}
         {!data && !error && (
           <div className="ai-cta">

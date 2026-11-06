@@ -4,9 +4,9 @@ export const maxDuration = 60;
 
 // Profil konkurenta: co vyhrál, u koho a za kolik (TED, posledních 5 let)
 export async function POST(req: Request) {
-  const { name } = (await req.json()) as { name: string };
+  const { name, slovakia } = (await req.json()) as { name: string; slovakia?: boolean };
   try {
-    const awards = await fetchTedByWinner(name);
+    const awards = await fetchTedByWinner(name, 1825, slovakia ? ["CZE", "SVK"] : ["CZE"]);
     const czk = awards.filter((a) => a.value && a.currency === "CZK");
     const buyers = new Map<string, number>();
     for (const a of awards) buyers.set(a.buyer, (buyers.get(a.buyer) ?? 0) + 1);

@@ -27,13 +27,13 @@ const SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM = `Jsi zkušený bid manažer pro české veřejné zakázky. Dostaneš popis nabídky dodavatele (malá firma s levnými SaaS aplikacemi) a seznam zakázek.
+const SYSTEM = `Jsi zkušený bid manažer pro české (a slovenské) veřejné zakázky. Dostaneš popis nabídky dodavatele (malá firma s levnými SaaS aplikacemi) a seznam zakázek.
 Ke každé zakázce vrať:
 - score 0–100: jak reálně by dodavatel mohl zakázku vyhrát nebo se na ní podílet (jako hlavní dodavatel či subdodavatel). 80+ = přesně sedí, 50–79 = část plnění sedí, pod 30 = nesouvisí.
   Snižuj skóre, pokud zakázka vyžaduje rozsah, reference nebo obrat, který malá firma nesplní, nebo jde hlavně o hardware/stavbu.
 - product: který produkt/služba dodavatele sedí (krátce), nebo "–".
 - reason: jedna věta česky, proč.
-- region: kraj, kde sídlí zadavatel (podle názvu obce, města nebo instituce). Ministerstva a celostátní úřady = "celostátní", když nevíš = "neznámý".
+- region: kraj, kde sídlí zadavatel (podle názvu obce, města nebo instituce). Ministerstva a celostátní úřady = "celostátní", slovenský zadavatel = "Slovensko", když nevíš = "neznámý".
 Vrať výsledek pro každé id ze vstupu.`;
 
 type Row = { id: string; score: number; product: string; reason: string; region: string };
