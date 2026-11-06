@@ -11,7 +11,9 @@ const PUBLIC = [
 export async function proxy(req: NextRequest) {
   const password = process.env.APP_PASSWORD;
   const path = req.nextUrl.pathname;
-  if (!password || PUBLIC.includes(path) || path.startsWith("/_next/")) return NextResponse.next();
+  // kalendář lhůt si stahuje kalendářová aplikace bez přihlášení, ověřuje se tajným klíčem v adrese
+  if (!password || PUBLIC.includes(path) || path.startsWith("/_next/") || path.startsWith("/api/calendar/"))
+    return NextResponse.next();
   if (await validSession(req.cookies.get(COOKIE)?.value, password)) return NextResponse.next();
 
   if (path.startsWith("/api/")) {

@@ -65,6 +65,21 @@ export function profilyById(ids: string[]): Map<string, { title: string; deadlin
   return new Map((d?.tenders ?? []).filter((t) => want.has(t.id)).map((t) => [t.id, t]));
 }
 
+const toTender = (t: Row): Tender => ({
+  id: t.id,
+  source: "Profily zadavatelů",
+  kind: "open",
+  title: t.title,
+  buyer: t.buyer,
+  published: t.published,
+  deadline: t.deadline,
+  value: null,
+  currency: null,
+  cpv: t.cpv && t.cpv !== "00000000" ? [t.cpv] : [],
+  description: [t.regime, t.description].filter(Boolean).join(" – "),
+  url: t.url,
+});
+
 export function fetchProfily(opts: { keywords: string[]; cpv: string[]; days: number }): Tender[] {
   const d = load();
   if (!d) return [];
@@ -79,18 +94,16 @@ export function fetchProfily(opts: { keywords: string[]; cpv: string[]; days: nu
       const text = `${t.title} ${t.description}`.toLowerCase();
       return words.some((w) => text.includes(w)) || prefixes.some((p) => t.cpv.startsWith(p));
     })
-    .map((t) => ({
-      id: t.id,
-      source: "Profily zadavatelů" as const,
-      kind: "open" as const,
-      title: t.title,
-      buyer: t.buyer,
-      published: t.published,
-      deadline: t.deadline,
-      value: null,
-      currency: null,
-      cpv: t.cpv && t.cpv !== "00000000" ? [t.cpv] : [],
-      description: [t.regime, t.description].filter(Boolean).join(" – "),
-      url: t.url,
-    }));
+    .map(toTender);
+}
+
+const bare = (s: string) =>
+  s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Otevřené zakázky sledovaných zadavatelů (bez ohledu na klíčová slova). Shoda podle názvu bez diakritiky. */
+export function profilyByBuyer(names: string[]): Tender[] {
+  const d = load();
+  const want = names.map(bare).filter((n) => n.length >= 4);
+  if (!d || !want.length) return [];
+  return d.tenders.filter((t) => want.includes(bare(t.buyer))).map(toTender);
 }

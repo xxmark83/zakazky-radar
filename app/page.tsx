@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { MB_LOGO } from "@/lib/logo";
 import { PRESETS } from "@/lib/presets";
 import { diff } from "@/lib/diff";
@@ -43,6 +43,9 @@ const ICONS = {
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3-10 2 2 4-4",
   arrow: "M5 12h14m-6-6 6 6-6 6",
   radar: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-4a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm0-6 7-7",
+  home: "M3 11 12 3l9 8M5 10v10h5v-6h4v6h5V10",
+  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
 };
 type IconName = keyof typeof ICONS;
 function Icon({ n, size = 16 }: { n: IconName; size?: number }) {
@@ -53,14 +56,15 @@ function Icon({ n, size = 16 }: { n: IconName; size?: number }) {
   );
 }
 
-type Tab = "search" | "board" | "market" | "watch";
+type Tab = "today" | "search" | "board" | "market" | "watch";
 const TABS: Record<Tab, string> = {
+  today: "Dnes",
   search: "Zakázky",
   board: "Moje zakázky",
   market: "Průzkum trhu",
   watch: "Hlídání",
 };
-const TAB_ICON: Record<Tab, IconName> = { search: "search", board: "board", market: "chart", watch: "bell" };
+const TAB_ICON: Record<Tab, IconName> = { today: "home", search: "search", board: "board", market: "chart", watch: "bell" };
 
 type ServerState = {
   db: boolean;
@@ -76,7 +80,9 @@ type ServerState = {
   model?: Model;
   ai?: boolean;
   ui?: Record<string, unknown>;
+  calendar?: string | null;
 };
+type Buyers = { buyers: { name: string; ico: string | null; added: string }[]; tenders: ScoredTender[] };
 
 // poznámky, AI rozbory, návrhy nabídek a změny – v databázi, bez ní v prohlížeči
 type Kept = {
@@ -112,7 +118,7 @@ const post = (url: string, body: unknown, signal?: AbortSignal) =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
 
 // S databází se tyto klíče sdílí mezi zařízeními (lib/store.ts UI_KEYS): výsledky, volby, filtry a vzhled.
-const SYNCED = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme"];
+const SYNCED = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme", "zr-visit"];
 let syncOn = false;
 const syncUi = (key: string, v: unknown) => {
   if (!syncOn || !SYNCED.includes(key)) return;
@@ -226,7 +232,7 @@ const moneyShort = (v: number) =>
   v >= 1e6 ? `${(v / 1e6).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} mil. Kč` : `${Math.round(v / 1e3)} tis. Kč`;
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("search");
+  const [tab, setTab] = useState<Tab>("today");
   const [form, setForm] = useState({ ...PRESETS[0], days: 30, minScore: 40 });
   const [server, setServer] = useState<ServerState>({ db: false });
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
@@ -240,6 +246,37 @@ export default function Home() {
   const [ready, setReady] = useState(false);
   // po načtení dat z databáze se záložky s výsledky vykreslí znovu
   const [synced, setSynced] = useState(0);
+  // sledovaní zadavatelé a jejich otevřené zakázky
+  const [buyers, setBuyers] = useState<Buyers>({ buyers: [], tenders: [] });
+  const loadBuyers = () =>
+    fetch("/api/buyers")
+      .then((r) => r.json())
+      .then((d) => d.buyers && setBuyers(d))
+      .catch(() => {});
+  useEffect(() => {
+    loadBuyers();
+  }, []);
+  const toggleBuyer = async (name: string) => {
+    const watched = buyers.buyers.some((b) => b.name === name);
+    const res = await post("/api/buyers", watched ? { remove: name } : { add: name });
+    const d = await res.json();
+    if (!res.ok) return setToast({ text: d.error ?? "Nepodařilo se uložit" });
+    setToast({ text: watched ? `Už nesleduješ ${name}` : `Sleduješ ${name} – dám vědět o každé nové zakázce` });
+    loadBuyers();
+  };
+
+  // poslední návštěva: co je novější, je „nové od minula“. Pauza nad 30 min = nová návštěva.
+  const [since, setSince] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    const v = load<{ last?: string; prev?: string }>("zr-visit", {});
+    const now = new Date().toISOString();
+    const away = !v.last || Date.now() - new Date(v.last).getTime() > 30 * 60_000;
+    const next = away ? { prev: v.last ?? now, last: now } : { ...v, last: now };
+    setSince(next.prev ?? null);
+    save("zr-visit", next);
+  }, [ready, synced]);
+
   // po prvním hledání se na mobilu volby sbalí a výsledky jsou hned nahoře
   const [hasResults, setHasResults] = useState(false);
   useEffect(() => setHasResults(load<ScoredTender[]>("zr-results", []).length > 0), [synced]);
@@ -418,11 +455,13 @@ export default function Home() {
       <section className="hero">
         <h1>{HEADINGS[tab]}</h1>
         <p className="sub">
-          {tab === "board"
+          {tab === "today"
+            ? new Date().toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })
+            : tab === "board"
             ? "Zakázky, se kterými pracuješ – přetáhni kartu do dalšího sloupce, jak postupuješ."
             : "AI projde nové veřejné zakázky v celé ČR a vybere ty, kde máš reálnou šanci."}
         </p>
-        {tab !== "board" && (
+        {tab !== "board" && tab !== "today" && (
         <div className="sources">
           <span>
             <span className="live" aria-hidden="true" />
@@ -440,10 +479,25 @@ export default function Home() {
         )}
       </section>
 
-      {tab !== "board" && <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} />}
+      {tab !== "board" && tab !== "today" && <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} />}
 
+      {tab === "today" && (
+        <TodayTab
+          key={synced}
+          since={since}
+          statuses={statuses}
+          marked={marked}
+          changes={kept.changes}
+          buyers={buyers}
+          setStatus={setStatus}
+          openDetail={setDetail}
+          goSearch={() => setTab("search")}
+          goBoard={() => setTab("board")}
+        />
+      )}
       {tab === "search" && (
         <SearchTab
+          since={since}
           key={synced}
           form={form}
           statuses={statuses}
@@ -459,7 +513,9 @@ export default function Home() {
         <BoardTab key={synced} statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
       )}
       {tab === "market" && <MarketTab form={form} slovakia={prefs.slovakia} openCompetitor={setCompetitor} />}
-      {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
+      {tab === "watch" && (
+        <WatchTab form={form} server={server} setServer={setServer} buyers={buyers} toggleBuyer={toggleBuyer} />
+      )}
       <footer className="foot">
         Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
       </footer>
@@ -484,6 +540,8 @@ export default function Home() {
           keep={keep}
           ai={ai}
           openCompetitor={setCompetitor}
+          watching={buyers.buyers.some((b) => b.name === (marked[detail.id] ?? detail).buyer)}
+          toggleBuyer={toggleBuyer}
           close={() => setDetail(null)}
         />
       )}
@@ -508,7 +566,7 @@ export default function Home() {
 }
 
 // na mobilu se celé názvy nevejdou do jednoho řádku
-const TAB_SHORT: Record<Tab, string> = { search: "Zakázky", board: "Moje", market: "Trh", watch: "Hlídání" };
+const TAB_SHORT: Record<Tab, string> = { today: "Dnes", search: "Zakázky", board: "Moje", market: "Trh", watch: "Hlídání" };
 
 const VERSION = process.env.APP_VERSION;
 
@@ -608,6 +666,15 @@ function Settings(props: {
           Limit hlídá appka. Pevný strop nastav i v console.anthropic.com → Settings → Limits, ten platí vždy.
         </p>
 
+        <PushSettings db={server.db} />
+
+        <h3 className="sec">Kalendář lhůt</h3>
+        {server.calendar ? (
+          <CalendarLink k={server.calendar} />
+        ) : (
+          <p className="note">Kalendář potřebuje databázi (Upstash).</p>
+        )}
+
         <h3 className="sec">Připojení</h3>
         <Check ok={server.ai} label="AI hodnocení (ANTHROPIC_API_KEY)" />
         <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
@@ -629,6 +696,7 @@ function Settings(props: {
 }
 
 const HEADINGS: Record<Tab, string> = {
+  today: "Dnes",
   search: "Zakázky, které sedí na tvou nabídku",
   board: "Moje zakázky",
   market: "Průzkum trhu",
@@ -800,6 +868,7 @@ const VALUES: Record<ValueRange, { label: string; test: (v: number | null) => bo
 };
 
 function SearchTab(props: {
+  since: string | null;
   form: Form;
   statuses: Record<string, Status>;
   marked: Record<string, ScoredTender>;
@@ -809,7 +878,7 @@ function SearchTab(props: {
   ai: Ai;
   onResults: (results: ScoredTender[]) => void;
 }) {
-  const { form, statuses, marked, setStatus, openDetail, profily, ai, onResults } = props;
+  const { since, form, statuses, marked, setStatus, openDetail, profily, ai, onResults } = props;
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
@@ -909,6 +978,10 @@ function SearchTab(props: {
     .filter((r) => !q || norm(`${r.title} ${r.buyer} ${r.product} ${r.reason}`).includes(q))
     .sort(CMP[sort]);
   const count = (s: Status) => Object.values(statuses).filter((x) => x === s).length;
+  // nové od poslední návštěvy nahoru (jen ve „Vše“), uvnitř skupin platí zvolené řazení
+  const isNew = (t: ScoredTender) => filter === "all" && isNewSince(t, since, fresh);
+  const newer = shown.filter(isNew);
+  const older = shown.filter((t) => !isNew(t));
   const sources = [...new Set(results.map((r) => r.source))];
   const narrowed = Boolean(q) || source !== "all" || region !== "all" || value !== "all";
   const active = [q, source !== "all", region !== "all", value !== "all"].filter(Boolean).length;
@@ -1089,16 +1162,27 @@ function SearchTab(props: {
       <div className="list">
         {loading && [0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}
         {!loading &&
-          shown.map((t) => (
-            <TenderCard
-              key={t.id}
-              t={t}
-              fresh={fresh.has(t.id)}
-              status={statuses[t.id] ?? "new"}
-              setStatus={setStatus}
-              openDetail={openDetail}
-            />
-          ))}
+          [newer, older].map((group, i) =>
+            group.length ? (
+              <Fragment key={i}>
+                {newer.length > 0 && older.length > 0 && (
+                  <div className={`since-line ${i ? "" : "new"}`}>
+                    {i ? "Dříve" : `Nové od poslední návštěvy (${newer.length})`}
+                  </div>
+                )}
+                {group.map((t) => (
+                  <TenderCard
+                    key={t.id}
+                    t={t}
+                    fresh={fresh.has(t.id)}
+                    status={statuses[t.id] ?? "new"}
+                    setStatus={setStatus}
+                    openDetail={openDetail}
+                  />
+                ))}
+              </Fragment>
+            ) : null,
+          )}
         {!shown.length && !loading && (
           <div className="empty">
             {narrowed ? (
@@ -1128,6 +1212,10 @@ function SearchTab(props: {
     </>
   );
 }
+
+// zakázka je „nová od minula“, když přibyla při posledním hledání nebo byla zveřejněna po poslední návštěvě
+const isNewSince = (t: ScoredTender, since: string | null, fresh: Set<string>) =>
+  fresh.has(t.id) || Boolean(since && t.published && t.published >= since.slice(0, 10));
 
 const daysLeft = (d: string | null) => (d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400_000) : null);
 
@@ -1266,9 +1354,11 @@ function Detail(props: {
   keep: Keep;
   ai: Ai;
   openCompetitor: (name: string) => void;
+  watching: boolean;
+  toggleBuyer: (name: string) => void;
   close: () => void;
 }) {
-  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, close } = props;
+  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, watching, toggleBuyer, close } = props;
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
@@ -1355,7 +1445,15 @@ function Detail(props: {
         <h2 className="drawer-title" id="d-top">
           {t.title || "(bez názvu)"}
         </h2>
-        <p className="drawer-buyer">{t.buyer}</p>
+        <div className="drawer-buyer">
+          <span>{t.buyer}</span>
+          {t.buyer && (
+            <button className={`ghost follow ${watching ? "on" : ""}`} onClick={() => toggleBuyer(t.buyer)}>
+              <Icon n={watching ? "check" : "eye"} size={14} />
+              {watching ? "Sleduješ" : "Sledovat zadavatele"}
+            </button>
+          )}
+        </div>
         <nav className="jump" aria-label="Části detailu">
           {JUMPS.map(([id, label]) => (
             <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
@@ -1628,6 +1726,142 @@ function PullToRefresh({ disabled }: { disabled: boolean }) {
 const TOP_SHOWN = 12;
 
 // historie zadavatele: co za posledních 5 let podepsal, IT a související s touto zakázkou nahoře
+// úvodní obrazovka: co je nové, co hoří a co doporučuje AI
+function TodayTab(props: {
+  since: string | null;
+  statuses: Record<string, Status>;
+  marked: Record<string, ScoredTender>;
+  changes: Record<string, Change[]>;
+  buyers: Buyers;
+  setStatus: (t: ScoredTender, s: Status) => void;
+  openDetail: (t: ScoredTender) => void;
+  goSearch: () => void;
+  goBoard: () => void;
+}) {
+  const { since, statuses, marked, changes, buyers, setStatus, openDetail, goSearch, goBoard } = props;
+  const [results, setResults] = useState<ScoredTender[]>([]);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setResults(load("zr-results", []));
+    setFresh(new Set(load<string[]>("zr-fresh", [])));
+  }, []);
+
+  const week = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
+  const open = (t: ScoredTender) => !t.deadline || t.deadline >= today();
+  const newOnes = results.filter((t) => !statuses[t.id] && open(t) && isNewSince(t, since, fresh));
+  const tips = results
+    .filter((t) => !statuses[t.id] && open(t) && t.score >= 70)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  const deadlines = Object.values(marked)
+    .filter((t) => ["maybe", "bid"].includes(statuses[t.id]) && t.deadline && t.deadline >= today() && t.deadline <= week)
+    .sort(CMP.deadline);
+  const changed = Object.values(marked).filter((t) => changes[t.id]?.length && ACTIVE.includes(statuses[t.id]));
+  const fromBuyers = buyers.tenders.filter((t) => !statuses[t.id]).slice(0, 5);
+  const lastSearch = results.length ? null : "Ještě jsi nehledal.";
+
+  const tiles: { v: number; l: string; cls?: string; go?: () => void }[] = [
+    { v: newOnes.length, l: "nových od minula", cls: newOnes.length ? "new" : "", go: goSearch },
+    { v: deadlines.length, l: "lhůt tento týden", cls: deadlines.length ? "warn" : "", go: goBoard },
+    { v: changed.length, l: "změn u sledovaných", cls: changed.length ? "warn" : "", go: goBoard },
+    { v: fromBuyers.length, l: "od sledovaných zadavatelů" },
+  ];
+
+  return (
+    <>
+      <div className="summary today-tiles">
+        {tiles.map((x) => (
+          <button key={x.l} className={x.cls} onClick={x.go} disabled={!x.go}>
+            <b>{x.v}</b>
+            <span>{x.l}</span>
+          </button>
+        ))}
+      </div>
+
+      {deadlines.length > 0 && (
+        <div className="card mine urgent-box">
+          <div className="mine-head">
+            <b>
+              <Icon n="clock" size={15} /> Lhůty tento týden
+            </b>
+          </div>
+          {deadlines.map((t) => (
+            <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
+              <span>{t.title}</span>
+              <Deadline d={t.deadline} short />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {changed.length > 0 && (
+        <div className="card mine">
+          <div className="mine-head">
+            <b>Změny u sledovaných zakázek</b>
+          </div>
+          {changed.map((t) => (
+            <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
+              <span>{t.title}</span>
+              <span className="tag changed">
+                {[...new Set(changes[t.id].map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <h2>
+        <Icon n="sparkle" size={16} /> Nejlepší tipy
+      </h2>
+      {tips.length ? (
+        <div className="list">
+          {tips.map((t) => (
+            <TenderCard
+              key={t.id}
+              t={t}
+              fresh={fresh.has(t.id)}
+              status={statuses[t.id] ?? "new"}
+              setStatus={setStatus}
+              openDetail={openDetail}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty">
+          <span className="empty-ic">
+            <Icon n="radar" size={28} />
+          </span>
+          <b>{lastSearch ?? "Žádný nový tip nad 70 bodů"}</b>
+          <span>V záložce Zakázky klikni na Hledat – AI vybere, co sedí na tvou nabídku.</span>
+        </div>
+      )}
+      <button className="primary big" onClick={goSearch}>
+        <Icon n="search" size={18} />
+        {results.length ? `Všechny vhodné zakázky (${results.length})` : "Najít zakázky"}
+      </button>
+
+      {fromBuyers.length > 0 && (
+        <>
+          <h2>
+            <Icon n="eye" size={16} /> Od sledovaných zadavatelů
+          </h2>
+          <div className="card mine">
+            {fromBuyers.map((t) => (
+              <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
+                <span>
+                  {t.title}
+                  <small className="hint"> · {t.buyer}</small>
+                </span>
+                <Deadline d={t.deadline} short />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function BuyerSection(props: {
   t: ScoredTender;
   profile: string;
@@ -2302,7 +2536,14 @@ function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean
   );
 }
 
-function WatchTab({ form, server, setServer }: { form: Form; server: ServerState; setServer: (s: ServerState) => void }) {
+function WatchTab(props: {
+  form: Form;
+  server: ServerState;
+  setServer: (s: ServerState) => void;
+  buyers: Buyers;
+  toggleBuyer: (name: string) => void;
+}) {
+  const { form, server, setServer, buyers, toggleBuyer } = props;
   const profiles = server.profiles ?? [];
   const [msg, setMsg] = useState("");
 
@@ -2338,6 +2579,31 @@ function WatchTab({ form, server, setServer }: { form: Form; server: ServerState
             Hlídat aktuální profil „{form.name}“
           </button>
           {msg && <span className="note"> {msg}</span>}
+          <h2>Sledovaní zadavatelé</h2>
+          <p className="note">
+            Upozorním na každou novou zakázku od nich, i když nesedí na klíčová slova. Přidáš je v detailu zakázky tlačítkem
+            „Sledovat zadavatele“.
+          </p>
+          <div className="card">
+            {buyers.buyers.length ? (
+              buyers.buyers.map((b) => (
+                <div key={b.name} className="check ok">
+                  <Icon n="eye" size={16} />
+                  <span>
+                    {b.name}
+                    {b.ico && <span className="hint"> · IČO {b.ico}</span>}
+                    <span className="hint"> · {buyers.tenders.filter((t) => t.buyer === b.name).length} otevřených</span>
+                  </span>
+                  <button className="link state" onClick={() => toggleBuyer(b.name)}>
+                    Přestat sledovat
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="note">Zatím nikoho nesleduješ.</p>
+            )}
+          </div>
+          <h2>Hlídané profily</h2>
           <div className="list" style={{ marginTop: 12 }}>
             {profiles.map((p) => (
               <div key={p.name} className="card watch">
@@ -2362,6 +2628,134 @@ function WatchTab({ form, server, setServer }: { form: Form; server: ServerState
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// upozornění na telefon: přihlášení zařízení přes service worker a Web Push
+function PushSettings({ db }: { db: boolean }) {
+  const [state, setState] = useState<"unknown" | "unsupported" | "off" | "on" | "denied">("unknown");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ios = typeof navigator !== "undefined" && /iPhone|iPad/.test(navigator.userAgent);
+  const standalone = typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches;
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return setState("unsupported");
+    if (Notification.permission === "denied") return setState("denied");
+    navigator.serviceWorker.getRegistration().then((r) =>
+      r?.pushManager.getSubscription().then((s) => setState(s ? "on" : "off")) ?? setState("off"),
+    );
+  }, []);
+
+  const key = (b64: string) => {
+    const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from(s, (c) => c.charCodeAt(0));
+  };
+
+  async function enable() {
+    setBusy(true);
+    setMsg("");
+    try {
+      if ((await Notification.requestPermission()) !== "granted") {
+        setState("denied");
+        return;
+      }
+      const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register("/sw.js"));
+      await navigator.serviceWorker.ready;
+      const res = await fetch("/api/push");
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(d.publicKey) });
+      await post("/api/push", { subscribe: sub.toJSON() });
+      setState("on");
+      setMsg("Zapnuto. Pošli si zkušební upozornění.");
+    } catch (e: any) {
+      setMsg(`Nepodařilo se: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function disable() {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (sub) {
+      await post("/api/push", { unsubscribe: sub.endpoint });
+      await sub.unsubscribe();
+    }
+    setState("off");
+    setMsg("");
+  }
+  async function test() {
+    const d = await (await post("/api/push", { test: true })).json();
+    setMsg(d.sent ? `Odesláno na ${d.sent} ${d.sent === 1 ? "zařízení" : "zařízení"}.` : "Žádné zařízení nepřijalo upozornění.");
+  }
+
+  return (
+    <>
+      <h3 className="sec">Upozornění na telefon</h3>
+      <p className="note">
+        Ráno ti dám vědět o nových zakázkách nad hlídaným skóre, 3 dny předem o lhůtě a o každé nové zakázce sledovaného
+        zadavatele.
+      </p>
+      {!db ? (
+        <p className="note">Upozornění potřebují databázi (Upstash).</p>
+      ) : state === "unsupported" ? (
+        <p className="note">
+          {ios && !standalone
+            ? "Na iPhonu fungují upozornění jen v appce z plochy: Sdílet → Přidat na plochu, pak to zapni tam."
+            : "Tento prohlížeč upozornění nepodporuje."}
+        </p>
+      ) : state === "denied" ? (
+        <p className="note">Upozornění máš v prohlížeči zakázaná. Povol je v nastavení prohlížeče u této stránky.</p>
+      ) : state === "on" ? (
+        <div className="row-btns">
+          <span className="saved">
+            <Icon n="check" size={14} /> Zapnuto na tomto zařízení
+          </span>
+          <button onClick={test}>Zkušební upozornění</button>
+          <button className="ghost" onClick={disable}>
+            Vypnout
+          </button>
+        </div>
+      ) : (
+        <button className="primary" onClick={enable} disabled={busy || state === "unknown"}>
+          <Icon n="bell" size={16} /> Zapnout upozornění
+        </button>
+      )}
+      {msg && <p className="note">{msg}</p>}
+    </>
+  );
+}
+
+function CalendarLink({ k }: { k: string }) {
+  const [copied, setCopied] = useState(false);
+  const url = typeof location !== "undefined" ? `${location.origin}/api/calendar/${k}.ics` : "";
+  return (
+    <>
+      <p className="note">
+        Lhůty zakázek, které zvažuješ, připravuješ nebo jsi podal, se samy objeví v tvém kalendáři, s připomenutím 3 dny
+        předem.
+      </p>
+      <div className="row-btns">
+        <button
+          onClick={() =>
+            navigator.clipboard.writeText(url).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            })
+          }
+        >
+          <Icon n="calendar" size={16} /> {copied ? "Odkaz zkopírován" : "Kopírovat odkaz kalendáře"}
+        </button>
+        <a className="btn ghost-link" href={url.replace(/^https?:/, "webcal:")}>
+          Přidat do Apple Kalendáře
+        </a>
+      </div>
+      <p className="note">
+        Google Kalendář: vlevo „Další kalendáře“ → + → „Z adresy URL“ → vlož odkaz. Odkaz je tajný, nikomu ho
+        neposílej.
+      </p>
     </>
   );
 }

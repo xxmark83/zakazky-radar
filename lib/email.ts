@@ -6,7 +6,11 @@ const FIELD: Record<Change["field"], string> = { deadline: "lhůta", title: "ná
 export async function sendAlert(
   groups: { profile: string; tenders: ScoredTender[] }[],
   appUrl: string,
-  extra: { changed: { tender: ScoredTender; changes: Change[] }[]; deadlines: ScoredTender[] } = { changed: [], deadlines: [] },
+  extra: {
+    changed: { tender: ScoredTender; changes: Change[] }[];
+    deadlines: ScoredTender[];
+    buyers?: { buyer: string; tenders: ScoredTender[] }[];
+  } = { changed: [], deadlines: [] },
 ) {
   const key = process.env.RESEND_API_KEY;
   const to = process.env.ALERT_EMAIL;
@@ -34,16 +38,28 @@ ${c.changes.map((ch) => `<div style="font-size:14px">${FIELD[ch.field]}: <s>${es
         )
         .join("")}`
     : "";
+  const buyers = extra.buyers ?? [];
+  const buyersHtml = buyers.length
+    ? `<h3 style="margin:20px 0 8px">Od sledovaných zadavatelů</h3>${buyers
+        .flatMap((g) =>
+          g.tenders.map(
+            (t) => `<div style="${box}"><a href="${esc(t.url)}" style="font-weight:600;color:#16181d">${esc(t.title)}</a>
+<div style="color:#666;font-size:13px">${esc(g.buyer)} · ${money(t)} · lhůta ${t.deadline ?? "?"}</div></div>`,
+          ),
+        )
+        .join("")}`
+    : "";
   const parts = [
     count ? `${count} nových zakázek` : "",
     extra.deadlines.length ? `${extra.deadlines.length}× blížící se lhůta` : "",
     extra.changed.length ? `${extra.changed.length}× změna` : "",
+    buyers.length ? `${buyers.reduce((n, g) => n + g.tenders.length, 0)}× od sledovaných zadavatelů` : "",
   ].filter(Boolean);
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px">
 <h2 style="margin:0 0 4px">Zakázky radar: ${parts.join(", ")}</h2>
 <p style="color:#666;margin:0 0 16px"><a href="${esc(appUrl)}">Otevřít aplikaci</a></p>
-${deadlinesHtml}${changesHtml}
+${deadlinesHtml}${changesHtml}${buyersHtml}
 ${groups
   .map(
     (g) => `<h3 style="margin:20px 0 8px">${esc(g.profile)}</h3>

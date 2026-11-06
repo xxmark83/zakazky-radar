@@ -1,3 +1,4 @@
+import { calendarKey } from "@/lib/session";
 import { profilyInfo } from "@/lib/sources/profily";
 import { getKept, getMarkedTenders, getSpend, getState, saveProfiles, saveUi, setKept, setStatus, type Kept } from "@/lib/store";
 
@@ -15,6 +16,7 @@ export async function GET() {
     cron: Boolean(process.env.CRON_SECRET),
     ai: Boolean(process.env.ANTHROPIC_API_KEY),
     profily: profilyInfo(),
+    calendar: state.db ? await calendarKey(process.env.APP_PASSWORD) : null,
   });
 }
 

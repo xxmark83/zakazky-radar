@@ -554,6 +554,32 @@ a.mine-row .note { flex: none; margin: 0; }
 .hist-side b { font-size: 13.5px; white-space: nowrap; }
 .hist-side .tags { margin: 0; }
 
+/* Dnes */
+.today-tiles { margin-top: 4px; }
+.today-tiles button {
+  display: grid; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line);
+  text-align: left; cursor: pointer;
+}
+.today-tiles button:disabled { cursor: default; opacity: 1; }
+.today-tiles button.new b { color: var(--good); }
+.today-tiles button.warn b { color: var(--mid); }
+.urgent-box { border-left-color: var(--mid); }
+.mine-head b, h2 { display: inline-flex; align-items: center; gap: 8px; }
+.since-line {
+  display: flex; align-items: center; gap: 10px; margin: 6px 0 -2px; color: var(--muted); font-size: 12.5px; font-weight: 700;
+}
+.since-line::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.since-line.new { color: var(--good); }
+.since-line.new::after { background: color-mix(in srgb, var(--good) 40%, var(--line)); }
+
+/* detail: sledovat zadavatele */
+.drawer-buyer { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+button.follow { padding: 4px 10px; font-size: 12.5px; border-radius: 99px; }
+button.follow.on { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, var(--line)); }
+.row-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+a.btn.ghost-link { background: none; color: var(--accent); border: 1px solid var(--line); font-weight: 600; }
+.saved { display: inline-flex; align-items: center; gap: 6px; }
+
 /* přihlášení */
 main.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .login-card { width: min(380px, 100%); padding: 28px 24px; display: grid; }

@@ -90,8 +90,17 @@ export async function getProfiles(): Promise<WatchedProfile[]> {
   return redis ? ((await redis.get<WatchedProfile[]>(K.profiles)) ?? []) : [];
 }
 
+// sledovaní zadavatelé: upozornit na cokoli nového od nich, i mimo klíčová slova
+export type WatchedBuyer = { name: string; ico: string | null; added: string };
+export async function getBuyers(): Promise<WatchedBuyer[]> {
+  return redis ? ((await redis.get<WatchedBuyer[]>("zr:buyers")) ?? []) : [];
+}
+export async function saveBuyers(list: WatchedBuyer[]) {
+  if (redis) await redis.set("zr:buyers", list);
+}
+
 // jen známé klíče z prohlížeče, ať se do databáze nedá zapsat cokoli
-export const UI_KEYS = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme"];
+export const UI_KEYS = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme", "zr-visit"];
 
 export async function saveUi(values: Record<string, unknown>) {
   const ok = Object.fromEntries(Object.entries(values).filter(([k]) => UI_KEYS.includes(k)));

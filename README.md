@@ -63,6 +63,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.21** – obrazovka Dnes (nové od minula, lhůty tento týden, změny, tipy AI, sledovaní zadavatelé), čára „nové od
+  poslední návštěvy“ ve výsledcích, sledování zadavatele (každá jeho nová zakázka v e-mailu i na telefonu), upozornění
+  na telefon (Web Push, klíče si appka vytvoří sama), kalendář lhůt k odběru (ICS s připomenutím 3 dny předem).
 - **1.20** – v „Co hledáš“ jde vybrat víc oblastí najednou (i všechny tři), AI hodnotí podle té, která sedí;
   Hlídač státu: zakázky přes nové API v2 (/api/v2/vz/hledat), stará adresa vracela 404.
 - **1.19.2** – naplánovaná úloha na Macu (`scripts/mac-sync.sh`, launchd každé 3 h): Vhodné uveřejnění a jednou

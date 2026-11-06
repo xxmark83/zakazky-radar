@@ -31,3 +31,9 @@ export async function validSession(value: string | undefined, password: string) 
   if (!sig || !expires || expires < Date.now() / 1000) return false;
   return sameText(sig, await sign(password, expires));
 }
+
+// tajný odkaz na kalendář lhůt: kalendáře (Google, Apple) se nepřihlašují, proto klíč v adrese.
+// Odvozený z hesla, takže změna APP_PASSWORD zneplatní i starý odkaz.
+export async function calendarKey(password: string | undefined) {
+  return (await sign(password || "zakazky-radar", 0)).slice(0, 32);
+}
