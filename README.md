@@ -62,6 +62,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.13** – nová volba Kybernetická bezpečnost (GAP analýza NIS2, SIEM a SOC, endpoint, antivirus, EDR/XDR),
+  krátké zkratky v průzkumu trhu jen jako celé slovo, Registr smluv sbírá i smlouvy z kyberbezpečnosti.
 - **1.12** – dynamické nákupní systémy mezi zakázkami, Registr smluv v průzkumu trhu a profilu konkurenta,
   šetrný sběr z Vhodného uveřejnění (Crawl-Delay 30 s, opravené adresy).
 - **1.11** – výsledky řízení z otevřených dat ISVZ v Průzkumu trhu a v profilu konkurenta (i malé zakázky, počet

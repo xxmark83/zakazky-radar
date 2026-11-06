@@ -16,4 +16,12 @@ export const PRESETS: Profile[] = [
     keywords: "e-learning, LMS, vzdělávací portál, školení zaměstnanců, vzdělávací systém",
     cpv: "80420000 80500000 48190000 72000000",
   },
+  {
+    name: "Kybernetická bezpečnost",
+    profile:
+      "Nabízím služby a řešení kybernetické bezpečnosti pro zakázky malého a středního rozsahu: GAP analýzu podle NIS2 a zákona o kybernetické bezpečnosti (vstupní audit, analýza rizik, plán opatření, bezpečnostní dokumentace, ISMS / ISO 27001), SIEM a SOC (sběr a vyhodnocení logů, dohled 24/7, reakce na incidenty), ochranu koncových stanic – endpoint, EDR / XDR, antivirus – a související služby (firewall, skenování zranitelností, penetrační testy, školení bezpečnosti). Zákazníci: obce, úřady, nemocnice, školy, příspěvkové organizace a státní firmy, hlavně nově povinné subjekty podle NIS2. Nezajímají mě fyzická ostraha, kamerové systémy, stavby ani velké dodávky hardwaru.",
+    keywords:
+      "kybernetická bezpečnost, NIS2, GAP analýza, SIEM, SOC, endpoint, antivirus, EDR, XDR, kyberbezpečnost, firewall, penetrační testy, zranitelnost, ISO 27001",
+    cpv: "48730000 48760000 72000000 79417000",
+  },
 ];

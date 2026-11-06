@@ -25,7 +25,12 @@ const isoDate = (s: string) => {
 
 // NEN hledá podřetězec v názvu – celé fráze najdou málo, proto hledáme jednotlivá slova se zkrácenou
 // koncovkou („zákaznick“ najde i „zákaznického“). Nesouvisející výsledky pak vyřadí AI.
-const STOP = new Set(["pro", "správa", "systém", "zaměstnanců", "občany", "klientů", "kontaktů"]);
+// obecná slova z víceslovných hesel („GAP analýza“, „penetrační testy“) by našla stovky nesouvisejících zakázek;
+// krátké zkratky jako SOC, EDR a GAP jsou podřetězcem běžných slov („sociální“, „nedrážní“), hledáme je jen přes TED a AI
+const STOP = new Set([
+  "pro", "správa", "systém", "zaměstnanců", "občany", "klientů", "kontaktů",
+  "analýza", "testy", "bezpečnost", "soc", "iso", "edr", "xdr", "gap",
+]);
 const ALWAYS = ["informační systém", "aplikac", "software"];
 export const terms = (keywords: string[]) => {
   const words = keywords

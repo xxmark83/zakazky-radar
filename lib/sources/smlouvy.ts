@@ -17,6 +17,8 @@ function load() {
 }
 
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+// krátké zkratky (SOC, EDR, NIS2) jen jako celé slovo, jinak by „soc“ našlo i „sociální“
+const hit = (title: string, w: string) => ` ${norm(title)} `.includes(w.length <= 4 ? ` ${w} ` : w);
 const toAward = ({ buyerIco, winnerIco, version, ...a }: Row): Award => ({ ...a, cpv: [], source: "Smlouvy" });
 
 export function smlouvyInfo() {
@@ -31,7 +33,7 @@ export function smlouvyAwards(opts: { keywords: string[]; days: number }): Award
   if (!d || !words.length) return [];
   const since = new Date(Date.now() - opts.days * 86400_000).toISOString().slice(0, 10);
   return d.contracts
-    .filter((c) => (!c.published || c.published >= since) && words.some((w) => ` ${norm(c.title)} `.includes(w)))
+    .filter((c) => (!c.published || c.published >= since) && words.some((w) => hit(c.title, w)))
     .map(toAward);
 }
 

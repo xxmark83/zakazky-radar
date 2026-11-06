@@ -24,6 +24,8 @@ export function isvzInfo() {
 }
 
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+// krátké zkratky (SOC, EDR, NIS2) jen jako celé slovo, jinak by „soc“ našlo i „sociální“
+const hit = (title: string, w: string) => ` ${norm(title)} `.includes(w.length <= 4 ? ` ${w} ` : w);
 const toAward = ({ buyerIco, winnerIco, nuts, ...a }: Row): Award => ({ ...a, source: "ISVZ" });
 
 export function isvzAwards(opts: { cpv: string[]; keywords: string[]; days: number }): Award[] {
@@ -36,7 +38,7 @@ export function isvzAwards(opts: { cpv: string[]; keywords: string[]; days: numb
     .filter((a) => !a.published || a.published >= since)
     .filter((a) => {
       const cpvOk = !prefixes.length || a.cpv.some((c) => prefixes.some((p) => c.startsWith(p)));
-      const kwOk = !words.length || words.some((w) => norm(a.title).includes(w));
+      const kwOk = !words.length || words.some((w) => hit(a.title, w));
       return cpvOk && kwOk;
     })
     .map(toAward);

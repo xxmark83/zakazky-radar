@@ -540,6 +540,7 @@ const HEADINGS: Record<Tab, string> = {
 const PRESET_HINT: Record<string, string> = {
   "CRM a zákaznické portály": "Malé CRM, klientské a občanské portály, helpdesk",
   "Vzdělávací portál": "E-learning, LMS, povinná školení zaměstnanců",
+  "Kybernetická bezpečnost": "GAP analýza NIS2, SIEM a SOC, endpoint a antivirus",
 };
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };

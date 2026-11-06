@@ -37,6 +37,14 @@ const IT = [
   "spisov", // spisová služba
   "databaz",
   "digitaliz",
+  "kybernet", // kybernetická bezpečnost
+  "kyberbezpec",
+  "nis2",
+  "siem",
+  "antivir",
+  "firewall",
+  "penetracni",
+  "zranitelnost",
 ];
 
 const fold = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
