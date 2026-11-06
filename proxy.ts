@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE, validSession } from "@/lib/session";
 
 // Přihlášení heslem APP_PASSWORD, aby nikdo cizí nepálil kredit za AI. Bez hesla je appka otevřená (lokální vývoj).
-const PUBLIC = ["/login", "/api/login", "/api/cron", "/icon.svg"]; // cron se ověřuje vlastním CRON_SECRET
+// cron se ověřuje vlastním CRON_SECRET; manifest, ikony a service worker stahuje telefon bez přihlášení
+const PUBLIC = [
+  "/login", "/api/login", "/api/cron", "/icon.svg", "/manifest.webmanifest", "/sw.js",
+  "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png",
+];
 
 export async function proxy(req: NextRequest) {
   const password = process.env.APP_PASSWORD;

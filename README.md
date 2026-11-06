@@ -62,6 +62,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.18** – PWA (ikona na plochu, celá obrazovka, rychlé spuštění), na mobilu po hledání sbalené volby a výsledky
+  hned nahoře, filtry v panelu zdola, menší karta zakázky, rychlé skoky v detailu, v appce z plochy obnovení
+  stažením dolů.
 - **1.17.1** – historie zadavatele: stránkování a řazení Hlídače státu podle jejich dokumentace API.
 - **1.17** – Historie zadavatele v detailu zakázky: smlouvy a zakázky za 5 let (Hlídač státu s HLIDAC_TOKEN,
   jinak naše IT smlouvy a ISVZ), IT a související s otevřenou zakázkou nahoře, IČO z ARES, tlačítko AI zhodnocení

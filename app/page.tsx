@@ -240,6 +240,9 @@ export default function Home() {
   const [ready, setReady] = useState(false);
   // po načtení dat z databáze se záložky s výsledky vykreslí znovu
   const [synced, setSynced] = useState(0);
+  // po prvním hledání se na mobilu volby sbalí a výsledky jsou hned nahoře
+  const [hasResults, setHasResults] = useState(false);
+  useEffect(() => setHasResults(load<ScoredTender[]>("zr-results", []).length > 0), [synced]);
 
   useEffect(() => {
     const last = load<{ form?: typeof form }>("zr-form", {});
@@ -340,6 +343,7 @@ export default function Home() {
   };
   const active = () => Object.values(marked).filter((t) => ACTIVE.includes(statuses[t.id]));
   const checkResults = (results: ScoredTender[]) => {
+    setHasResults(results.length > 0);
     const byId = new Map(results.map((r) => [r.id, r]));
     applyChanges(
       active().flatMap((t) => {
@@ -409,7 +413,8 @@ export default function Home() {
           </div>
         </div>
       </header>
-    <main>
+    <main className={tab === "search" && hasResults ? "compact" : ""}>
+      <PullToRefresh disabled={Boolean(detail || settings || competitor)} />
       <section className="hero">
         <h1>{HEADINGS[tab]}</h1>
         <p className="sub">
@@ -435,7 +440,7 @@ export default function Home() {
         )}
       </section>
 
-      {tab !== "board" && <ProfileForm form={form} setForm={setForm} tab={tab} />}
+      {tab !== "board" && <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} />}
 
       {tab === "search" && (
         <SearchTab
@@ -644,16 +649,34 @@ const PRESET_HINT: Record<string, string> = {
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
 
-function ProfileForm({ form, setForm, tab }: { form: Form; setForm: (f: Form) => void; tab: Tab }) {
+function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f: Form) => void; tab: Tab; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="card">
+    <div className={`card profile ${compact && !open ? "folded" : ""}`}>
+      {compact && (
+        <button className="profile-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <span className="preset-ic">
+            <Icon n={PRESET_ICON[form.name] ?? "search"} size={18} />
+          </span>
+          <span>
+            <small>Hledáš</small>
+            <b>{form.name}</b>
+          </span>
+          <span className="chev" aria-hidden="true">
+            {open ? "▴" : "▾"}
+          </span>
+        </button>
+      )}
       <div className="step">Co hledáš</div>
       <div className="presets">
         {PRESETS.map((p) => (
           <button
             key={p.name}
             className={`preset ${form.name === p.name ? "on" : ""}`}
-            onClick={() => setForm({ ...form, ...p })}
+            onClick={() => {
+              setForm({ ...form, ...p });
+              setOpen(false);
+            }}
             aria-pressed={form.name === p.name}
           >
             <span className="preset-ic">
@@ -853,6 +876,14 @@ function SearchTab(props: {
   const count = (s: Status) => Object.values(statuses).filter((x) => x === s).length;
   const sources = [...new Set(results.map((r) => r.source))];
   const narrowed = Boolean(q) || source !== "all" || region !== "all" || value !== "all";
+  const active = [q, source !== "all", region !== "all", value !== "all"].filter(Boolean).length;
+  const [sheet, setSheet] = useState(false);
+  const clearFilter = () => {
+    setQuery("");
+    setSource("all");
+    setRegion("all");
+    setValue("all");
+  };
   const regions = REGIONS.filter((x) => results.some((r) => (r.region ?? "neznámý") === x));
 
   const bids = Object.values(marked)
@@ -943,7 +974,21 @@ function SearchTab(props: {
               <Icon n="download" /> Excel
             </button>
           </div>
-          <div className="toolbar">
+          <button className={`filter-btn ${active ? "on" : ""}`} onClick={() => setSheet(true)}>
+            <Icon n="search" size={15} />
+            Hledat a filtrovat{active ? ` (${active})` : ""}
+            <span className="sort-now">{SORTS[sort]}</span>
+          </button>
+          {sheet && <div className="sheet-bg" onClick={() => setSheet(false)} />}
+          <div className={`toolbar ${sheet ? "open" : ""}`}>
+            <div className="sheet-head">
+              <b>Hledat a filtrovat</b>
+              {active > 0 && (
+                <button className="link" onClick={clearFilter}>
+                  Zrušit filtr
+                </button>
+              )}
+            </div>
             <input
               type="search"
               className="find"
@@ -993,13 +1038,16 @@ function SearchTab(props: {
                 </option>
               ))}
             </select>
-            <select value={sort} onChange={(e) => changeSort(e.target.value as Sort)}>
+            <select value={sort} onChange={(e) => changeSort(e.target.value as Sort)} aria-label="Řazení">
               {(Object.keys(SORTS) as Sort[]).map((s) => (
                 <option key={s} value={s}>
                   {SORTS[s]}
                 </option>
               ))}
             </select>
+            <button className="primary sheet-done" onClick={() => setSheet(false)}>
+              Zobrazit {shown.length} {shown.length === 1 ? "zakázku" : shown.length < 5 && shown.length > 0 ? "zakázky" : "zakázek"}
+            </button>
           </div>
         </div>
       )}
@@ -1021,15 +1069,7 @@ function SearchTab(props: {
             {narrowed ? (
               <>
                 <b>Filtru nic neodpovídá</b>
-                <button
-                  className="link"
-                  onClick={() => {
-                    setQuery("");
-                    setSource("all");
-                    setRegion("all");
-                    setValue("all");
-                  }}
-                >
+                <button className="link" onClick={clearFilter}>
                   Zrušit filtr
                 </button>
               </>
@@ -1277,8 +1317,17 @@ function Detail(props: {
             ×
           </button>
         </div>
-        <h2 className="drawer-title">{t.title || "(bez názvu)"}</h2>
+        <h2 className="drawer-title" id="d-top">
+          {t.title || "(bez názvu)"}
+        </h2>
         <p className="drawer-buyer">{t.buyer}</p>
+        <nav className="jump" aria-label="Části detailu">
+          {JUMPS.map(([id, label]) => (
+            <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+              {label}
+            </button>
+          ))}
+        </nav>
 
         <dl className="facts">
           <div>
@@ -1350,7 +1399,9 @@ function Detail(props: {
           openCompetitor={openCompetitor}
         />
 
-        <h3 className="sec">AI rozbor</h3>
+        <h3 className="sec" id="d-ai">
+          AI rozbor
+        </h3>
         {!analysis && busy !== "analysis" && (
           <div className="ai-cta">
             <span>
@@ -1448,7 +1499,9 @@ function Detail(props: {
           </>
         )}
 
-        <h3 className="sec">Poznámky</h3>
+        <h3 className="sec" id="d-notes">
+          Poznámky
+        </h3>
         <textarea
           className="notes"
           placeholder="Kontakt na zadavatele, cena, kdo pomůže s nabídkou…"
@@ -1482,6 +1535,57 @@ function Detail(props: {
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+// rychlé skoky v detailu zakázky (hlavně na mobilu, kde je detail dlouhý)
+const JUMPS: [string, string][] = [
+  ["d-top", "Přehled"],
+  ["d-history", "Historie"],
+  ["d-ai", "AI rozbor"],
+  ["d-notes", "Poznámky"],
+];
+
+// appka z plochy nemá obnovení stažením stránky dolů jako prohlížeč – doplníme ho
+function PullToRefresh({ disabled }: { disabled: boolean }) {
+  const [pull, setPull] = useState(0);
+  const start = useRef<number | null>(null);
+  useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone;
+    if (!standalone || disabled) return;
+    let dist = 0;
+    const down = (e: TouchEvent) => {
+      start.current = window.scrollY <= 0 ? e.touches[0].clientY : null;
+    };
+    const move = (e: TouchEvent) => {
+      if (start.current === null) return;
+      dist = Math.max(0, Math.min(120, (e.touches[0].clientY - start.current) * 0.5));
+      setPull(dist);
+    };
+    const up = () => {
+      if (start.current !== null && dist >= 70) location.reload();
+      start.current = null;
+      dist = 0;
+      setPull(0);
+    };
+    window.addEventListener("touchstart", down, { passive: true });
+    window.addEventListener("touchmove", move, { passive: true });
+    window.addEventListener("touchend", up);
+    return () => {
+      window.removeEventListener("touchstart", down);
+      window.removeEventListener("touchmove", move);
+      window.removeEventListener("touchend", up);
+    };
+  }, [disabled]);
+  if (!pull) return null;
+  return (
+    <div className="ptr" style={{ height: pull }} aria-hidden="true">
+      <span style={{ transform: `rotate(${pull * 3}deg)`, opacity: Math.min(1, pull / 70) }}>
+        <Icon n="radar" size={20} />
+      </span>
+      <small>{pull >= 70 ? "Pusť pro obnovení" : "Táhni dolů"}</small>
     </div>
   );
 }
@@ -1537,7 +1641,9 @@ function BuyerSection(props: {
 
   return (
     <>
-      <h3 className="sec">Historie zadavatele</h3>
+      <h3 className="sec" id="d-history">
+        Historie zadavatele
+      </h3>
       {!hist ? (
         <div className="ai-cta">
           {busy === "list" ? (
