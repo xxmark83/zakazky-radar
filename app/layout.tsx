@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Bricolage_Grotesque, Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin", "latin-ext"], variable: "--font-inter" });
+// nadpisy a velká čísla: výraznější grotesk, text zůstává v Inter
+const display = Bricolage_Grotesque({ subsets: ["latin", "latin-ext"], variable: "--font-display" });
 
 export const metadata: Metadata = {
   title: "Zakázky radar",
@@ -24,7 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="cs" className={inter.variable} suppressHydrationWarning>
+    <html lang="cs" className={`${inter.variable} ${display.variable}`} suppressHydrationWarning>
       <head>
         {/* vzhled z Nastavení nastavit ještě před vykreslením, ať stránka neblikne */}
         <script

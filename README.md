@@ -63,6 +63,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.25** – širší rozvržení (až 1 440 px), na počítači „Co hledáš“ jako panel vlevo a výsledky vpravo, Dnes ve dvou
+  sloupcích; nové písmo nadpisů (Bricolage Grotesque), jemný motiv radaru v pozadí, barevný proužek karty podle skóre,
+  plynulé naskakování karet a plnění skóre.
 - **1.24** – „Proč 92?“ po kliknutí na skóre, offline režim (poslední data bez signálu), detail na mobilu přes celou
   obrazovku se Zpět (i systémové Zpět), sledování konkurentů (výhry ráno v e-mailu a na telefonu), pondělní přehled
   týdne e-mailem, export podkladů nabídky do Wordu; Vhodné uveřejnění: externí zakázky bez opakovaného čtení detailu.

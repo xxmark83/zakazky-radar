@@ -469,6 +469,7 @@ export default function Home() {
     return () => mq.removeEventListener("change", on);
   }, []);
   const split = Boolean(detail && wide);
+  const sideForm = tab === "search" || tab === "market" || tab === "watch";
 
   // rozpracované zakázky – číslo u záložky Moje zakázky
   const working = Object.values(statuses).filter((s) => s === "maybe" || s === "bid" || s === "sent").length;
@@ -540,54 +541,62 @@ export default function Home() {
         )}
       </section>
 
-      {tab !== "board" && tab !== "today" && <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} />}
-
-      {tab === "today" && (
-        <TodayTab
-          key={synced}
-          since={since}
-          statuses={statuses}
-          marked={marked}
-          changes={kept.changes}
-          buyers={buyers}
-          setStatus={setStatus}
-          openDetail={setDetail}
-          goSearch={() => setTab("search")}
-          goBoard={() => setTab("board")}
-        />
-      )}
-      {tab === "search" && (
-        <SearchTab
-          since={since}
-          activeId={detail?.id ?? null}
-          wide={wide}
-          key={synced}
-          form={form}
-          statuses={statuses}
-          marked={marked}
-          setStatus={setStatus}
-          openDetail={setDetail}
-          profily={server.profily?.ok}
-          ai={ai}
-          onResults={checkResults}
-        />
-      )}
-      {tab === "board" && (
-        <BoardTab key={synced} statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
-      )}
-      {tab === "market" && <MarketTab form={form} slovakia={prefs.slovakia} openCompetitor={setCompetitor} />}
-      {tab === "watch" && (
-        <WatchTab
-          form={form}
-          server={server}
-          setServer={setServer}
-          buyers={buyers}
-          toggleBuyer={toggleBuyer}
-          competitors={competitors}
-          toggleCompetitor={toggleCompetitor}
-          openCompetitor={setCompetitor}
-        />
-      )}
+      {/* na širokém displeji je „Co hledáš“ panel vlevo a výsledky vpravo */}
+      <div className={`workspace ${sideForm ? "with-side" : ""}`}>
+        {sideForm && (
+          <aside className="side">
+            <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} />
+          </aside>
+        )}
+        <div className="content">
+          {tab === "today" && (
+            <TodayTab
+              key={synced}
+              since={since}
+              statuses={statuses}
+              marked={marked}
+              changes={kept.changes}
+              buyers={buyers}
+              setStatus={setStatus}
+              openDetail={setDetail}
+              goSearch={() => setTab("search")}
+              goBoard={() => setTab("board")}
+            />
+          )}
+          {tab === "search" && (
+            <SearchTab
+              since={since}
+              activeId={detail?.id ?? null}
+              wide={wide}
+              key={synced}
+              form={form}
+              statuses={statuses}
+              marked={marked}
+              setStatus={setStatus}
+              openDetail={setDetail}
+              profily={server.profily?.ok}
+              ai={ai}
+              onResults={checkResults}
+            />
+          )}
+          {tab === "board" && (
+            <BoardTab key={synced} statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
+          )}
+          {tab === "market" && <MarketTab form={form} slovakia={prefs.slovakia} openCompetitor={setCompetitor} />}
+          {tab === "watch" && (
+            <WatchTab
+              form={form}
+              server={server}
+              setServer={setServer}
+              buyers={buyers}
+              toggleBuyer={toggleBuyer}
+              competitors={competitors}
+              toggleCompetitor={toggleCompetitor}
+              openCompetitor={setCompetitor}
+            />
+          )}
+        </div>
+      </div>
       <footer className="foot">
         Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
       </footer>
@@ -1498,7 +1507,7 @@ function TenderCard(props: {
       )}
       <article
         className={`card tender ${status === "no" ? "dim" : ""} ${status !== "new" ? `is-${status}` : ""} ${selected ? "selected" : ""} ${dx ? "dragging" : ""}`}
-        style={dx ? { transform: `translateX(${dx}px)` } : undefined}
+        style={{ "--c-top": scoreColor(t.score), ...(dx ? { transform: `translateX(${dx}px)` } : {}) } as React.CSSProperties}
         onClick={() => {
           if (swiped.current) return void (swiped.current = false);
           openDetail(t);
@@ -2332,90 +2341,99 @@ function TodayTab(props: {
         ))}
       </div>
 
-      {deadlines.length > 0 && (
-        <div className="card mine urgent-box">
-          <div className="mine-head">
-            <b>
-              <Icon n="clock" size={15} /> Lhůty tento týden
-            </b>
-          </div>
-          {deadlines.map((t) => (
-            <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
-              <span>{t.title}</span>
-              <Deadline d={t.deadline} short />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {changed.length > 0 && (
-        <div className="card mine">
-          <div className="mine-head">
-            <b>Změny u sledovaných zakázek</b>
-          </div>
-          {changed.map((t) => (
-            <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
-              <span>{t.title}</span>
-              <span className="tag changed">
-                {[...new Set(changes[t.id].map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <h2>
-        <Icon n="sparkle" size={16} /> Nejlepší tipy
-      </h2>
-      {tips.length ? (
-        <div className="list">
-          {tips.map((t) => (
-            <TenderCard
-              key={t.id}
-              t={t}
-              fresh={fresh.has(t.id)}
-              status={statuses[t.id] ?? "new"}
-              setStatus={setStatus}
-              openDetail={openDetail}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="empty">
-          <span className="empty-ic">
-            <Icon n="radar" size={28} />
-          </span>
-          <b>{lastSearch ?? "Žádný nový tip nad 70 bodů"}</b>
-          <span>V záložce Zakázky klikni na Hledat – AI vybere, co sedí na tvou nabídku.</span>
-        </div>
-      )}
-      <button className="primary big" onClick={goSearch}>
-        <Icon n="search" size={18} />
-        {results.length ? `Všechny vhodné zakázky (${results.length})` : "Najít zakázky"}
-      </button>
-
-      {fromBuyers.length > 0 && (
-        <>
+      <div className="today-grid">
+        <div className="today-main">
           <h2>
-            <Icon n="eye" size={16} /> Od sledovaných zadavatelů
+            <Icon n="sparkle" size={16} /> Nejlepší tipy
           </h2>
-          <div className="card mine">
-            {fromBuyers.map((t) => (
-              <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
-                <span>
-                  {t.title}
-                  <small className="hint"> · {t.buyer}</small>
-                </span>
-                <Deadline d={t.deadline} short />
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+          {tips.length ? (
+            <div className="list">
+              {tips.map((t) => (
+                <TenderCard
+                  key={t.id}
+                  t={t}
+                  fresh={fresh.has(t.id)}
+                  status={statuses[t.id] ?? "new"}
+                  setStatus={setStatus}
+                  openDetail={openDetail}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="empty">
+              <span className="empty-ic">
+                <Icon n="radar" size={28} />
+              </span>
+              <b>{lastSearch ?? "Žádný nový tip nad 70 bodů"}</b>
+              <span>V záložce Zakázky klikni na Hledat – AI vybere, co sedí na tvou nabídku.</span>
+            </div>
+          )}
+          <button className="primary big" onClick={goSearch}>
+            <Icon n="search" size={18} />
+            {results.length ? `Všechny vhodné zakázky (${results.length})` : "Najít zakázky"}
+          </button>
+        </div>
+        <div className="today-side">
+          {deadlines.length > 0 && (
+            <div className="card mine urgent-box">
+              <div className="mine-head">
+                <b>
+                  <Icon n="clock" size={15} /> Lhůty tento týden
+                </b>
+              </div>
+              {deadlines.map((t) => (
+                <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
+                  <span>{t.title}</span>
+                  <Deadline d={t.deadline} short />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {changed.length > 0 && (
+            <div className="card mine">
+              <div className="mine-head">
+                <b>Změny u sledovaných zakázek</b>
+              </div>
+              {changed.map((t) => (
+                <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
+                  <span>{t.title}</span>
+                  <span className="tag changed">
+                    {[...new Set(changes[t.id].map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {fromBuyers.length > 0 && (
+            <>
+              <h2>
+                <Icon n="eye" size={16} /> Od sledovaných zadavatelů
+              </h2>
+              <div className="card mine">
+                {fromBuyers.map((t) => (
+                  <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
+                    <span>
+                      {t.title}
+                      <small className="hint"> · {t.buyer}</small>
+                    </span>
+                    <Deadline d={t.deadline} short />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {!deadlines.length && !changed.length && !fromBuyers.length && (
+            <div className="card calm">
+              <b>Klid</b>
+              <span>Tento týden žádná lhůta, změna ani novinka od sledovaných zadavatelů.</span>
+            </div>
+          )}
+        </div>
+      </div>
     </>
   );
 }
-
 function BuyerSection(props: {
   t: ScoredTender;
   profile: string;
