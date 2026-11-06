@@ -6,7 +6,7 @@ import { PRESETS } from "@/lib/presets";
 import { diff } from "@/lib/diff";
 import { profileKey } from "@/lib/profile-key";
 import { REGIONS } from "@/lib/regions";
-import type { Analysis, Award, BuyerAi, BuyerHistory, Change, Contract, Draft, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
+import type { Analysis, Award, BuyerAi, BuyerHistory, Change, Checks, Contract, Draft, Outcome, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
 const STATUS_LABEL: Record<Status, string> = {
   new: "Nové",
@@ -91,9 +91,11 @@ type Kept = {
   drafts: Record<string, Draft>;
   changes: Record<string, Change[]>;
   history: Record<string, BuyerAi>;
+  checks: Record<string, Checks>;
+  results: Record<string, Outcome>;
 };
 type KeptKind = keyof Kept;
-const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {}, history: {} };
+const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {}, history: {}, checks: {}, results: {} };
 type Keep = <K extends KeptKind>(kind: K, id: string, value: Kept[K][string] | null) => void;
 
 type Model = "opus" | "haiku";
@@ -556,6 +558,7 @@ export default function Home() {
           openCompetitor={setCompetitor}
           watching={buyers.buyers.some((b) => b.name === (marked[detail.id] ?? detail).buyer)}
           split={wide}
+          marked={marked}
           toggleBuyer={toggleBuyer}
           close={() => setDetail(null)}
         />
@@ -1495,9 +1498,10 @@ function Detail(props: {
   watching: boolean;
   toggleBuyer: (name: string) => void;
   split: boolean;
+  marked: Record<string, ScoredTender>;
   close: () => void;
 }) {
-  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, watching, toggleBuyer, split, close } = props;
+  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, watching, toggleBuyer, split, marked, close } = props;
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
@@ -1529,11 +1533,11 @@ function Detail(props: {
     return () => clearTimeout(id);
   }, [note]);
 
-  async function runAi(kind: "analysis" | "draft") {
+  async function runAi(kind: "analysis" | "draft", uploads?: { name: string; data: string }[]) {
     setBusy(kind);
     setError("");
     try {
-      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model });
+      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model, uploads });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
@@ -1546,6 +1550,29 @@ function Detail(props: {
     }
   }
   const analyze = () => runAi("analysis");
+
+  // vlastní dokumentace (když ji portál nepustí): PDF, Word nebo ZIP, dohromady do 4 MB (limit požadavku)
+  async function upload(files: FileList | null) {
+    if (!files?.length) return;
+    const list = [...files];
+    if (list.reduce((n, f) => n + f.size, 0) > 4_000_000) {
+      setError("Soubory jsou dohromady větší než 4 MB. Nahraj jen zadávací dokumentaci nebo výzvu.");
+      return;
+    }
+    const b64 = async (f: File) => {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(bin);
+    };
+    runAi("analysis", await Promise.all(list.map(async (f) => ({ name: f.name, data: await b64(f) }))));
+  }
+  const uploadButton = (label: string) => (
+    <label className="link upload">
+      {label}
+      <input type="file" multiple accept=".pdf,.docx,.zip" hidden onChange={(e) => upload(e.target.files)} />
+    </label>
+  );
 
   const draftText = (d: Draft) =>
     [
@@ -1667,6 +1694,15 @@ function Detail(props: {
           ))}
         </div>
 
+        {(status === "won" || status === "lost") && (
+          <OutcomeForm
+            key={`o-${t.id}`}
+            won={status === "won"}
+            value={kept.results[t.id] ?? null}
+            save={(v) => keep("results", t.id, v)}
+          />
+        )}
+
         <BuyerSection
           key={t.id}
           t={t}
@@ -1686,7 +1722,8 @@ function Detail(props: {
             <span>
               {ai.noAi
                 ? "Měsíční limit za AI je vyčerpaný, změníš ho v Nastavení."
-                : "Přečte stránku zakázky a řekne, co chtějí, jaké mají podmínky, rizika a co nabídnout."}
+                : "Najde a přečte zadávací dokumentaci (PDF, Word) a řekne, co chtějí, jaké mají podmínky, rizika, co nabídnout a co přiložit."}
+              {!ai.noAi && <> {uploadButton("Nebo nahraj dokumentaci sám")}</>}
             </span>
             <button className="primary" onClick={analyze} disabled={ai.noAi || busy !== null}>
               Udělat rozbor
@@ -1696,7 +1733,7 @@ function Detail(props: {
         {busy === "analysis" && (
           <div className="ai-cta">
             <div className="radar" aria-hidden="true" />
-            <span>Čtu zakázku a připravuji rozbor, asi 30 vteřin…</span>
+            <span>Hledám a čtu zadávací dokumentaci, asi 30–60 vteřin…</span>
           </div>
         )}
         {error && <div className="warn">{error}</div>}
@@ -1711,7 +1748,14 @@ function Detail(props: {
             <AnalysisList title="Rizika" items={analysis.risks} />
             <h4>Co nabídnout</h4>
             <p>{analysis.offer}</p>
+            <AnalysisList title="Hodnoticí kritéria" items={analysis.criteria ?? []} />
             <AnalysisList title="Na co se zeptat zadavatele" items={analysis.questions} />
+            <p className="note sources">
+              {analysis.sources?.length
+                ? `Přečteno: ${analysis.sources.join(", ")}.`
+                : "Dokumentaci se nepodařilo stáhnout, rozbor je jen ze stránky zakázky."}{" "}
+              {!ai.noAi && busy !== "analysis" && uploadButton(analysis.sources?.length ? "Nahrát jinou dokumentaci" : "Nahraj ji sám")}
+            </p>
             {busy !== "analysis" && !ai.noAi && (
               <button className="link" onClick={analyze}>
                 Udělat rozbor znovu
@@ -1719,6 +1763,16 @@ function Detail(props: {
             )}
           </div>
         )}
+
+        {analysis?.checklist?.length ? (
+          <Checklist
+            items={analysis.checklist}
+            value={kept.checks[t.id] ?? { done: {}, extra: [] }}
+            save={(v) => keep("checks", t.id, v)}
+          />
+        ) : null}
+
+        <PriceHelper t={t} results={kept.results} marked={marked} />
 
         <h3 className="sec">Návrh nabídky</h3>
         {!draft && busy !== "draft" && (
@@ -1815,6 +1869,184 @@ function Detail(props: {
         )}
       </aside>
     </div>
+  );
+}
+
+// co přiložit k nabídce: body z AI rozboru + vlastní, odškrtávání se ukládá (i na mobil)
+function Checklist({ items, value, save }: { items: string[]; value: Checks; save: (v: Checks) => void }) {
+  const [add, setAdd] = useState("");
+  const all = [...items, ...value.extra];
+  const done = all.filter((i) => value.done[i]).length;
+  const toggle = (i: string) => save({ ...value, done: { ...value.done, [i]: !value.done[i] } });
+  return (
+    <>
+      <h3 className="sec">
+        Co připravit do nabídky{" "}
+        <span className={`count ${done === all.length ? "all" : ""}`}>
+          {done}/{all.length}
+        </span>
+      </h3>
+      <div className="meter">
+        <span style={{ width: `${(done / Math.max(1, all.length)) * 100}%`, background: "var(--good)" }} />
+      </div>
+      <ul className="checklist">
+        {all.map((i) => (
+          <li key={i} className={value.done[i] ? "done" : ""}>
+            <label>
+              <input type="checkbox" checked={Boolean(value.done[i])} onChange={() => toggle(i)} />
+              <span>{i}</span>
+            </label>
+            {value.extra.includes(i) && (
+              <button className="link" onClick={() => save({ ...value, extra: value.extra.filter((x) => x !== i) })}>
+                odebrat
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <form
+        className="add-item"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (add.trim() && !all.includes(add.trim())) save({ ...value, extra: [...value.extra, add.trim()] });
+          setAdd("");
+        }}
+      >
+        <input value={add} onChange={(e) => setAdd(e.target.value)} placeholder="Přidat vlastní položku…" />
+        <button disabled={!add.trim()}>Přidat</button>
+      </form>
+    </>
+  );
+}
+
+// doporučená cena bez AI: předpokládaná hodnota, ceny podobných zakázek (ISVZ, TED, Registr smluv) a tvoje výsledky
+function PriceHelper({ t, results, marked }: { t: ScoredTender; results: Record<string, Outcome>; marked: Record<string, ScoredTender> }) {
+  const [m, setM] = useState<Market | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setM(null), [t.id]);
+
+  // jak blízko odhadu se v minulosti vyhrávalo (vítězná cena / předpokládaná hodnota)
+  const ratios = Object.entries(results)
+    .map(([id, r]) => ({ r, est: marked[id]?.value }))
+    .filter(({ r, est }) => r.price && est)
+    .map(({ r, est }) => r.price! / est!);
+  const ownRatio = ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
+
+  async function load() {
+    setBusy(true);
+    try {
+      const res = await post("/api/market", {
+        cpv: t.cpv.slice(0, 4).join(" "),
+        keywords: t.cpv.length ? "" : t.title,
+        days: 1095,
+      });
+      if (res.ok) setM(await res.json());
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const est = t.value && (t.currency ?? "CZK") === "CZK" ? t.value : null;
+  const p = m?.prices;
+  // odhad: u známé hodnoty 85–95 % (s vlastní zkušeností její poměr ±5 %), jinak běžné rozpětí podobných
+  const range: [number, number] | null = est
+    ? ownRatio
+      ? [est * Math.max(0.5, ownRatio - 0.05), est * Math.min(1, ownRatio + 0.05)]
+      : [est * 0.85, est * 0.95]
+    : p?.p25 && p.median
+      ? [p.p25, p.median]
+      : null;
+
+  return (
+    <>
+      <h3 className="sec">Doporučená cena</h3>
+      {!m && !est ? (
+        <button onClick={load} disabled={busy}>
+          {busy ? "Počítám…" : "Spočítat z cen podobných zakázek (zdarma)"}
+        </button>
+      ) : (
+        <div className="price">
+          {range ? (
+            <p className="price-range">
+              <b>
+                {moneyShort(range[0])} – {moneyShort(range[1])}
+              </b>{" "}
+              <span className="hint">bez DPH</span>
+            </p>
+          ) : (
+            <p className="note">Bez předpokládané hodnoty a bez podobných zakázek se cena odhadnout nedá.</p>
+          )}
+          <ul className="price-why">
+            {est && <li>Předpokládaná hodnota zakázky: {money(est)}.</li>}
+            {ownRatio && (
+              <li>
+                Tvoje uzavřené zakázky: vítězná cena byla v průměru {Math.round(ownRatio * 100)} % předpokládané hodnoty
+                ({ratios.length}×).
+              </li>
+            )}
+            {!ownRatio && est && <li>Běžně se vyhrává 5–15 % pod předpokládanou hodnotou; zapisuj výsledky a odhad se zpřesní.</li>}
+            {p?.median ? (
+              <li>
+                Podobné zakázky ({p.count}): medián {money(p.median)}, běžně {money(p.p25, "")}– {money(p.p75)}.
+              </li>
+            ) : m ? (
+              <li>Podobné zakázky s cenou jsme nenašli.</li>
+            ) : null}
+            {m?.offers ? <li>Průměrně {m.offers.avg.toFixed(1).replace(".", ",")} nabídky na zakázku.</li> : null}
+          </ul>
+          {!m && (
+            <button className="link" onClick={load} disabled={busy}>
+              {busy ? "Načítám…" : "Porovnat s cenami podobných zakázek"}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// výsledek po rozhodnutí: kdo vyhrál a za kolik – pro přehled úspěšnosti a příští odhad ceny
+function OutcomeForm({ won, value, save }: { won: boolean; value: Outcome | null; save: (v: Outcome) => void }) {
+  const [v, setV] = useState<Outcome>(value ?? { winner: won ? "my" : "", price: null, ourPrice: null, note: "", date: today() });
+  const [saved, setSaved] = useState(false);
+  const num = (s: string) => (s.trim() ? Number(s.replace(/\s/g, "").replace(",", ".")) || null : null);
+  return (
+    <form
+      className="card outcome"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save(won ? { ...v, winner: "my", price: v.ourPrice } : v);
+        setSaved(true);
+      }}
+    >
+      <b>{won ? "Výhra – zapiš cenu" : "Kdo vyhrál?"}</b>
+      <div className="row">
+        {!won && (
+          <div>
+            <label>Vítěz</label>
+            <input value={v.winner} onChange={(e) => setV({ ...v, winner: e.target.value })} placeholder="Název firmy" />
+          </div>
+        )}
+        {!won && (
+          <div>
+            <label>Vítězná cena (Kč bez DPH)</label>
+            <input inputMode="decimal" defaultValue={v.price ?? ""} onChange={(e) => setV({ ...v, price: num(e.target.value) })} />
+          </div>
+        )}
+        <div>
+          <label>{won ? "Naše cena (Kč bez DPH)" : "Naše nabídka (Kč bez DPH)"}</label>
+          <input inputMode="decimal" defaultValue={v.ourPrice ?? ""} onChange={(e) => setV({ ...v, ourPrice: num(e.target.value) })} />
+        </div>
+      </div>
+      <label>Poznámka (proč, co příště jinak)</label>
+      <input value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} />
+      <div className="row-btns">
+        <button className="primary" style={{ marginTop: 10 }}>
+          Uložit výsledek
+        </button>
+        {saved && <span className="saved">Uloženo</span>}
+      </div>
+    </form>
   );
 }
 

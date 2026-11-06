@@ -107,3 +107,15 @@ export function profilyByBuyer(names: string[]): Tender[] {
   if (!d || !want.length) return [];
   return d.tenders.filter((t) => want.includes(bare(t.buyer))).map(toTender);
 }
+
+/** Řádek z profilů k zakázce z jakéhokoli zdroje: podle id, kódu NEN nebo názvu a zadavatele (kvůli dokumentům). */
+export function profilyRow(t: Tender): Row | null {
+  const d = load();
+  if (!d) return null;
+  const nen = t.id.startsWith("nen-") ? `pz-${t.id.slice(4)}` : null;
+  return (
+    d.tenders.find((r) => r.id === t.id || r.id === nen) ??
+    d.tenders.find((r) => r.id.startsWith("pz-") && key(r) === key({ ...r, title: t.title, buyer: t.buyer })) ??
+    null
+  );
+}

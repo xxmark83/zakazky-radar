@@ -1,4 +1,5 @@
 import { askJson, type AiResult, type ModelChoice } from "./ai";
+import { fetchDocs, type Doc } from "./docs";
 import type { Analysis, Draft, Tender } from "./types";
 
 const UA = "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)";
@@ -14,19 +15,25 @@ const SCHEMA = {
     verdictReason: { type: "string" },
     offer: { type: "string" },
     questions: list,
+    checklist: list,
+    criteria: list,
   },
-  required: ["summary", "requirements", "risks", "verdict", "verdictReason", "offer", "questions"],
+  required: ["summary", "requirements", "risks", "verdict", "verdictReason", "offer", "questions", "checklist", "criteria"],
   additionalProperties: false,
 } as const;
 
 const SYSTEM = `Jsi zkušený bid manažer pro české veřejné zakázky. Pomáháš malé firmě s levnými SaaS aplikacemi rozhodnout, jestli podat nabídku.
-Dostaneš popis nabídky dodavatele, údaje o zakázce a text stránky zakázky (může být neúplný). Odpovídej česky, stručně a konkrétně, nic si nevymýšlej – co ve vstupu není, označ jako „neuvedeno, ověřit v dokumentaci“.
+Dostaneš popis nabídky dodavatele, údaje o zakázce a zadávací dokumentaci (PDF a texty), případně jen text stránky zakázky.
+Dokumentace má přednost – odkazuj na konkrétní požadavky z ní (čísla článků, přílohy). Odpovídej česky, stručně a konkrétně, nic si nevymýšlej – co ve vstupu není, označ jako „neuvedeno, ověřit v dokumentaci“.
 - summary: 2–3 věty, co přesně zadavatel chce koupit.
 - requirements: kvalifikace a podmínky (obrat, reference, certifikace, lhůty plnění, jistota, způsob podání). Max 8 bodů.
 - risks: co může malé firmě zlomit vaz. Max 5 bodů.
 - verdict: go = podat, consider = zvážit / jít jako subdodavatel, skip = nechat být. verdictReason: jedna věta proč.
 - offer: co konkrétně z produktů dodavatele nabídnout a jak se odlišit, 2–4 věty.
-- questions: dotazy na zadavatele (vysvětlení zadávací dokumentace), které by stálo za to položit. Max 4.`;
+- questions: dotazy na zadavatele (vysvětlení zadávací dokumentace), které by stálo za to položit. Max 4.
+- checklist: co konkrétně připravit a přiložit k nabídce (doklady o kvalifikaci, čestná prohlášení, reference, formuláře,
+  vyplněné přílohy, podpis, způsob a místo podání). Krátké položky ve tvaru „udělat co“, max 12. Jen z podkladů.
+- criteria: hodnoticí kritéria s vahami (např. „Cena 70 %“), nebo prázdné, když v podkladech nejsou.`;
 
 // text stránky zakázky (detail na NEN, profilu zadavatele, TED) – bez skriptů a značek
 export async function pageText(url: string): Promise<string> {
@@ -58,15 +65,42 @@ const tenderInfo = (t: Tender) => ({
   popis: t.description,
 });
 
-export async function analyzeTender(profile: string, t: Tender, model: ModelChoice): Promise<AiResult<Analysis>> {
-  const page = await pageText(t.url);
-  return askJson<Analysis>({
-    model,
-    system: SYSTEM,
-    schema: SCHEMA,
-    effort: "medium",
-    content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKA:\n${JSON.stringify(tenderInfo(t))}\n\nTEXT STRÁNKY ZAKÁZKY:\n${page || "(nepodařilo se načíst)"}`,
-  });
+// dokumenty jako bloky pro Claude: PDF čte sám (i tabulky), Word posíláme jako text
+const blocks = (docs: Doc[]) =>
+  docs.map((d) =>
+    "pdf" in d
+      ? { type: "document", title: d.name, source: { type: "base64", media_type: "application/pdf", data: d.pdf } }
+      : { type: "text", text: `DOKUMENT „${d.name}“ (${d.type || "příloha"}):\n${d.text}` },
+  );
+
+/** Rozbor zakázky. Dokumentaci najde sama (profil zadavatele, stránka zakázky), nebo použije nahrané soubory. */
+export async function analyzeTender(profile: string, t: Tender, model: ModelChoice, uploads: Doc[] = []): Promise<AiResult<Analysis>> {
+  const docs = uploads.length ? uploads : await fetchDocs(t);
+  const page = docs.length ? "" : await pageText(t.url);
+  const intro = `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKA:\n${JSON.stringify(tenderInfo(t))}\n\n${
+    docs.length ? `ZADÁVACÍ DOKUMENTACE (${docs.length} souborů) následuje.` : `TEXT STRÁNKY ZAKÁZKY:\n${page || "(nepodařilo se načíst)"}`
+  }`;
+  const ask = (list: Doc[]) =>
+    askJson<Analysis>({
+      model,
+      system: SYSTEM,
+      schema: SCHEMA,
+      effort: "medium",
+      content: list.length ? [{ type: "text", text: intro }, ...blocks(list)] : intro,
+    });
+  let used = docs;
+  let r: AiResult<Analysis>;
+  try {
+    r = await ask(used);
+  } catch (e) {
+    // moc stran nebo velké PDF: zkusit jen první PDF (a texty z Wordu), u jediného PDF jen texty
+    const pdfs = docs.filter((d) => "pdf" in d);
+    if (!pdfs.length) throw e;
+    const texts = docs.filter((d) => !("pdf" in d));
+    used = pdfs.length > 1 ? [pdfs[0], ...texts] : texts;
+    r = await ask(used);
+  }
+  return { ...r, data: { ...r.data, sources: used.map((d) => d.name) } };
 }
 
 const DRAFT_SCHEMA = {

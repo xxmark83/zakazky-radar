@@ -67,7 +67,13 @@ export type Analysis = {
   verdictReason: string;
   offer: string;
   questions: string[];
+  checklist?: string[]; // co připravit do nabídky (doklady, přílohy, kroky)
+  criteria?: string[]; // hodnoticí kritéria a jejich váhy
+  sources?: string[]; // přečtené dokumenty (doplní server)
 };
+
+export type Checks = { done: Record<string, boolean>; extra: string[] };
+export type Outcome = { winner: string; price: number | null; ourPrice: number | null; note: string; date: string };
 
 export type Draft = { outline: { heading: string; points: string[] }[]; coverLetter: string };
 

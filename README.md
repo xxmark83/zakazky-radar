@@ -63,6 +63,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.23** – AI rozbor čte zadávací dokumentaci (odkazy z XML profilu zadavatele nebo ze stránky zakázky; PDF celé,
+  z Wordu text, ZIP rozbalí; jde i nahrát ručně), hodnoticí kritéria, checklist „co připravit“ s odškrtáváním,
+  doporučená cena (předpokládaná hodnota, ceny podobných zakázek, vlastní výsledky), zápis výsledku po výhře či prohře.
 - **1.22** – mobil: záložky dole u palce, potažení karty doprava = Zvažuji, doleva = Ne (s Vrátit); počítač: detail
   vedle seznamu na širokém displeji, klávesové zkratky (↑↓ J K, Enter, Z P N, /, ?).
 - **1.21** – obrazovka Dnes (nové od minula, lhůty tento týden, změny, tipy AI, sledovaní zadavatelé), čára „nové od

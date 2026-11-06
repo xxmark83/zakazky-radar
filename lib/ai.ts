@@ -18,7 +18,7 @@ export type AiResult<T> = { data: T; cost: number };
 export async function askJson<T>(opts: {
   model: ModelChoice;
   system: string;
-  content: string;
+  content: string | object[]; // text, nebo bloky (text + PDF dokumenty)
   schema: object;
   effort?: "low" | "medium";
   maxTokens?: number;

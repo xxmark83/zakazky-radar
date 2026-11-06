@@ -614,6 +614,23 @@ kbd {
   body:has(main.split) .top-in { max-width: none; margin: 0 24px; }
 }
 
+/* rozbor, checklist, cena, výsledek */
+label.link.upload { display: inline; margin: 0; cursor: pointer; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.note.sources { margin-top: 12px; }
+.count.all { background: var(--good); color: #fff; }
+.checklist { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
+.checklist li { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.checklist label { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-weight: 400; font-size: 14px; cursor: pointer; }
+.checklist input { width: 18px; height: 18px; flex: none; margin-top: 2px; accent-color: var(--good); }
+.checklist li.done span { color: var(--muted); text-decoration: line-through; }
+.add-item { display: flex; gap: 8px; margin-top: 8px; }
+.add-item input { flex: 1; }
+.price-range { margin: 0 0 6px; font-size: 15px; }
+.price-range b { font-size: 22px; letter-spacing: -0.02em; }
+.price-why { margin: 0 0 6px; padding-left: 20px; color: var(--muted); font-size: 13.5px; }
+.outcome { margin-top: 14px; display: grid; gap: 2px; }
+.outcome label { margin-top: 10px; }
+
 /* přihlášení */
 main.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .login-card { width: min(380px, 100%); padding: 28px 24px; display: grid; }
