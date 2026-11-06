@@ -1,10 +1,9 @@
 name: Výsledky zakázek z otevřených dat ISVZ
 
-# ISVZ zveřejňuje data jednou měsíčně (5. den). Šestého ráno stáhneme minulý měsíc a přidáme ho
-# do data/isvz-vysledky.json (jen smlouvy z IT, softwaru a vzdělávání). Ručně jde stáhnout i rozsah měsíců.
+# ISVZ zveřejňuje data jednou měsíčně (5. den). Server isvz.nipez.cz ale z GitHubu (datacentra) neodpovídá,
+# takže se data zatím stahují z běžného počítače: node scripts/isvz.mjs a commit. Workflow zůstává
+# pro ruční spuštění, kdyby se přístup otevřel.
 on:
-  schedule:
-    - cron: "41 4 6 * *"
   workflow_dispatch:
     inputs:
       from:
@@ -16,8 +15,6 @@ on:
 
 permissions:
   contents: write
-
-concurrency: data-commit
 
 jobs:
   isvz:

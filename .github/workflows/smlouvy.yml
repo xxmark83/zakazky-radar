@@ -17,8 +17,6 @@ on:
 permissions:
   contents: write
 
-concurrency: data-commit
-
 jobs:
   smlouvy:
     runs-on: ubuntu-latest
