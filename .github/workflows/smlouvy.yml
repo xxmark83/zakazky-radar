@@ -1,0 +1,39 @@
+name: IT smlouvy z Registru smluv
+
+# Každé ráno projde denní výpisy Registru smluv za poslední týden a uloží smlouvy z IT
+# do data/smlouvy-it.json (průzkum trhu a profil konkurenta). Ručně jde stáhnout i rozsah měsíců.
+on:
+  schedule:
+    - cron: "53 3 * * *"
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "Od měsíce (RRRR-MM), prázdné = poslední týden"
+        required: false
+      to:
+        description: "Do měsíce (RRRR-MM)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency: data-commit
+
+jobs:
+  smlouvy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/smlouvy.mjs ${{ inputs.from }} ${{ inputs.to }}
+      - name: Uložit výsledky
+        run: |
+          git config user.name "xxmark83"
+          git config user.email "142055462+xxmark83@users.noreply.github.com"
+          git add data/smlouvy-it.json
+          git diff --cached --quiet || git commit -m "IT smlouvy z Registru smluv $(date -u +%F)"
+          git pull --rebase -q
+          git push
