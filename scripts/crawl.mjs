@@ -21,9 +21,24 @@ const PER_HOST = 3;
 const TIMEOUT = 60_000;
 const UA = "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)";
 
-// Tender arena a eGORDION běží na stejném API (api.tenderarena.cz), které pustí asi 5 dotazů za minutu
-const GROUP = { "tenderarena.cz": "tenderarena", "egordion.cz": "tenderarena" };
-const SLOW = { tenderarena: { parallel: 1, gap: 12_500 } };
+// Tender arena a eGORDION běží na stejném API (api.tenderarena.cz), které pustí asi 5 dotazů za minutu.
+// Vhodné uveřejnění má v robots.txt Crawl-Delay: 30 a při rychlejším tempu nás na čas zablokuje.
+// careful = při zablokování (403/503 nebo 3× za sebou bez spojení) dát serveru pro tento běh pokoj.
+const GROUP = { "tenderarena.cz": "tenderarena", "egordion.cz": "tenderarena", "vhodne-uverejneni.cz": "vhodne" };
+const SLOW = {
+  tenderarena: { parallel: 1, gap: 12_500 },
+  vhodne: { parallel: 1, gap: 30_000, careful: true },
+};
+
+// opravy zjevně špatných adres z registru (Vhodné uveřejnění): www, velká písmena, chybějící lomítko;
+// odkazy na jednotlivé zakázky a titulní stránky nejsou profily – vynechat
+function normalize(u) {
+  if (!/vhodne-uverejneni\.cz/i.test(u)) return u;
+  const m = u.match(/^https?:\/\/(?:ww\.|www\.)?vhodne-uverejneni\.cz\.?\/(.*)$/i);
+  if (!m) return null;
+  const rest = m[1].replace(/^PROFIL\//, "profil/").replace(/^profil(?=[a-z0-9])(?!\/)/, "profil/").replace(/\/+$/, "");
+  return /^profil\/[^/?#]+$/.test(rest) ? `https://www.vhodne-uverejneni.cz/${rest}` : null;
+}
 
 const ddmmyyyy = (d) =>
   `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
@@ -97,19 +112,22 @@ function parse(xml, profile) {
 
 class RateLimited extends Error {}
 class Answered extends Error {} // server odpověděl, jen ne XML profilu (špatná adresa v registru)
+class Blocked extends Error {} // 403/503 od opatrného serveru = nechce nás, nechat ho pro tento běh být
 
-async function fetchProfile(profile) {
+async function fetchProfile(profile, careful = false) {
   const url = `${profile.replace(/\/+$/, "")}/XMLdataVZ?od=${since(profile)}&do=${doo}`;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // u opatrných serverů neopakovat hned, další dotaz počká na odstup
+  for (let attempt = careful ? 1 : 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA } });
       if (res.status === 429) throw new RateLimited("429");
+      if (careful && (res.status === 403 || res.status === 503)) throw new Blocked(String(res.status));
       if (!res.ok) throw new Answered(String(res.status));
       const xml = await res.text();
       if (!xml.includes("<profil")) throw new Answered("není XML profilu");
       return parse(xml, profile);
     } catch (e) {
-      if (attempt || e instanceof RateLimited || e instanceof Answered) throw e;
+      if (attempt || e instanceof RateLimited || e instanceof Answered || e instanceof Blocked) throw e;
     }
   }
 }
@@ -121,13 +139,23 @@ const host = (u) => {
 };
 // napřed profily s otevřenými zakázkami, pak ty, které jsme nejdéle nestáhli
 const active = new Set(prev.map((t) => t.url));
-const all = [...new Set(readFileSync(LIST, "utf8").split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s)))];
+const all = [
+  ...new Set(
+    readFileSync(LIST, "utf8")
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => /^https?:\/\//.test(s))
+      .map(normalize)
+      .filter(Boolean),
+  ),
+];
 const profiles = all.sort((a, b) => active.has(b) - active.has(a) || (state[a] ?? "").localeCompare(state[b] ?? ""));
 
 let ok = 0;
 const failed = {};
 const okHost = {};
 const down = {};
+const streak = {}; // neúspěšná spojení za sebou (u opatrných serverů)
 const found = new Map();
 const running = new Map(); // host -> běžících dotazů
 const nextAt = new Map(); // host -> nejdřív kdy smí další dotaz
@@ -168,9 +196,10 @@ await new Promise((resolve) => {
       running.set(h, (running.get(h) ?? 0) + 1);
       nextAt.set(h, Date.now() + lim.gap);
       total++;
-      fetchProfile(p)
+      fetchProfile(p, Boolean(lim.careful))
         .then((list) => {
           ok++;
+          streak[h] = 0;
           okHost[h] = (okHost[h] ?? 0) + 1;
           state[p] = today;
           for (const t of list) if (!found.get(t.id) || found.get(t.id).closed) found.set(t.id, t);
@@ -183,7 +212,12 @@ await new Promise((resolve) => {
             return;
           }
           failed[h] = (failed[h] ?? 0) + 1;
+          if (e instanceof Blocked) {
+            dead.add(h);
+            return;
+          }
           if (e instanceof Answered) return;
+          if (lim.careful && (streak[h] = (streak[h] ?? 0) + 1) >= 3) dead.add(h);
           // 15× se nepřipojíme a nic neprošlo = server nejede, zbytek jeho profilů zkusíme příště
           down[h] = (down[h] ?? 0) + 1;
           if (!okHost[h] && down[h] >= 15) dead.add(h);
