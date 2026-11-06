@@ -1,3 +1,4 @@
+import type { Region } from "../regions";
 import type { Award, Tender } from "../types";
 
 // TED (Tenders Electronic Daily) – oficiální, bezplatné API EU, bez klíče.
@@ -7,9 +8,35 @@ const TED_URL = "https://api.ted.europa.eu/v3/notices/search";
 // Česko je vždy, Slovensko jen když ho uživatel zapne v Nastavení
 export type Country = "CZE" | "SVK";
 
+// kraj zadavatele podle kódu NUTS 3 (CZ064 = Jihomoravský)
+const NUTS: Record<string, Region> = {
+  CZ010: "Praha",
+  CZ020: "Středočeský",
+  CZ031: "Jihočeský",
+  CZ032: "Plzeňský",
+  CZ041: "Karlovarský",
+  CZ042: "Ústecký",
+  CZ051: "Liberecký",
+  CZ052: "Královéhradecký",
+  CZ053: "Pardubický",
+  CZ063: "Vysočina",
+  CZ064: "Jihomoravský",
+  CZ071: "Olomoucký",
+  CZ072: "Zlínský",
+  CZ080: "Moravskoslezský",
+};
+function region(n: any, country: "CZ" | "SK"): Region | undefined {
+  if (country === "SK") return "Slovensko";
+  const codes: string[] = [...(n["organisation-country-sub-buyer"] ?? []), ...(n["place-of-performance-subdiv-lot"] ?? [])];
+  for (const c of codes) if (NUTS[c.slice(0, 5)]) return NUTS[c.slice(0, 5)];
+  return undefined;
+}
+
 const TENDER_FIELDS = [
   "publication-number",
   "buyer-country",
+  "organisation-country-sub-buyer",
+  "place-of-performance-subdiv-lot",
   "notice-type",
   "title-proc",
   "notice-title",
@@ -83,10 +110,12 @@ function toTender(n: any, kind: Tender["kind"]): Tender {
   const id = n["publication-number"];
   const deadlines: string[] = n["deadline-receipt-tender-date-lot"] ?? [];
   const value = Number(n["estimated-value-proc"]);
+  const country = (n["buyer-country"] ?? []).includes("SVK") ? "SK" : "CZ";
   return {
     id: `ted-${id}`,
     source: "TED",
-    country: (n["buyer-country"] ?? []).includes("SVK") ? "SK" : "CZ",
+    country,
+    region: region(n, country),
     kind,
     title: pickLang(n["title-proc"]) || pickLang(n["notice-title"]),
     buyer: pickLang(n["buyer-name"]),

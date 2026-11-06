@@ -1503,6 +1503,8 @@ function Report(props: {
 
 type Market = {
   count: number;
+  isvz: { months: string[]; count: number } | null;
+  offers: { avg: number; single: number; count: number } | null;
   prices: { count: number; p25: number | null; median: number | null; p75: number | null; min: number | null; max: number | null };
   topWinners: { name: string; wins: number; total: number }[];
   awards: Award[];
@@ -1533,7 +1535,10 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
 
   return (
     <>
-      <p className="note lead">Kdo a za kolik vyhrál podobné zakázky (výsledky řízení z TED). Ukáže reálné ceny a konkurenci.</p>
+      <p className="note lead">
+        Kdo a za kolik vyhrál podobné zakázky: výsledky řízení z otevřených dat ISVZ (i malé zakázky, cena smlouvy, počet
+        nabídek) a z TED. Ukáže reálné ceny a konkurenci.
+      </p>
       <div className="row" style={{ marginTop: 8 }}>
         <div>
           <label>Období</label>
@@ -1575,7 +1580,21 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
               </div>
               <div className="kpi-l">typické rozpětí (25.–75. percentil)</div>
             </div>
+            {data.offers && (
+              <div className="card kpi">
+                <div className="kpi-v">{data.offers.avg.toLocaleString("cs-CZ", { maximumFractionDigits: 1 })}</div>
+                <div className="kpi-l">
+                  nabídek průměrně, v {Math.round(data.offers.single * 100)} % jen jedna
+                </div>
+              </div>
+            )}
           </div>
+          {data.isvz && data.isvz.months.length > 0 && (
+            <p className="note">
+              ISVZ: {data.isvz.count.toLocaleString("cs-CZ")} smluv z IT, softwaru a vzdělávání, {data.isvz.months[0]} až{" "}
+              {data.isvz.months.at(-1)}. Ceny jsou bez DPH.
+            </p>
+          )}
 
           <h2>Nejčastější vítězové</h2>
           <div className="card">
@@ -1616,7 +1635,13 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
                 <div className="meta">
                   <span>{a.buyer}</span>
                   <span>{money(a.value, a.currency)}</span>
-                  <span>{a.published}</span>
+                  <span>{a.published ? new Date(a.published).toLocaleDateString("cs-CZ") : ""}</span>
+                  {typeof a.offers === "number" && a.offers > 0 && (
+                    <span>
+                      {a.offers} {a.offers === 1 ? "nabídka" : a.offers < 5 ? "nabídky" : "nabídek"}
+                    </span>
+                  )}
+                  {a.source && <span className="tag">{a.source}</span>}
                 </div>
                 <p className="reason">
                   Vyhrál:{" "}
@@ -1684,7 +1709,8 @@ function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean
         </div>
         <h2 className="drawer-title">{name}</h2>
         <p className="drawer-buyer">
-          Zakázky nad evropským limitem za posledních 5 let (TED, {slovakia ? "Česko a Slovensko" : "Česko"})
+          Výhry za posledních 5 let: ISVZ (české zakázky z IT, softwaru a vzdělávání) a TED (
+          {slovakia ? "Česko a Slovensko" : "Česko"}, nad evropským limitem)
         </p>
         {error && <div className="warn">{error}</div>}
         {!data && !error && (
@@ -1746,7 +1772,7 @@ function Competitor({ name, slovakia, close }: { name: string; slovakia: boolean
                 </a>
               ))
             ) : (
-              <p className="note">TED neeviduje žádnou výhru. Menší zakázky (pod evropským limitem) tu nejsou vidět.</p>
+              <p className="note">Žádná výhra v ISVZ ani TED. Zakázky malého rozsahu se do registru hlásí jen zčásti.</p>
             )}
           </>
         )}

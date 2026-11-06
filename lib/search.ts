@@ -79,7 +79,11 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
     cost = r.cost;
   }
 
-  const all = open.map((t) => scored.get(t.id) ?? (known[t.id] ? { ...t, ...known[t.id] } : unscored(t)));
+  // kraj z oficiálních dat (TED) má přednost před odhadem AI
+  const all = open.map((t) => {
+    const s = scored.get(t.id) ?? (known[t.id] ? { ...t, ...known[t.id] } : unscored(t));
+    return t.region ? { ...s, region: t.region } : s;
+  });
   const results = all
     .filter((t) => t.score < 0 || t.score >= (body.minScore ?? 0))
     .sort((a, b) => b.score - a.score);

@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // číslo verze v patičce a v Nastavení – při každém vydání zvýšit v package.json
   env: { APP_VERSION: pkg.version },
   // zakázky z profilů zadavatelů (plní GitHub Actions, scripts/crawl.mjs) čteme za běhu ze souboru
-  outputFileTracingIncludes: { "/api/**": ["./data/profily.json"] },
+  outputFileTracingIncludes: { "/api/**": ["./data/profily.json", "./data/isvz-vysledky.json"] },
 };
 
 export default nextConfig;

@@ -2,6 +2,7 @@ export type Tender = {
   id: string;
   source: "TED" | "NEN" | "Hlídač státu" | "Profily zadavatelů";
   country?: "CZ" | "SK"; // chybí = Česko
+  region?: string; // kraj z oficiálních dat (TED); jinak ho určí AI
   kind: "open" | "upcoming"; // otevřená výzva / připravovaná (PIN, tržní konzultace)
   title: string;
   buyer: string;
@@ -18,7 +19,6 @@ export type ScoredTender = Tender & {
   score: number; // 0–100
   reason: string;
   product: string; // který z mých produktů sedí
-  region?: string; // kraj zadavatele podle AI (lib/regions.ts)
 };
 
 export type Award = {
@@ -31,6 +31,8 @@ export type Award = {
   currency: string | null;
   cpv: string[];
   url: string;
+  source?: "TED" | "ISVZ";
+  offers?: number | null; // počet podaných nabídek (jen ISVZ)
 };
 
 export type Profile = {

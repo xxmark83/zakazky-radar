@@ -19,7 +19,10 @@ jak sedí na moji nabídku (Kotva CRM, vzdělávací portál…).
 | TED (EU) – api.ted.europa.eu | nadlimitní zakázky (cca od 3–5 mil. Kč) + výsledky | není potřeba |
 | NEN – nen.nipez.cz | veřejný seznam zakázek (hledání v názvu) | není potřeba |
 | **Profily zadavatelů** – všech cca 12 000 v ČR | kraje, města, obce, školy, nemocnice, státní firmy na Tender areně, eGORDIONu, E-ZAKu, Vhodném uveřejnění, NEN… vč. zakázek malého rozsahu | není potřeba |
+| Tender arena + eGORDION – seznam nových za 24 h | všechny nové zakázky ~4 200 zadavatelů jedním dotazem denně | není potřeba |
+| **Otevřená data ISVZ** – isvz.nipez.cz/opendata | výsledky řízení (i podlimitní): vítěz, cena smlouvy, počet nabídek; měsíčně, jen IT, software, vzdělávání (`scripts/isvz.mjs`) | není potřeba |
 | Hlídač státu – hlidacstatu.cz/api | doplňkově | token zdarma po registraci |
+| TED – Slovensko (volitelně v Nastavení) | slovenské nadlimitní zakázky + výsledky | není potřeba |
 
 ### Jak se sbírají profily zadavatelů
 Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profil>/XMLdataVZ?od=…&do=…`).
@@ -29,7 +32,8 @@ Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profi
   od svého posledního úspěchu (`data/profily-stav.json`), napřed ty s otevřenými zakázkami.
   Tender arena a eGORDION (stejné API) pustí asi 5 dotazů za minutu, proto se jejich ~3 300 profilů střídá
   po dnech; server, který vůbec neodpovídá, se v daném běhu přeskočí.
-- GitHub Actions (`.github/workflows/crawl.yml`) ho spouští každé ráno ve 3:17 UTC s limitem 45 minut;
+- GitHub Actions (`.github/workflows/crawl.yml`) ho spouští každý večer ve 22:17 UTC s limitem 5 hodin
+  (veřejné repo nemá limit minut), takže data jsou hotová před ranním e-mailem;
   commit spustí nasazení na Vercelu.
   Ručně: GitHub → Actions → Sběr zakázek → Run workflow.
 
@@ -56,6 +60,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.11** – výsledky řízení z otevřených dat ISVZ v Průzkumu trhu a v profilu konkurenta (i malé zakázky, počet
+  nabídek), kraj u TED z oficiálního kódu NUTS, veřejné repo a večerní sběr profilů až 5 hodin.
 - **1.10** – zdroje ve dvou skupinách: Česká republika (vždy) a Slovenská republika (volitelně v Nastavení, zatím TED).
 - **1.9.1** – výchozí model Haiku (do limitu 5 $ měsíčně), Opus jde zapnout v Nastavení.
 - **1.9** – databáze pro poznámky, rozbory, nástěnku a skóre (Upstash), ranní e-mail i s blížícími se lhůtami
