@@ -45,3 +45,20 @@ export function smlouvyByWinner(name: string, days = 1825): Award[] {
   if (want.length < 3) return [];
   return d.contracts.filter((c) => (!c.published || c.published >= since) && c.winners.some((w) => norm(w).includes(want))).map(toAward);
 }
+
+/** Zakázky jednoho zadavatele podle IČO nebo přesného názvu (historie zadavatele v detailu zakázky). */
+export function smlouvyByBuyer(ico: string | null, name: string, days = 1825) {
+  const d = load();
+  if (!d) return [];
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  const want = norm(name);
+  return d.contracts
+    .filter((c) => (!c.published || c.published >= since) && (ico ? c.buyerIco === ico : norm(c.buyer) === want))
+    .map(toAward);
+}
+
+/** IČO zadavatele podle názvu z našich dat (bez dotazu na ARES). */
+export function smlouvyBuyerIco(name: string): string | null {
+  const want = norm(name);
+  return load()?.contracts.find((c) => c.buyerIco && norm(c.buyer) === want)?.buyerIco ?? null;
+}

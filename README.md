@@ -62,6 +62,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.17** – Historie zadavatele v detailu zakázky: smlouvy a zakázky za 5 let (Hlídač státu s HLIDAC_TOKEN,
+  jinak naše IT smlouvy a ISVZ), IT a související s otevřenou zakázkou nahoře, IČO z ARES, tlačítko AI zhodnocení
+  (současný dodavatel, ceny, proč smlouva souvisí).
 - **1.16** – s databází mají mobil i počítač stejné i poslední výsledky hledání, vybranou volbu a „Co hledám“,
   filtry, řazení, vzhled a Nastavení (model, limit, Slovensko).
 - **1.15** – vlastní přihlašovací stránka místo okna prohlížeče: heslo jednou na zařízení, pamatuje si 90 dní,

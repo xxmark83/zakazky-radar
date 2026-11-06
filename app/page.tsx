@@ -6,7 +6,7 @@ import { PRESETS } from "@/lib/presets";
 import { diff } from "@/lib/diff";
 import { profileKey } from "@/lib/profile-key";
 import { REGIONS } from "@/lib/regions";
-import type { Analysis, Award, Change, Draft, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
+import type { Analysis, Award, BuyerAi, BuyerHistory, Change, Contract, Draft, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
 const STATUS_LABEL: Record<Status, string> = {
   new: "Nové",
@@ -84,9 +84,10 @@ type Kept = {
   analysis: Record<string, Analysis>;
   drafts: Record<string, Draft>;
   changes: Record<string, Change[]>;
+  history: Record<string, BuyerAi>;
 };
 type KeptKind = keyof Kept;
-const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {} };
+const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {}, history: {} };
 type Keep = <K extends KeptKind>(kind: K, id: string, value: Kept[K][string] | null) => void;
 
 type Model = "opus" | "haiku";
@@ -471,6 +472,7 @@ export default function Home() {
         <Detail
           t={marked[detail.id] ?? detail}
           profile={form.profile}
+          keywords={form.keywords}
           status={statuses[detail.id] ?? "new"}
           setStatus={setStatus}
           kept={kept}
@@ -1182,6 +1184,7 @@ const FLOW: Status[] = ["maybe", "bid", "sent", "won", "lost", "no"];
 function Detail(props: {
   t: ScoredTender;
   profile: string;
+  keywords: string;
   status: Status;
   setStatus: (t: ScoredTender, s: Status) => void;
   kept: Kept;
@@ -1190,7 +1193,7 @@ function Detail(props: {
   openCompetitor: (name: string) => void;
   close: () => void;
 }) {
-  const { t, profile, status, setStatus, kept, keep, ai, openCompetitor, close } = props;
+  const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, close } = props;
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
@@ -1336,6 +1339,17 @@ function Detail(props: {
           ))}
         </div>
 
+        <BuyerSection
+          key={t.id}
+          t={t}
+          profile={profile}
+          keywords={keywords}
+          ai={ai}
+          saved={kept.history[t.id] ?? null}
+          keep={keep}
+          openCompetitor={openCompetitor}
+        />
+
         <h3 className="sec">AI rozbor</h3>
         {!analysis && busy !== "analysis" && (
           <div className="ai-cta">
@@ -1468,6 +1482,198 @@ function Detail(props: {
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+const TOP_SHOWN = 12;
+
+// historie zadavatele: co za posledních 5 let podepsal, IT a související s touto zakázkou nahoře
+function BuyerSection(props: {
+  t: ScoredTender;
+  profile: string;
+  keywords: string;
+  ai: Ai;
+  saved: BuyerAi | null;
+  keep: Keep;
+  openCompetitor: (name: string) => void;
+}) {
+  const { t, profile, keywords, ai, saved, keep, openCompetitor } = props;
+  const [hist, setHist] = useState<BuyerHistory | null>(null);
+  const [busy, setBusy] = useState<"list" | "ai" | null>(null);
+  const [error, setError] = useState("");
+  const [all, setAll] = useState(false);
+
+  async function load(kind: "list" | "ai") {
+    setBusy(kind);
+    setError("");
+    try {
+      const body =
+        kind === "list"
+          ? { kind, tender: t, keywords }
+          : { kind, tender: t, profile, model: ai.model, items: hist!.items.filter((c) => c.it || c.related > 0) };
+      const res = await post("/api/buyer", body);
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
+      if (kind === "list") setHist(d);
+      else {
+        ai.onCost(d.cost ?? 0);
+        keep("history", t.id, d.data);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // po AI zhodnocení jdou nahoru smlouvy, které AI označila, podle její relevance
+  const notes = new Map((saved?.items ?? []).map((x) => [x.id, x]));
+  const items = hist?.items ?? [];
+  const top = items
+    .filter((c) => c.it || c.related > 0 || notes.has(c.id))
+    .sort((a, b) => (notes.get(b.id)?.relevance ?? -1) - (notes.get(a.id)?.relevance ?? -1));
+  const rest = items.filter((c) => !top.includes(c));
+
+  return (
+    <>
+      <h3 className="sec">Historie zadavatele</h3>
+      {!hist ? (
+        <div className="ai-cta">
+          {busy === "list" ? (
+            <>
+              <div className="radar" aria-hidden="true" />
+              <span>Hledám smlouvy a zakázky zadavatele, asi 10–30 vteřin…</span>
+            </>
+          ) : (
+            <>
+              <span>
+                Co všechno <b>{t.buyer}</b> za posledních 5 let podepsal a s kým. Nahoře IT a to, co souvisí s touto
+                zakázkou. Zdarma.
+              </span>
+              <button className="primary" onClick={() => load("list")}>
+                Zobrazit historii
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="history">
+          <p className="note">
+            {hist.buyer.ico ? (
+              <>
+                {hist.buyer.name}, IČO{" "}
+                <a href={`https://www.hlidacstatu.cz/subjekt/${hist.buyer.ico}`} target="_blank" rel="noreferrer">
+                  {hist.buyer.ico}
+                </a>
+                {". "}
+              </>
+            ) : (
+              <>IČO zadavatele se nepodařilo dohledat, hledám podle přesného názvu. </>
+            )}
+            {hist.full
+              ? `Všechny smlouvy z Registru smluv za ${hist.years} let (Hlídač státu) a zakázky z ISVZ.`
+              : "Jen IT smlouvy, které sbíráme sami (24 měsíců), a zakázky z ISVZ. Celou historii za 5 let ukáže Hlídač státu – stačí přidat HLIDAC_TOKEN ve Vercelu."}
+          </p>
+          {hist.warnings.map((w) => (
+            <div key={w} className="warn">
+              {w}
+            </div>
+          ))}
+
+          {top.length > 0 &&
+            (saved ? (
+              <div className="hist-ai">
+                <b>
+                  <Icon n="sparkle" size={14} /> AI zhodnocení
+                </b>
+                <p>{saved.summary}</p>
+                <p>
+                  <span className="hint">Současný dodavatel:</span> {saved.incumbent}
+                </p>
+                <p>
+                  <span className="hint">Ceny:</span> {saved.prices}
+                </p>
+              </div>
+            ) : (
+              <div className="ai-cta">
+                {busy === "ai" ? (
+                  <>
+                    <div className="radar" aria-hidden="true" />
+                    <span>AI čte smlouvy zadavatele…</span>
+                  </>
+                ) : (
+                  <>
+                    <span>AI určí současného dodavatele, cenovou hladinu a ke každé související smlouvě napíše proč.</span>
+                    <button className="primary" onClick={() => load("ai")} disabled={ai.noAi || busy !== null}>
+                      AI zhodnocení
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          {error && <div className="warn">{error}</div>}
+
+          <h4>
+            IT a související <span className="count">{top.length}</span>
+          </h4>
+          {top.length ? (
+            (all ? top : top.slice(0, TOP_SHOWN)).map((c) => (
+              <ContractRow key={c.id} c={c} note={notes.get(c.id)?.note} openCompetitor={openCompetitor} />
+            ))
+          ) : (
+            <p className="note">Zadavatel za tu dobu nic z IT nepodepsal (nebo to v datech není).</p>
+          )}
+          {!all && top.length > TOP_SHOWN && (
+            <button className="link" onClick={() => setAll(true)}>
+              Zobrazit všech {top.length}
+            </button>
+          )}
+          {rest.length > 0 && (
+            <details>
+              <summary>Ostatní smlouvy ({rest.length})</summary>
+              {rest.map((c) => (
+                <ContractRow key={c.id} c={c} openCompetitor={openCompetitor} />
+              ))}
+            </details>
+          )}
+        </div>
+      )}
+      {!hist && error && <div className="warn">{error}</div>}
+    </>
+  );
+}
+
+function ContractRow({ c, note, openCompetitor }: { c: Contract; note?: string; openCompetitor: (name: string) => void }) {
+  return (
+    <div className="hist-row">
+      <div className="hist-main">
+        <a href={c.url} target="_blank" rel="noreferrer">
+          {c.title}
+        </a>
+        <div className="hist-meta">
+          {c.suppliers[0] && (
+            <button className="link name" onClick={() => openCompetitor(c.suppliers[0])} title="Profil dodavatele">
+              {c.suppliers[0]}
+            </button>
+          )}
+          {c.date && <span>{new Date(c.date).toLocaleDateString("cs-CZ")}</span>}
+          <span>{c.source}</span>
+          {c.offers ? <span>{c.offers} nabídek</span> : null}
+        </div>
+        {note && (
+          <p className="hist-note">
+            <Icon n="sparkle" size={12} /> {note}
+          </p>
+        )}
+      </div>
+      <div className="hist-side">
+        <b>{c.value ? money(c.value) : "–"}</b>
+        <span className="tags">
+          {c.related > 0 && <span className="tag accent">souvisí</span>}
+          {c.it && <span className="tag">IT</span>}
+        </span>
+      </div>
     </div>
   );
 }

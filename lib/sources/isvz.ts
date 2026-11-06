@@ -67,3 +67,20 @@ export function mergeAwards(...lists: Award[][]): Award[] {
     return true;
   });
 }
+
+/** Zakázky jednoho zadavatele podle IČO nebo přesného názvu (historie zadavatele v detailu zakázky). */
+export function isvzByBuyer(ico: string | null, name: string, days = 1825) {
+  const d = load();
+  if (!d) return [];
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  const want = norm(name);
+  return d.awards
+    .filter((c) => (!c.published || c.published >= since) && (ico ? c.buyerIco === ico : norm(c.buyer) === want))
+    .map(toAward);
+}
+
+/** IČO zadavatele podle názvu z našich dat (bez dotazu na ARES). */
+export function isvzBuyerIco(name: string): string | null {
+  const want = norm(name);
+  return load()?.awards.find((c) => c.buyerIco && norm(c.buyer) === want)?.buyerIco ?? null;
+}

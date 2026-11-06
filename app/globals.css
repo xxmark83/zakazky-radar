@@ -533,6 +533,27 @@ button.link.name:hover { color: var(--accent); }
 a.mine-row .note { flex: none; margin: 0; }
 .col-empty { margin: 0; color: var(--muted); font-size: 12.5px; text-align: center; padding: 16px 4px; }
 
+/* historie zadavatele */
+.history { display: grid; gap: 8px; }
+.history > .note { margin: 0; }
+.history h4 { margin: 10px 0 0; font-size: 13.5px; display: flex; align-items: center; gap: 4px; }
+.history details { margin-top: 6px; }
+.hist-ai { padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); font-size: 14px; }
+.hist-ai b { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); }
+.hist-ai p { margin: 6px 0 0; }
+.hist-row {
+  display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px;
+}
+.hist-main { min-width: 0; display: grid; gap: 3px; }
+.hist-main > a { color: var(--text); text-decoration: none; line-height: 1.4; }
+.hist-main > a:hover { color: var(--accent); }
+.hist-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12.5px; }
+.hist-meta button.link.name { font-size: 12.5px; color: var(--muted); }
+.hist-note { margin: 2px 0 0; font-size: 13px; color: var(--accent); display: flex; gap: 6px; align-items: baseline; }
+.hist-side { flex: none; display: grid; justify-items: end; align-content: start; gap: 4px; text-align: right; }
+.hist-side b { font-size: 13.5px; white-space: nowrap; }
+.hist-side .tags { margin: 0; }
+
 /* přihlášení */
 main.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .login-card { width: min(380px, 100%); padding: 28px 24px; display: grid; }

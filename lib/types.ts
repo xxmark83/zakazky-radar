@@ -72,3 +72,33 @@ export type Analysis = {
 export type Draft = { outline: { heading: string; points: string[] }[]; coverLetter: string };
 
 export type Change = { field: "deadline" | "title" | "value" | "description"; from: string; to: string; at: string };
+
+// historie zadavatele v detailu zakázky (lib/buyer.ts)
+export type Contract = {
+  id: string;
+  title: string;
+  suppliers: string[];
+  value: number | null; // Kč bez DPH
+  date: string | null; // podpis smlouvy / zadání zakázky
+  url: string;
+  source: "Hlídač státu" | "Registr smluv" | "ISVZ";
+  it: boolean;
+  related: number; // kolik slov se shoduje s otevřenou zakázkou (slova z názvu váží dvojnásob)
+  matched: string[];
+  offers?: number | null;
+};
+
+export type BuyerHistory = {
+  buyer: { ico: string | null; name: string; via: string; query: string };
+  full: boolean; // celý Registr smluv přes Hlídač státu (s tokenem), jinak jen naše IT smlouvy
+  years: number;
+  warnings: string[];
+  items: Contract[];
+};
+
+export type BuyerAi = {
+  summary: string;
+  incumbent: string;
+  prices: string;
+  items: { id: string; relevance: number; note: string }[];
+};
