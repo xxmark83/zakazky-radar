@@ -11,7 +11,7 @@ const K = {
   statuses: "zr:statuses", // hash id -> Status
   tenders: "zr:tenders", // hash id -> ScoredTender (uložené kvůli historii)
   profiles: "zr:profiles", // WatchedProfile[]
-  last: "zr:last", // poslední výsledky hledání
+  ui: "zr:ui", // hash klíč -> hodnota: výsledky hledání, volby, filtry a vzhled, aby mobil i počítač ukazovaly totéž
   seen: "zr:seen", // set id už poslaných e-mailem
   scores: (key: string) => `zr:scores:${key}`, // hash id -> Score pro jeden profil
   spend: (month: string) => `zr:spend:${month}`, // útrata za AI v USD
@@ -58,12 +58,12 @@ export async function getSpend(): Promise<number | null> {
 
 export async function getState() {
   if (!redis) return { db: false as const };
-  const [statuses, profiles, last] = await Promise.all([
+  const [statuses, profiles, ui] = await Promise.all([
     redis.hgetall<Record<string, Status>>(K.statuses),
     redis.get<WatchedProfile[]>(K.profiles),
-    redis.get<{ form: unknown; results: ScoredTender[] }>(K.last),
+    redis.hgetall<Record<string, unknown>>(K.ui),
   ]);
-  return { db: true as const, statuses: statuses ?? {}, profiles: profiles ?? [], last };
+  return { db: true as const, statuses: statuses ?? {}, profiles: profiles ?? [], ui: ui ?? {} };
 }
 
 export async function setStatus(tender: ScoredTender, status: Status) {
@@ -90,8 +90,12 @@ export async function getProfiles(): Promise<WatchedProfile[]> {
   return redis ? ((await redis.get<WatchedProfile[]>(K.profiles)) ?? []) : [];
 }
 
-export async function saveLast(last: { form: unknown; results: ScoredTender[] }) {
-  if (redis) await redis.set(K.last, last);
+// jen známé klíče z prohlížeče, ať se do databáze nedá zapsat cokoli
+export const UI_KEYS = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme"];
+
+export async function saveUi(values: Record<string, unknown>) {
+  const ok = Object.fromEntries(Object.entries(values).filter(([k]) => UI_KEYS.includes(k)));
+  if (redis && Object.keys(ok).length) await redis.hset(K.ui, ok);
 }
 
 /** Vrátí jen id, která ještě nebyla poslána e-mailem. */

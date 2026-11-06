@@ -62,6 +62,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.16** – s databází mají mobil i počítač stejné i poslední výsledky hledání, vybranou volbu a „Co hledám“,
+  filtry, řazení, vzhled a Nastavení (model, limit, Slovensko).
 - **1.15** – vlastní přihlašovací stránka místo okna prohlížeče: heslo jednou na zařízení, pamatuje si 90 dní,
   odhlášení v Nastavení, nejvýš 10 pokusů za 15 minut, změna APP_PASSWORD odhlásí všechna zařízení.
 - **1.14** – přehlednější vzhled: ikony v záložkách a u voleb, číslo rozpracovaných zakázek u Moje zakázky,

@@ -1,5 +1,5 @@
 import { profilyInfo } from "@/lib/sources/profily";
-import { getKept, getMarkedTenders, getSpend, getState, saveProfiles, setKept, setStatus, type Kept } from "@/lib/store";
+import { getKept, getMarkedTenders, getSpend, getState, saveProfiles, saveUi, setKept, setStatus, type Kept } from "@/lib/store";
 
 export async function GET() {
   const state = await getState();
@@ -23,5 +23,6 @@ export async function POST(req: Request) {
   if (body.status) await setStatus(body.status.tender, body.status.value);
   if (body.profiles) await saveProfiles(body.profiles);
   if (body.kept) await setKept(body.kept.kind as Kept, body.kept.id, body.kept.value);
+  if (body.ui) await saveUi(body.ui);
   return Response.json({ ok: true });
 }

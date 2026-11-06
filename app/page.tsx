@@ -75,6 +75,7 @@ type ServerState = {
   budget?: number;
   model?: Model;
   ai?: boolean;
+  ui?: Record<string, unknown>;
 };
 
 // poznámky, AI rozbory, návrhy nabídek a změny – v databázi, bez ní v prohlížeči
@@ -106,13 +107,55 @@ function load<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+const post = (url: string, body: unknown, signal?: AbortSignal) =>
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+
+// S databází se tyto klíče sdílí mezi zařízeními (lib/store.ts UI_KEYS): výsledky, volby, filtry a vzhled.
+const SYNCED = ["zr-results", "zr-fresh", "zr-form", "zr-prefs", "zr-sort", "zr-region", "zr-value", "zr-theme"];
+let syncOn = false;
+const syncUi = (key: string, v: unknown) => {
+  if (!syncOn || !SYNCED.includes(key)) return;
+  // dlouhé popisy zkrátit, ať se stovky výsledků vejdou do limitu požadavku (4,5 MB)
+  const value = key === "zr-results" ? (v as ScoredTender[]).map((t) => ({ ...t, description: t.description?.slice(0, 1500) })) : v;
+  post("/api/state", { ui: { [key]: value } }).catch(() => {});
+};
 function save(key: string, v: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(v));
   } catch {}
+  syncUi(key, v);
 }
-const post = (url: string, body: unknown, signal?: AbortSignal) =>
-  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+
+// vzhled je v prohlížeči jako holý text, protože ho čte skript v layout.tsx ještě před vykreslením
+function applyTheme(t: Theme) {
+  try {
+    if (t === "auto") localStorage.removeItem("zr-theme");
+    else localStorage.setItem("zr-theme", t);
+  } catch {}
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+}
+
+// po načtení: co je v databázi, přepíše prohlížeč; co v databázi ještě chybí, nahraje se tam
+function mergeUi(ui: Record<string, unknown>) {
+  const missing: Record<string, unknown> = {};
+  for (const k of SYNCED) {
+    if (k in ui) {
+      if (k === "zr-theme") applyTheme(ui[k] as Theme);
+      else
+        try {
+          localStorage.setItem(k, JSON.stringify(ui[k]));
+        } catch {}
+      continue;
+    }
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw !== null) missing[k] = k === "zr-theme" ? raw : JSON.parse(raw);
+    } catch {}
+  }
+  syncOn = true;
+  if (Object.keys(missing).length) post("/api/state", { ui: missing }).catch(() => {});
+}
 
 const scoreColor = (s: number) => (s < 0 ? "var(--low)" : s >= 75 ? "var(--good)" : s >= 50 ? "var(--mid)" : "var(--low)");
 const scoreLabel = (s: number) => (s < 0 ? "bez AI" : s >= 75 ? "sedí" : s >= 50 ? "částečně" : "slabě");
@@ -194,6 +237,8 @@ export default function Home() {
   const [spent, setSpent] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>({ model: "haiku", budget: 5, slovakia: false });
   const [ready, setReady] = useState(false);
+  // po načtení dat z databáze se záložky s výsledky vykreslí znovu
+  const [synced, setSynced] = useState(0);
 
   useEffect(() => {
     const last = load<{ form?: typeof form }>("zr-form", {});
@@ -209,6 +254,12 @@ export default function Home() {
       .then((r) => r.json())
       .then((s: ServerState) => {
         setServer(s);
+        if (s.db) {
+          mergeUi(s.ui ?? {});
+          const f = load<{ form?: typeof form }>("zr-form", {});
+          if (f.form) setForm(f.form);
+          setSynced((n) => n + 1);
+        }
         setPrefs({ model: s.model ?? "haiku", budget: s.budget ?? 5, slovakia: false, ...load<Partial<Prefs>>("zr-prefs", {}) });
         if (s.db) {
           setStatuses(s.statuses ?? {});
@@ -242,6 +293,13 @@ export default function Home() {
     });
   };
   const ai: Ai = { model: prefs.model, noAi: spent >= prefs.budget, slovakia: prefs.slovakia, onCost };
+  // vybraná volba a úpravy „Co hledám“ se sdílí i bez hledání
+  useEffect(() => {
+    if (!ready) return;
+    const id = setTimeout(() => save("zr-form", { form }), 800);
+    return () => clearTimeout(id);
+  }, [form, ready]);
+
   const savePrefs = (p: typeof prefs) => {
     setPrefs(p);
     save("zr-prefs", p);
@@ -380,6 +438,7 @@ export default function Home() {
 
       {tab === "search" && (
         <SearchTab
+          key={synced}
           form={form}
           statuses={statuses}
           marked={marked}
@@ -391,7 +450,7 @@ export default function Home() {
         />
       )}
       {tab === "board" && (
-        <BoardTab statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
+        <BoardTab key={synced} statuses={statuses} marked={marked} changes={kept.changes} setStatus={setStatus} openDetail={setDetail} />
       )}
       {tab === "market" && <MarketTab form={form} slovakia={prefs.slovakia} openCompetitor={setCompetitor} />}
       {tab === "watch" && <WatchTab form={form} server={server} setServer={setServer} />}
@@ -467,13 +526,8 @@ function Settings(props: {
 
   const choose = (t: Theme) => {
     setTheme(t);
-    // skript v layout.tsx čte zr-theme při načtení stránky
-    try {
-      if (t === "auto") localStorage.removeItem("zr-theme");
-      else localStorage.setItem("zr-theme", t);
-    } catch {}
-    if (t === "auto") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = t;
+    applyTheme(t);
+    syncUi("zr-theme", t);
   };
   const pct = Math.min(100, (spent / prefs.budget) * 100);
 
