@@ -1,0 +1,33 @@
+name: Zakázky z Vhodného uveřejnění
+
+# Každé 3 hodiny přečte RSS nových zakázek na vhodne-uverejneni.cz a doplní detaily (zadavatel, lhůta).
+# Mezi dotazy drží 30 s podle jejich robots.txt. Výsledek data/vhodne.json čte appka spolu s profily.
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vhodne:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/vhodne.mjs
+        env:
+          BUDGET_MIN: "50"
+      - name: Uložit výsledky
+        if: always()
+        run: |
+          git config user.name "xxmark83"
+          git config user.email "142055462+xxmark83@users.noreply.github.com"
+          git add data/vhodne.json
+          git diff --cached --quiet || git commit -m "Zakázky z Vhodného uveřejnění $(date -u +%F)"
+          git pull --rebase -q
+          git push

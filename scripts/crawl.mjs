@@ -13,6 +13,8 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 const LIST = "data/profily-seznam.txt";
 const OUT = "data/profily.json";
 const STATE = "data/profily-stav.json"; // profil -> den posledního úspěšného stažení
+const INACTIVE = "data/profily-neaktivni.json"; // profil -> den, kdy server řekl, že profil není aktivní
+const INACTIVE_DAYS = 30; // pak to zkusíme znovu
 const FULL = process.argv.includes("--full") || !existsSync(OUT);
 const MAX_DAYS = 120;
 const BUDGET = Number(process.env.BUDGET_MIN || 45) * 60_000;
@@ -30,14 +32,19 @@ const SLOW = {
   vhodne: { parallel: 1, gap: 30_000, careful: true },
 };
 
-// opravy zjevně špatných adres z registru (Vhodné uveřejnění): www, velká písmena, chybějící lomítko;
-// odkazy na jednotlivé zakázky a titulní stránky nejsou profily – vynechat
+// Opravy zjevně špatných adres z registru. Co není adresa profilu, vynechat (null):
+// - Vhodné uveřejnění sbírá scripts/vhodne.mjs z jejich RSS (servery GitHubu blokují a 30 s na profil je moc)
+// - NEN s překlepem „nen.nipez/“ bez .cz
+// - E-ZAK: „company_detail_N“ je stránka zadavatele, profil je „profile_display_N“; „contract_display_N“
+//   a „vzNNN“ jsou jednotlivé zakázky, ne profily
+// - e-zakazky.cz s useknutým GUID (registr adresu ořízl)
 function normalize(u) {
-  if (!/vhodne-uverejneni\.cz/i.test(u)) return u;
-  const m = u.match(/^https?:\/\/(?:ww\.|www\.)?vhodne-uverejneni\.cz\.?\/(.*)$/i);
-  if (!m) return null;
-  const rest = m[1].replace(/^PROFIL\//, "profil/").replace(/^profil(?=[a-z0-9])(?!\/)/, "profil/").replace(/\/+$/, "");
-  return /^profil\/[^/?#]+$/.test(rest) ? `https://www.vhodne-uverejneni.cz/${rest}` : null;
+  if (/vhodne-uverejneni\.cz/i.test(u)) return null;
+  u = u.replace(/^(https?:\/\/)nen\.nipez\//i, "$1nen.nipez.cz/").replace(/\/company_detail_(\d+)\.html$/, "/profile_display_$1.html");
+  if (/\/contract_display_\d+\.html$|\/vz\d{6,}$/i.test(u)) return null;
+  const guid = u.match(/\/Profil-Zadavatele\/([^/?#]*)/i)?.[1];
+  if (guid !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guid)) return null;
+  return u;
 }
 
 const ddmmyyyy = (d) =>
@@ -113,6 +120,7 @@ function parse(xml, profile) {
 class RateLimited extends Error {}
 class Answered extends Error {} // server odpověděl, jen ne XML profilu (špatná adresa v registru)
 class Blocked extends Error {} // 403/503 od opatrného serveru = nechce nás, nechat ho pro tento běh být
+class Inactive extends Error {} // E-ZAK „212 No VVZ profile ID“ = zadavatel profil nepoužívá
 
 async function fetchProfile(profile, careful = false) {
   const url = `${profile.replace(/\/+$/, "")}/XMLdataVZ?od=${since(profile)}&do=${doo}`;
@@ -122,12 +130,13 @@ async function fetchProfile(profile, careful = false) {
       const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { "User-Agent": UA } });
       if (res.status === 429) throw new RateLimited("429");
       if (careful && (res.status === 403 || res.status === 503)) throw new Blocked(String(res.status));
+      if (res.status === 212) throw new Inactive("212");
       if (!res.ok) throw new Answered(String(res.status));
       const xml = await res.text();
       if (!xml.includes("<profil")) throw new Answered("není XML profilu");
       return parse(xml, profile);
     } catch (e) {
-      if (attempt || e instanceof RateLimited || e instanceof Answered || e instanceof Blocked) throw e;
+      if (attempt || e instanceof RateLimited || e instanceof Answered || e instanceof Blocked || e instanceof Inactive) throw e;
     }
   }
 }
@@ -149,7 +158,9 @@ const all = [
       .filter(Boolean),
   ),
 ];
-const profiles = all.sort((a, b) => active.has(b) - active.has(a) || (state[a] ?? "").localeCompare(state[b] ?? ""));
+const inactive = existsSync(INACTIVE) ? JSON.parse(readFileSync(INACTIVE, "utf8")) : {};
+const stillInactive = (p) => inactive[p] && (now - new Date(inactive[p])) / 86400_000 < INACTIVE_DAYS;
+const profiles = all.filter((p) => !stillInactive(p)).sort((a, b) => active.has(b) - active.has(a) || (state[a] ?? "").localeCompare(state[b] ?? ""));
 
 let ok = 0;
 const failed = {};
@@ -202,6 +213,7 @@ await new Promise((resolve) => {
           streak[h] = 0;
           okHost[h] = (okHost[h] ?? 0) + 1;
           state[p] = today;
+          delete inactive[p];
           for (const t of list) if (!found.get(t.id) || found.get(t.id).closed) found.set(t.id, t);
         })
         .catch((e) => {
@@ -209,6 +221,10 @@ await new Promise((resolve) => {
             // server nás brzdí: počkat minutu a profil zkusit znovu
             nextAt.set(h, Date.now() + 60_000);
             queue.push(p);
+            return;
+          }
+          if (e instanceof Inactive) {
+            inactive[p] = today;
             return;
           }
           failed[h] = (failed[h] ?? 0) + 1;
@@ -277,6 +293,7 @@ const tenders = [...merged.values()].filter((t) => !t.deadline || t.deadline >= 
 const fresh = Object.values(state).filter((d) => (now - new Date(d)) / 86400_000 <= 14).length;
 
 writeFileSync(STATE, JSON.stringify(state));
+writeFileSync(INACTIVE, JSON.stringify(inactive));
 writeFileSync(
   OUT,
   JSON.stringify({ updated: now.toISOString(), mode: FULL ? "full" : "incremental", profiles: profiles.length, ok: fresh, failed: nFailed(), tenders }),
@@ -284,5 +301,6 @@ writeFileSync(
 console.log(
   `Hotovo za ${Math.round((Date.now() - started) / 60_000)} min: ${ok} ok, ${nFailed()} chyb, ${skipped} odloženo na příště, ${tenders.length} otevřených zakázek`,
 );
+console.log(`Neaktivní profily (přeskočeny ${INACTIVE_DAYS} dní): ${Object.keys(inactive).length}`);
 console.log("Nedostupné servery:", [...dead]);
 console.log("Nejvíc chyb:", Object.entries(failed).sort((a, b) => b[1] - a[1]).slice(0, 10));

@@ -18,13 +18,32 @@ type Row = {
 };
 type Data = { updated: string; profiles: number; ok: number; tenders: Row[] };
 
-let cache: { mtime: number; data: Data } | null = null;
-function load(): Data | null {
+const read = (name: string) => {
   try {
-    const file = path.join(process.cwd(), "data/profily.json");
-    const raw = readFileSync(file, "utf8");
-    if (!cache || cache.mtime !== raw.length) cache = { mtime: raw.length, data: JSON.parse(raw) };
-    return cache.data;
+    return readFileSync(path.join(process.cwd(), "data", name), "utf8");
+  } catch {
+    return "";
+  }
+};
+const key = (t: Row) => `${t.title.toLowerCase().replace(/\s+/g, " ")}|${t.buyer.toLowerCase()}`;
+
+// k profilům přidáme zakázky z RSS Vhodného uveřejnění (scripts/vhodne.mjs), bez těch, které už známe z profilu
+let cache: { size: string; data: Data } | null = null;
+function load(): Data | null {
+  const raw = read("profily.json");
+  const vu = read("vhodne.json");
+  if (!raw) return null;
+  const size = `${raw.length}/${vu.length}`;
+  if (cache?.size === size) return cache.data;
+  try {
+    const data: Data = JSON.parse(raw);
+    if (vu) {
+      const known = new Set(data.tenders.map(key));
+      const extra = (JSON.parse(vu).tenders as Row[]).filter((t) => !known.has(key(t)));
+      data.tenders = [...data.tenders, ...extra];
+    }
+    cache = { size, data };
+    return data;
   } catch {
     return null;
   }
