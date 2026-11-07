@@ -63,6 +63,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.25.1** – Vhodné uveřejnění: ukončené zakázky si sběr pamatuje a nečte je při každém běhu znovu.
 - **1.25** – širší rozvržení (až 1 440 px), na počítači „Co hledáš“ jako panel vlevo a výsledky vpravo, Dnes ve dvou
   sloupcích; nové písmo nadpisů (Bricolage Grotesque), jemný motiv radaru v pozadí, barevný proužek karty podle skóre,
   plynulé naskakování karet a plnění skóre.

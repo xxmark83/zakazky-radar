@@ -80,6 +80,8 @@ function parseDetail(html, t) {
 
 const prev = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : { tenders: [] };
 const byId = new Map(prev.tenders.map((t) => [t.id, t]));
+// ukončené a prošlé si pamatujeme (id, zveřejněno), ať je RSS při dalším běhu nevrací jako nové
+const done = new Map(prev.done ?? []);
 const cutoff = new Date(Date.now() - BACK_DAYS * 86400_000).toISOString().slice(0, 10);
 // poprvé projdeme 35 dní zpět, potom jen do posledního běhu (s dnem rezervy)
 const until = prev.updated ? new Date(new Date(prev.updated).getTime() - 86400_000).toISOString().slice(0, 10) : cutoff;
@@ -92,7 +94,7 @@ try {
     const items = parseRss(await get(`${BASE}/rss/zakazky${page > 1 ? `?page=${page}` : ""}`));
     if (!items.length) break;
     for (const t of items) {
-      if (t.published < cutoff || byId.has(t.id)) continue;
+      if (t.published < cutoff || byId.has(t.id) || done.has(t.id)) continue;
       byId.set(t.id, t);
       added++;
     }
@@ -121,7 +123,13 @@ const tenders = [...byId.values()].filter(
   (t) => !t.closed && (!t.deadline || t.deadline >= today) && (t.detail || t.published >= cutoff),
 );
 const waiting = tenders.filter((t) => !t.detail).length;
-writeFileSync(OUT, JSON.stringify({ updated: blocked && prev.updated ? prev.updated : new Date().toISOString(), tenders }));
+const open = new Set(tenders.map((t) => t.id));
+for (const t of byId.values()) if (!open.has(t.id)) done.set(t.id, t.published);
+const doneList = [...done].filter(([, published]) => published >= cutoff);
+writeFileSync(
+  OUT,
+  JSON.stringify({ updated: blocked && prev.updated ? prev.updated : new Date().toISOString(), tenders, done: doneList }),
+);
 console.log(
   `Hotovo za ${Math.round((Date.now() - started) / 60_000)} min: ${added} nových z RSS, ${details} detailů, ` +
     `${tenders.length} otevřených (${waiting} čeká na detail)${blocked ? `, přerušeno: ${blocked}` : ""}`,
