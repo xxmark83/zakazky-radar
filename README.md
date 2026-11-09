@@ -64,6 +64,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.27.1** – mobil: telefon na šířku má mobilní rozvržení, políčka 16 px (iPhone už stránku při psaní nepřiblíží).
 - **1.27** – Správa účtů v Nastavení (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová
   slova; kontroluje se i na serveru (hledání i ranní hlídání).
 - **1.26** – více účtů (USERS): každý má vlastní přihlášení, zakázky, poznámky, sledování, nastavení, upozornění,
