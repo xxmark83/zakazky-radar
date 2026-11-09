@@ -6,6 +6,7 @@ import { runSearch } from "@/lib/search";
 import { filterUnseen, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
 import { changesFromProfily } from "@/lib/track";
 import type { Award, Change, Outcome, ScoredTender, Status, WatchedProfile } from "@/lib/types";
+import { currentUser, users, withUser } from "@/lib/users";
 
 export const maxDuration = 300;
 
@@ -15,12 +16,25 @@ export async function GET(req: Request) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
+  // každý uživatel má svá hlídání, sledované, upozornění i e-mail – projdeme je po jednom
+  const list = users().length ? users() : [await currentUser()];
+  const log: string[] = [];
+  for (const u of list) {
+    const lines = await withUser(u, () => runFor(req));
+    log.push(...lines.map((l) => (list.length > 1 ? `${u.name}: ${l}` : l)));
+  }
+  return Response.json({ ok: true, log });
+}
 
+async function runFor(req: Request): Promise<string[]> {
   const defaultMin = Number(process.env.WATCH_MIN_SCORE) || 75;
   const saved = (await getProfiles()).filter((p) => p.watch);
+  // bez vlastních hlídání dostane výchozí profil jen vlastník (ostatním by AI zbytečně pálila kredit)
   const profiles: WatchedProfile[] = saved.length
     ? saved
-    : PRESETS.slice(0, 1).map((p) => ({ ...p, minScore: defaultMin, watch: true }));
+    : (await currentUser()).owner
+      ? PRESETS.slice(0, 1).map((p) => ({ ...p, minScore: defaultMin, watch: true }))
+      : [];
 
   // s databází hlídáme delší okno a duplicity odfiltrujeme; bez ní jen poslední den
   const days = redis ? 3 : 1;
@@ -170,5 +184,5 @@ export async function GET(req: Request) {
       log.push(`e-mail selhal: ${e.message}`);
     }
   }
-  return Response.json({ ok: true, log });
+  return log;
 }

@@ -1,4 +1,5 @@
 import type { Award, Change, ScoredTender } from "./types";
+import { currentUser } from "./users";
 
 const FIELD: Record<Change["field"], string> = { deadline: "lhůta", title: "název", value: "hodnota", description: "popis" };
 
@@ -13,10 +14,6 @@ export async function sendAlert(
     competitors?: { name: string; awards: Award[] }[];
   } = { changed: [], deadlines: [] },
 ) {
-  const key = process.env.RESEND_API_KEY;
-  const to = process.env.ALERT_EMAIL;
-  if (!key || !to) throw new Error("Chybí RESEND_API_KEY nebo ALERT_EMAIL");
-
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   const money = (t: ScoredTender) => (t.value ? `${Math.round(t.value).toLocaleString("cs-CZ")} ${t.currency ?? ""}` : "hodnota neuvedena");
   const count = groups.reduce((n, g) => n + g.tenders.length, 0);
@@ -92,10 +89,12 @@ ${t.kind === "upcoming" ? '<span style="color:#1f5eff"> připravovaná</span>' :
   await send(`Zakázky radar: ${parts.join(", ")}`, html);
 }
 
+// komu: e-mail přihlášeného uživatele (u vlastníka ALERT_EMAIL, u dalších třetí část v USERS)
 async function send(subject: string, html: string) {
   const key = process.env.RESEND_API_KEY;
-  const to = process.env.ALERT_EMAIL;
-  if (!key || !to) throw new Error("Chybí RESEND_API_KEY nebo ALERT_EMAIL");
+  const to = (await currentUser()).email;
+  if (!key) throw new Error("Chybí RESEND_API_KEY");
+  if (!to) throw new Error("uživatel nemá e-mail (USERS jméno:heslo:e-mail)");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

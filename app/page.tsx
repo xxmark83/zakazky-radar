@@ -82,6 +82,8 @@ type ServerState = {
   ai?: boolean;
   ui?: Record<string, unknown>;
   calendar?: string | null;
+  user?: string;
+  multi?: boolean;
 };
 type Buyers = { buyers: { name: string; ico: string | null; added: string }[]; tenders: ScoredTender[] };
 
@@ -342,6 +344,14 @@ export default function Home() {
       .then((r) => r.json())
       .then((s: ServerState) => {
         setServer(s);
+        // jiný uživatel na stejném zařízení: data předchozího z prohlížeče smazat, ať se nepomíchají
+        if (load<string | null>("zr-user", null) !== (s.user ?? "")) {
+          try {
+            for (const k of Object.keys(localStorage)) if (k.startsWith("zr-")) localStorage.removeItem(k);
+          } catch {}
+          save("zr-user", s.user ?? "");
+          if (s.multi) return location.reload(); // načíst znovu už jen s daty tohoto uživatele
+        }
         if (s.db) {
           mergeUi(s.ui ?? {});
           const f = load<{ form?: typeof form }>("zr-form", {});
@@ -772,13 +782,30 @@ function Settings(props: {
         <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
         <Check ok={server.email && server.cron} label="Ranní e-mail (RESEND_API_KEY, ALERT_EMAIL, CRON_SECRET)" />
 
+        {server.multi && (
+          <>
+            <h3 className="sec">Účet</h3>
+            <p className="note">
+              Přihlášen jako <b>{server.user}</b>. Každý účet má vlastní zakázky, poznámky, sledování i nastavení.
+            </p>
+          </>
+        )}
+
         <h3 className="sec">O aplikaci</h3>
         <p className="note">
           Zakázky radar, verze <b>{VERSION}</b>
         </p>
         <button
           className="ghost logout"
-          onClick={() => fetch("/api/logout", { method: "POST" }).finally(() => location.replace("/login"))}
+          onClick={() =>
+            fetch("/api/logout", { method: "POST" })
+              .then(async () => {
+                // nic z tohoto účtu nenechat v prohlížeči (sdílený počítač, offline kopie)
+                for (const k of Object.keys(localStorage)) if (k.startsWith("zr-")) localStorage.removeItem(k);
+                if ("caches" in window) await caches.delete("zr-data-v1");
+              })
+              .finally(() => location.replace("/login"))
+          }
         >
           Odhlásit toto zařízení
         </button>

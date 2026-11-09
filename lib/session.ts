@@ -1,14 +1,16 @@
-// Přihlášení heslem APP_PASSWORD: po zadání dostane zařízení podepsanou cookie na 90 dní.
-// Podpis je HMAC z hesla, takže změna hesla ve Vercelu odhlásí všechna zařízení najednou.
+import { findUser, type User } from "./users";
+
+// Přihlášení jménem a heslem (lib/users.ts): po zadání dostane zařízení podepsanou cookie na 90 dní.
+// Podpis je HMAC z hesla daného uživatele, takže změna jeho hesla ve Vercelu odhlásí jen jeho zařízení.
 export const COOKIE = "zr-session";
 export const MAX_AGE = 90 * 86400; // sekundy
 
 const enc = new TextEncoder();
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 
-async function sign(password: string, expires: number) {
+async function hmac(password: string, message: string) {
   const key = await crypto.subtle.importKey("raw", enc.encode(password), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return hex(await crypto.subtle.sign("HMAC", key, enc.encode(`zr-session:v1:${expires}`)));
+  return hex(await crypto.subtle.sign("HMAC", key, enc.encode(message)));
 }
 
 // porovnání bez předčasného konce, aby se podpis nedal hádat podle času odpovědi
@@ -20,20 +22,25 @@ export function sameText(a: string, b: string) {
   return diff === 0;
 }
 
-export async function makeSession(password: string) {
+// cookie: „jméno.platnost.podpis“ (jméno zakódované, u jediného uživatele bez jména prázdné)
+export async function makeSession(u: User) {
   const expires = Math.floor(Date.now() / 1000) + MAX_AGE;
-  return `${expires}.${await sign(password, expires)}`;
+  const name = encodeURIComponent(u.name);
+  return `${name}.${expires}.${await hmac(u.password, `zr-session:v2:${name}:${expires}`)}`;
 }
 
-export async function validSession(value: string | undefined, password: string) {
-  const [exp, sig] = (value ?? "").split(".");
+/** Přihlášený uživatel podle cookie, nebo null. */
+export async function sessionUser(value: string | undefined): Promise<User | null> {
+  const [name, exp, sig] = (value ?? "").split(".");
   const expires = Number(exp);
-  if (!sig || !expires || expires < Date.now() / 1000) return false;
-  return sameText(sig, await sign(password, expires));
+  if (name === undefined || !sig || !expires || expires < Date.now() / 1000) return null;
+  const u = findUser(decodeURIComponent(name));
+  if (!u) return null;
+  return sameText(sig, await hmac(u.password, `zr-session:v2:${name}:${expires}`)) ? u : null;
 }
 
 // tajný odkaz na kalendář lhůt: kalendáře (Google, Apple) se nepřihlašují, proto klíč v adrese.
-// Odvozený z hesla, takže změna APP_PASSWORD zneplatní i starý odkaz.
-export async function calendarKey(password: string | undefined) {
-  return (await sign(password || "zakazky-radar", 0)).slice(0, 32);
+// Každý uživatel má svůj; změna jeho hesla zneplatní i starý odkaz.
+export async function calendarKey(u: User) {
+  return (await hmac(u.password || "zakazky-radar", `zr-calendar:${u.name}`)).slice(0, 32);
 }

@@ -1,5 +1,6 @@
 import { calendarKey, sameText } from "@/lib/session";
 import { getMarkedTenders, getState } from "@/lib/store";
+import { currentUser, users, withUser, type User } from "@/lib/users";
 import type { Status } from "@/lib/types";
 
 // Kalendář lhůt k odběru (ICS): zakázky, které zvažuješ, připravuješ nebo jsi podal.
@@ -24,9 +25,15 @@ function fold(line: string) {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  if (!sameText(key.replace(/\.ics$/, ""), await calendarKey(process.env.APP_PASSWORD))) {
-    return new Response("Neplatný odkaz", { status: 404 });
-  }
+  // čí kalendář: klíč v adrese patří právě jednomu uživateli (bez přihlašování je jen vlastník)
+  const candidates = users().length ? users() : [await currentUser()];
+  let owner: User | null = null;
+  for (const u of candidates) if (sameText(key.replace(/\.ics$/, ""), await calendarKey(u))) owner = u;
+  if (!owner) return new Response("Neplatný odkaz", { status: 404 });
+  return withUser(owner, () => ics());
+}
+
+async function ics() {
   const state = await getState();
   const statuses = (state.db ? state.statuses : {}) as Record<string, Status>;
   const tenders = (await getMarkedTenders()).filter((t) => LABEL[statuses[t.id]] && t.deadline);

@@ -1,4 +1,5 @@
 import { COOKIE, MAX_AGE, makeSession, sameText } from "@/lib/session";
+import { authEnabled, findUser, users } from "@/lib/users";
 import { redis } from "@/lib/store";
 
 // proti hádání hesla: nejvýš 10 pokusů za 15 minut z jedné adresy
@@ -21,22 +22,28 @@ async function attempt(ip: string) {
 }
 
 export async function POST(req: Request) {
-  const password = process.env.APP_PASSWORD;
-  if (!password) return Response.json({ ok: true });
+  if (!authEnabled()) return Response.json({ ok: true });
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "neznámá";
   if ((await attempt(ip)) > LIMIT) {
     return Response.json({ error: "Příliš mnoho pokusů. Zkus to znovu za 15 minut." }, { status: 429 });
   }
-  const body = (await req.json().catch(() => ({}))) as { password?: string };
-  if (!sameText(body.password ?? "", password)) {
+  const body = (await req.json().catch(() => ({}))) as { name?: string; password?: string };
+  const user = findUser(body.name ?? "");
+  // neznámé jméno ověříme proti nesmyslu, ať odpověď trvá stejně dlouho a neprozradí, kdo existuje
+  if (!sameText(body.password ?? "", user?.password ?? `\u0000${users().length}`) || !user) {
     await new Promise((r) => setTimeout(r, 600));
-    return Response.json({ error: "Nesprávné heslo." }, { status: 401 });
+    return Response.json({ error: "Nesprávné jméno nebo heslo." }, { status: 401 });
   }
   if (redis) await redis.del(`zr:login:${ip}`);
   const res = Response.json({ ok: true });
   res.headers.append(
     "Set-Cookie",
-    `${COOKIE}=${await makeSession(password)}; Path=/; Max-Age=${MAX_AGE}; HttpOnly; Secure; SameSite=Lax`,
+    `${COOKIE}=${await makeSession(user)}; Path=/; Max-Age=${MAX_AGE}; HttpOnly; Secure; SameSite=Lax`,
   );
   return res;
+}
+
+// přihlašovací stránka: ptát se na jméno, jen když je víc účtů
+export async function GET() {
+  return Response.json({ multi: users().length > 1 || Boolean(users()[0]?.name) });
 }

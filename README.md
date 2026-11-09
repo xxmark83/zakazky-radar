@@ -45,6 +45,7 @@ Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profi
 |---|---|---|
 | `ANTHROPIC_API_KEY` | AI hodnocení | ano |
 | `APP_PASSWORD` | heslo do aplikace | doporučeno |
+| `USERS` | víc účtů: `jméno:heslo[:e-mail],jméno2:heslo2[:e-mail]`; první je vlastník (dosavadní data), nahrazuje `APP_PASSWORD` | volitelné |
 | `HLIDAC_TOKEN` | podlimitní zakázky | ne |
 | `CRON_SECRET` | ranní spouštění (libovolný dlouhý řetězec) | pro e-maily |
 | `RESEND_API_KEY`, `ALERT_EMAIL` | odesílání e-mailu (resend.com, zdarma) | pro e-maily |
@@ -63,6 +64,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.26** – více účtů (USERS): každý má vlastní přihlášení, zakázky, poznámky, sledování, nastavení, upozornění,
+  kalendář i ranní e-mail; první uživatel si ponechává dosavadní data.
 - **1.25.1** – Vhodné uveřejnění: ukončené zakázky si sběr pamatuje a nečte je při každém běhu znovu.
 - **1.25** – širší rozvržení (až 1 440 px), na počítači „Co hledáš“ jako panel vlevo a výsledky vpravo, Dnes ve dvou
   sloupcích; nové písmo nadpisů (Bricolage Grotesque), jemný motiv radaru v pozadí, barevný proužek karty podle skóre,

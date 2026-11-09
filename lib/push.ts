@@ -1,8 +1,9 @@
 import webpush, { type PushSubscription } from "web-push";
 import { redis } from "./store";
+import { userKey } from "./users";
 
 // Upozornění na telefon (Web Push). Klíče VAPID si appka vytvoří sama při prvním použití a drží je
-// v databázi, nikdo je nemusí nikam opisovat. Odběry (telefon, počítač) jsou v zr:push.
+// v databázi, nikdo je nemusí nikam opisovat (společné pro všechny). Odběry zařízení má každý uživatel své.
 type Vapid = { publicKey: string; privateKey: string };
 
 async function vapid(): Promise<Vapid | null> {
@@ -20,13 +21,13 @@ export async function publicKey() {
 }
 
 export async function subscribe(sub: PushSubscription) {
-  if (redis) await redis.hset("zr:push", { [sub.endpoint]: sub });
+  if (redis) await redis.hset(await userKey("push"), { [sub.endpoint]: sub });
 }
 export async function unsubscribe(endpoint: string) {
-  if (redis) await redis.hdel("zr:push", endpoint);
+  if (redis) await redis.hdel(await userKey("push"), endpoint);
 }
 export async function subscriptions() {
-  return redis ? Object.values((await redis.hgetall<Record<string, PushSubscription>>("zr:push")) ?? {}) : [];
+  return redis ? Object.values((await redis.hgetall<Record<string, PushSubscription>>(await userKey("push"))) ?? {}) : [];
 }
 
 /** Pošle upozornění na všechna přihlášená zařízení. Zaniklé odběry (410/404) smaže. Vrací počet doručených. */

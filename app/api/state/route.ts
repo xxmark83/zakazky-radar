@@ -1,4 +1,5 @@
 import { calendarKey } from "@/lib/session";
+import { currentUser, users } from "@/lib/users";
 import { profilyInfo } from "@/lib/sources/profily";
 import { getKept, getMarkedTenders, getSpend, getState, saveProfiles, saveUi, setKept, setStatus, type Kept } from "@/lib/store";
 
@@ -16,7 +17,9 @@ export async function GET() {
     cron: Boolean(process.env.CRON_SECRET),
     ai: Boolean(process.env.ANTHROPIC_API_KEY),
     profily: profilyInfo(),
-    calendar: state.db ? await calendarKey(process.env.APP_PASSWORD) : null,
+    calendar: state.db ? await calendarKey(await currentUser()) : null,
+    user: (await currentUser()).name, // prázdné u jediného účtu
+    multi: users().length > 1,
   });
 }
 
