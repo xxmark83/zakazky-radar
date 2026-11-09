@@ -3,7 +3,7 @@
 import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
 import { makeDocx, type Block } from "@/lib/docx";
 import { MB_LOGO } from "@/lib/logo";
-import { PRESETS } from "@/lib/presets";
+import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets } from "@/lib/presets";
 import { diff } from "@/lib/diff";
 import { profileKey } from "@/lib/profile-key";
 import { REGIONS } from "@/lib/regions";
@@ -84,7 +84,10 @@ type ServerState = {
   calendar?: string | null;
   user?: string;
   multi?: boolean;
+  owner?: boolean;
+  access?: Access; // co smí tento účet hledat (nastavuje vlastník)
 };
+type Access = { presets: string[] | null; edit: boolean };
 type Buyers = { buyers: { name: string; ico: string | null; added: string }[]; tenders: ScoredTender[] };
 
 // poznámky, AI rozbory, návrhy nabídek a změny – v databázi, bez ní v prohlížeči
@@ -481,6 +484,20 @@ export default function Home() {
   const split = Boolean(detail && wide);
   const sideForm = tab === "search" || tab === "market" || tab === "watch";
 
+  // co smí účet hledat: když zvolená oblast není povolená (nebo bez práva úprav nesedí text), přepnout na povolenou
+  const access: Access = server.access ?? { presets: null, edit: true };
+  useEffect(() => {
+    if (!ready || !server.access) return;
+    const a = server.access;
+    const names = selectedPresets(form.name);
+    const ok = names.length && names.every((n) => !a.presets || a.presets.includes(n));
+    const c = ok ? combine(PRESETS.map((p) => p.name).filter((n) => names.includes(n))) : null;
+    const same = c && c.profile === form.profile && c.keywords === form.keywords && c.cpv === form.cpv;
+    if (ok && (a.edit || same)) return;
+    const first = PRESETS.find((p) => !a.presets || a.presets.includes(p.name));
+    if (first) setForm({ ...form, ...combine(ok ? names : [first.name]) });
+  }, [ready, server.access, form.name]);
+
   // rozpracované zakázky – číslo u záložky Moje zakázky
   const working = Object.values(statuses).filter((s) => s === "maybe" || s === "bid" || s === "sent").length;
 
@@ -555,7 +572,7 @@ export default function Home() {
       <div className={`workspace ${sideForm ? "with-side" : ""}`}>
         {sideForm && (
           <aside className="side">
-            <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} />
+            <ProfileForm form={form} setForm={setForm} tab={tab} compact={tab === "search" && hasResults} access={access} />
           </aside>
         )}
         <div className="content">
@@ -782,6 +799,8 @@ function Settings(props: {
         <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
         <Check ok={server.email && server.cron} label="Ranní e-mail (RESEND_API_KEY, ALERT_EMAIL, CRON_SECRET)" />
 
+        {server.multi && server.owner && <AdminPanel />}
+
         {server.multi && (
           <>
             <h3 className="sec">Účet</h3>
@@ -836,30 +855,11 @@ const PRESET_HINT: Record<string, string> = {
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
 
-// více oblastí najednou: jeden společný popis pro AI, sjednocená klíčová slova a CPV
-const JOIN = " + ";
-const PRESET_SHORT: Record<string, string> = {
-  "CRM a zákaznické portály": "CRM a portály",
-  "Vzdělávací portál": "Vzdělávání",
-  "Kybernetická bezpečnost": "Kyberbezpečnost",
-};
-const selectedPresets = (name: string) => name.split(JOIN).filter((n) => PRESETS.some((p) => p.name === n));
-function combine(names: string[]) {
-  const list = PRESETS.filter((p) => names.includes(p.name));
-  if (list.length === 1) return { ...list[0] };
-  const uniq = (parts: string[], sep: RegExp) => [...new Set(parts.flatMap((x) => x.split(sep)).map((x) => x.trim()).filter(Boolean))];
-  return {
-    name: list.map((p) => p.name).join(JOIN),
-    profile:
-      "Nabízím několik oblastí. Hodnoť každou zakázku podle té, která na ni sedí nejlépe, a v poli product ji uveď.\n\n" +
-      list.map((p) => `${p.name}: ${p.profile}`).join("\n\n"),
-    keywords: uniq(list.map((p) => p.keywords), /,/).join(", "),
-    cpv: uniq(list.map((p) => p.cpv), /[\s,;]+/).join(" "),
-  };
-}
-
-function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f: Form) => void; tab: Tab; compact?: boolean }) {
+function ProfileForm(props: { form: Form; setForm: (f: Form) => void; tab: Tab; compact?: boolean; access: Access }) {
+  const { form, setForm, tab, compact, access } = props;
   const [open, setOpen] = useState(false);
+  // jen oblasti, které účet smí hledat (vlastník má všechny)
+  const allowed = PRESETS.filter((p) => !access.presets || access.presets.includes(p.name));
   const selected = selectedPresets(form.name);
   const toggle = (name: string) => {
     const next = selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name];
@@ -867,7 +867,7 @@ function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f:
     // pořadí podle karet, ať je název vždy stejný (a paměť AI skóre ho pozná)
     setForm({ ...form, ...combine(PRESETS.map((p) => p.name).filter((n) => next.includes(n))) });
   };
-  const all = selected.length === PRESETS.length;
+  const all = selected.length === allowed.length;
   return (
     <div className={`card profile ${compact && !open ? "folded" : ""}`}>
       {compact && (
@@ -885,16 +885,18 @@ function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f:
         </button>
       )}
       <div className="step">
-        <span>Co hledáš – vyber jednu nebo víc oblastí</span>
-        <button
-          className="link"
-          onClick={() => setForm({ ...form, ...combine(all ? [PRESETS[0].name] : PRESETS.map((p) => p.name)) })}
-        >
-          {all ? "Jen první" : "Vybrat všechny tři"}
-        </button>
+        <span>{allowed.length > 1 ? "Co hledáš – vyber jednu nebo víc oblastí" : "Co hledáš"}</span>
+        {allowed.length > 1 && (
+          <button
+            className="link"
+            onClick={() => setForm({ ...form, ...combine(all ? [allowed[0].name] : allowed.map((p) => p.name)) })}
+          >
+            {all ? "Jen první" : "Vybrat všechny"}
+          </button>
+        )}
       </div>
       <div className="presets">
-        {PRESETS.map((p) => (
+        {allowed.map((p) => (
           <button
             key={p.name}
             className={`preset ${selected.includes(p.name) ? "on" : ""}`}
@@ -915,8 +917,8 @@ function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f:
         ))}
       </div>
       <details>
-        <summary>Upravit, co hledám</summary>
-      {tab !== "market" && (
+        <summary>{access.edit ? "Upravit, co hledám" : "Nastavení hledání"}</summary>
+      {tab !== "market" && access.edit && (
         <>
           <label>
             Co nabízím <span className="hint">– podle toho AI hodnotí každou zakázku</span>
@@ -924,17 +926,23 @@ function ProfileForm({ form, setForm, tab, compact }: { form: Form; setForm: (f:
           <textarea value={form.profile} onChange={(e) => setForm({ ...form, profile: e.target.value })} />
         </>
       )}
-      <label>
-        Klíčová slova <span className="hint">– oddělit čárkou</span>
-      </label>
-      <input value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} />
-      <div className="row">
-        <div>
+      {access.edit && (
+        <>
           <label>
-            CPV kódy <span className="hint">(prázdné = vše)</span>
+            Klíčová slova <span className="hint">– oddělit čárkou</span>
           </label>
-          <input value={form.cpv} onChange={(e) => setForm({ ...form, cpv: e.target.value })} />
-        </div>
+          <input value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} />
+        </>
+      )}
+      <div className="row">
+        {access.edit && (
+          <div>
+            <label>
+              CPV kódy <span className="hint">(prázdné = vše)</span>
+            </label>
+            <input value={form.cpv} onChange={(e) => setForm({ ...form, cpv: e.target.value })} />
+          </div>
+        )}
         {tab === "search" && (
           <>
             <div>
@@ -3257,6 +3265,74 @@ function WatchTab(props: {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// Správa účtů (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová slova
+function AdminPanel() {
+  const [list, setList] = useState<{ name: string; email: boolean; access: Access }[] | null>(null);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+  useEffect(() => {
+    fetch("/api/admin")
+      .then((r) => r.json())
+      .then((d) => (d.users ? setList(d.users) : setError(d.error ?? "Nepodařilo se načíst účty")))
+      .catch(() => setError("Nepodařilo se načíst účty"));
+  }, []);
+
+  async function change(name: string, access: Access) {
+    setList((cur) => cur?.map((u) => (u.name === name ? { ...u, access } : u)) ?? cur);
+    const res = await post("/api/admin", { name, access });
+    const d = await res.json();
+    if (!res.ok) setError(d.error ?? "Uložení selhalo");
+    else {
+      setError("");
+      setSaved(name);
+      setTimeout(() => setSaved(""), 1500);
+    }
+  }
+
+  return (
+    <>
+      <h3 className="sec">Správa účtů</h3>
+      <p className="note">
+        Co smí ostatní hledat. Platí hned (po obnovení stránky) a kontroluje se i na serveru. Účty přidáš ve Vercelu
+        v proměnné USERS.
+      </p>
+      {error && <div className="warn">{error}</div>}
+      {list?.length === 0 && <p className="note">Kromě tebe tu zatím nikdo není.</p>}
+      {list?.map((u) => {
+        const names = u.access.presets ?? PRESETS.map((p) => p.name);
+        const toggle = (p: string) => {
+          const next = names.includes(p) ? names.filter((n) => n !== p) : [...names, p];
+          if (!next.length) return; // aspoň jedna oblast
+          change(u.name, { ...u.access, presets: next.length === PRESETS.length ? null : next });
+        };
+        return (
+          <div key={u.name} className="card admin-user">
+            <b>
+              {u.name} {saved === u.name && <span className="saved">uloženo</span>}
+            </b>
+            <span className="hint">Smí hledat:</span>
+            {PRESETS.map((p) => (
+              <label key={p.name} className="check-row">
+                <input type="checkbox" checked={names.includes(p.name)} onChange={() => toggle(p.name)} />
+                <span>{p.name}</span>
+              </label>
+            ))}
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={u.access.edit}
+                onChange={() => change(u.name, { ...u.access, edit: !u.access.edit })}
+              />
+              <span>Smí upravovat klíčová slova a popis nabídky</span>
+            </label>
+            {!u.email && <span className="hint">Ranní e-mail nemá (jen upozornění na telefon).</span>}
+          </div>
+        );
+      })}
     </>
   );
 }

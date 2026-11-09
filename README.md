@@ -64,6 +64,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.27** – Správa účtů v Nastavení (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová
+  slova; kontroluje se i na serveru (hledání i ranní hlídání).
 - **1.26** – více účtů (USERS): každý má vlastní přihlášení, zakázky, poznámky, sledování, nastavení, upozornění,
   kalendář i ranní e-mail; první uživatel si ponechává dosavadní data.
 - **1.25.1** – Vhodné uveřejnění: ukončené zakázky si sběr pamatuje a nečte je při každém běhu znovu.

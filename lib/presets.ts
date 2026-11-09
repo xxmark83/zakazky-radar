@@ -25,3 +25,25 @@ export const PRESETS: Profile[] = [
     cpv: "48730000 48760000 72000000 79417000",
   },
 ];
+
+// více oblastí najednou: jeden společný popis pro AI, sjednocená klíčová slova a CPV
+export const JOIN = " + ";
+export const PRESET_SHORT: Record<string, string> = {
+  "CRM a zákaznické portály": "CRM a portály",
+  "Vzdělávací portál": "Vzdělávání",
+  "Kybernetická bezpečnost": "Kyberbezpečnost",
+};
+export const selectedPresets = (name: string) => name.split(JOIN).filter((n) => PRESETS.some((p) => p.name === n));
+export function combine(names: string[]) {
+  const list = PRESETS.filter((p) => names.includes(p.name));
+  if (list.length === 1) return { ...list[0] };
+  const uniq = (parts: string[], sep: RegExp) => [...new Set(parts.flatMap((x) => x.split(sep)).map((x) => x.trim()).filter(Boolean))];
+  return {
+    name: list.map((p) => p.name).join(JOIN),
+    profile:
+      "Nabízím několik oblastí. Hodnoť každou zakázku podle té, která na ni sedí nejlépe, a v poli product ji uveď.\n\n" +
+      list.map((p) => `${p.name}: ${p.profile}`).join("\n\n"),
+    keywords: uniq(list.map((p) => p.keywords), /,/).join(", "),
+    cpv: uniq(list.map((p) => p.cpv), /[\s,;]+/).join(" "),
+  };
+}
