@@ -45,7 +45,8 @@ Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profi
 |---|---|---|
 | `ANTHROPIC_API_KEY` | AI hodnocení | ano |
 | `APP_PASSWORD` | heslo do aplikace | doporučeno |
-| `USERS` | víc účtů: `jméno:odtlačok[:e-mail],…` (odtlačok z /heslo, případně heslo v čitelné podobě); první je vlastník (dosavadní data), nahrazuje `APP_PASSWORD` | volitelné |
+| `OWNER_JMENO`, `USER_JMENO` | účty: hodnota = odtlačok z /heslo (nebo heslo), volitelně `:e-mail`; OWNER = vlastník (Správa účtů, dosavadní data) | volitelné |
+| `USERS` | starší zápis víc účtů v jedné proměnné: `jméno:odtlačok[:e-mail],…` (odtlačok z /heslo, případně heslo v čitelné podobě); první je vlastník (dosavadní data), nahrazuje `APP_PASSWORD` | volitelné |
 | `HLIDAC_TOKEN` | podlimitní zakázky | ne |
 | `CRON_SECRET` | ranní spouštění (libovolný dlouhý řetězec) | pro e-maily |
 | `RESEND_API_KEY`, `ALERT_EMAIL` | odesílání e-mailu (resend.com, zdarma) | pro e-maily |
@@ -64,6 +65,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.28.1** – každý účet má vlastní proměnnou ve Vercelu (OWNER_MAREK, USER_MICHAL…), změna jednoho nevyžaduje znát
+  heslo druhého; /heslo ukáže název proměnné i hodnotu; USERS funguje dál.
 - **1.28** – zabezpečení: hesla v USERS jako odtlačky PBKDF2 (generátor na /heslo), podpis přihlášení tajným klíčem
   serveru, relace pro každé zařízení (seznam a odhlášení v Nastavení, platí okamžitě), dvoufázové ověření (TOTP,
   QR kód, 8 záložních kódů, vlastník ho umí kolegovi vypnout), bezpečnostní hlavičky (CSP, X-Frame-Options aj.).

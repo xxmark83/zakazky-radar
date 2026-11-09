@@ -3491,8 +3491,8 @@ function AdminPanel() {
     <>
       <h3 className="sec">Správa účtů</h3>
       <p className="note">
-        Co smí ostatní hledat. Platí hned (po obnovení stránky) a kontroluje se i na serveru. Účty přidáš ve Vercelu
-        v proměnné USERS.
+        Co smí ostatní hledat. Platí hned (po obnovení stránky) a kontroluje se i na serveru. Účet přidáš ve Vercelu
+        proměnnou USER_JMENO (hodnotu vyrobíš na /heslo).
       </p>
       {error && <div className="warn">{error}</div>}
       {plain.length > 0 && (
@@ -3501,7 +3501,7 @@ function AdminPanel() {
           <a href="/heslo" target="_blank" rel="noreferrer">
             /heslo
           </a>{" "}
-          a vlož je do USERS místo hesel.
+          a vlož je do proměnných účtů ve Vercelu (OWNER_… / USER_…) místo hesel.
         </div>
       )}
       {saved.includes(":") && <p className="note saved">{saved}</p>}
