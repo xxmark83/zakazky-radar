@@ -6,7 +6,7 @@ import { authEnabled, USER_HEADER } from "@/lib/users";
 // Bez USERS i APP_PASSWORD je appka otevřená (lokální vývoj) a patří vlastníkovi.
 // cron se ověřuje vlastním CRON_SECRET; manifest, ikony a service worker stahuje telefon bez přihlášení
 const PUBLIC = [
-  "/login", "/api/login", "/api/cron", "/icon.svg", "/manifest.webmanifest", "/sw.js",
+  "/login", "/api/login", "/api/cron", "/heslo", "/icon.svg", "/manifest.webmanifest", "/sw.js",
   "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png",
 ];
 

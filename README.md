@@ -45,7 +45,7 @@ Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profi
 |---|---|---|
 | `ANTHROPIC_API_KEY` | AI hodnocení | ano |
 | `APP_PASSWORD` | heslo do aplikace | doporučeno |
-| `USERS` | víc účtů: `jméno:heslo[:e-mail],jméno2:heslo2[:e-mail]`; první je vlastník (dosavadní data), nahrazuje `APP_PASSWORD` | volitelné |
+| `USERS` | víc účtů: `jméno:odtlačok[:e-mail],…` (odtlačok z /heslo, případně heslo v čitelné podobě); první je vlastník (dosavadní data), nahrazuje `APP_PASSWORD` | volitelné |
 | `HLIDAC_TOKEN` | podlimitní zakázky | ne |
 | `CRON_SECRET` | ranní spouštění (libovolný dlouhý řetězec) | pro e-maily |
 | `RESEND_API_KEY`, `ALERT_EMAIL` | odesílání e-mailu (resend.com, zdarma) | pro e-maily |
@@ -64,6 +64,9 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.28** – zabezpečení: hesla v USERS jako odtlačky PBKDF2 (generátor na /heslo), podpis přihlášení tajným klíčem
+  serveru, relace pro každé zařízení (seznam a odhlášení v Nastavení, platí okamžitě), dvoufázové ověření (TOTP,
+  QR kód, 8 záložních kódů, vlastník ho umí kolegovi vypnout), bezpečnostní hlavičky (CSP, X-Frame-Options aj.).
 - **1.27.1** – mobil: telefon na šířku má mobilní rozvržení, políčka 16 px (iPhone už stránku při psaní nepřiblíží).
 - **1.27** – Správa účtů v Nastavení (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová
   slova; kontroluje se i na serveru (hledání i ranní hlídání).

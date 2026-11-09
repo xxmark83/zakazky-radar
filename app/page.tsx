@@ -2,6 +2,7 @@
 
 import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
 import { makeDocx, type Block } from "@/lib/docx";
+import qrcode from "qrcode-generator";
 import { MB_LOGO } from "@/lib/logo";
 import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets } from "@/lib/presets";
 import { diff } from "@/lib/diff";
@@ -798,6 +799,8 @@ function Settings(props: {
         <Check ok={server.ai} label="AI hodnocení (ANTHROPIC_API_KEY)" />
         <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
         <Check ok={server.email && server.cron} label="Ranní e-mail (RESEND_API_KEY, ALERT_EMAIL, CRON_SECRET)" />
+
+        {server.db && <SecurityPanel />}
 
         {server.multi && server.owner && <AdminPanel />}
 
@@ -3269,17 +3272,208 @@ function WatchTab(props: {
   );
 }
 
+// Zabezpečení vlastního účtu: dvoufázové ověření (aplikace s kódy) a přihlášená zařízení
+type Account = {
+  twoFa: boolean;
+  recoveryLeft: number;
+  sessions: { sid: string; created: string; seen: string; device: string; current: boolean }[];
+};
+function SecurityPanel() {
+  const [acc, setAcc] = useState<Account | null>(null);
+  const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [recovery, setRecovery] = useState<string[] | null>(null);
+  const [error, setError] = useState("");
+  const reload = () =>
+    fetch("/api/account")
+      .then((r) => r.json())
+      .then(setAcc)
+      .catch(() => {});
+  useEffect(() => {
+    reload();
+  }, []);
+
+  async function call(action: string, extra: object = {}) {
+    setError("");
+    const res = await post("/api/account", { action, ...extra });
+    const d = await res.json();
+    if (!res.ok) {
+      setError(d.error ?? "Nepodařilo se");
+      return null;
+    }
+    return d;
+  }
+  const qr = (uri: string) => {
+    const q = qrcode(0, "M");
+    q.addData(uri);
+    q.make();
+    return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  };
+  const when = (iso: string) => new Date(iso).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <>
+      <h3 className="sec">Zabezpečení</h3>
+      {error && <div className="warn">{error}</div>}
+
+      <h4 className="sub-h">Dvoufázové ověření</h4>
+      {recovery ? (
+        <div className="card twofa">
+          <b>Zapnuto. Ulož si záložní kódy</b>
+          <p className="note">
+            Když ztratíš telefon, přihlásíš se jedním z nich (každý platí jednou). Ukazují se jen teď – ulož je do
+            správce hesel nebo vytiskni.
+          </p>
+          <pre className="codes">{recovery.join("\n")}</pre>
+          <div className="row-btns">
+            <button onClick={() => navigator.clipboard.writeText(recovery.join("\n"))}>Kopírovat</button>
+            <button
+              className="primary"
+              onClick={() => {
+                setRecovery(null);
+                reload();
+              }}
+            >
+              Uloženo
+            </button>
+          </div>
+        </div>
+      ) : acc?.twoFa ? (
+        <div className="twofa">
+          <p className="note">
+            <span className="saved">
+              <Icon n="check" size={14} /> Zapnuto
+            </span>{" "}
+            · záložních kódů zbývá {acc.recoveryLeft}
+          </p>
+          <div className="add-item">
+            <input inputMode="numeric" placeholder="Kód z aplikace" value={code} onChange={(e) => setCode(e.target.value)} />
+            <button
+              className="ghost"
+              disabled={!code}
+              onClick={async () => {
+                if (await call("2fa-disable", { code })) {
+                  setCode("");
+                  reload();
+                }
+              }}
+            >
+              Vypnout
+            </button>
+          </div>
+        </div>
+      ) : setup ? (
+        <div className="card twofa">
+          <b>1. Naskenuj kód v ověřovací aplikaci</b>
+          <p className="note">Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden…</p>
+          <div className="qr" dangerouslySetInnerHTML={{ __html: qr(setup.uri) }} />
+          <p className="note">
+            Na telefonu můžeš ťuknout: <a href={setup.uri}>otevřít v aplikaci</a>. Nebo opiš klíč:{" "}
+            <code className="secret">{setup.secret.replace(/(.{4})/g, "$1 ").trim()}</code>
+          </p>
+          <b>2. Zadej šestimístný kód z aplikace</b>
+          <div className="add-item">
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123 456"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+            <button
+              className="primary"
+              style={{ marginTop: 0 }}
+              disabled={!code}
+              onClick={async () => {
+                const d = await call("2fa-confirm", { code });
+                if (d) {
+                  setRecovery(d.recovery);
+                  setSetup(null);
+                  setCode("");
+                }
+              }}
+            >
+              Zapnout
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="note">Při přihlášení bude kromě hesla potřeba i kód z aplikace v telefonu.</p>
+          <button
+            onClick={async () => {
+              const d = await call("2fa-begin");
+              if (d) setSetup(d);
+            }}
+          >
+            <Icon n="shield" size={16} /> Zapnout dvoufázové ověření
+          </button>
+        </>
+      )}
+
+      <h4 className="sub-h">Přihlášená zařízení</h4>
+      {acc?.sessions.map((x) => (
+        <div key={x.sid} className="check ok">
+          <span>
+            {x.device}
+            {x.current && <b className="saved"> · toto zařízení</b>}
+            <br />
+            <span className="hint">
+              přihlášeno {when(x.created)}, naposledy {when(x.seen)}
+            </span>
+          </span>
+          {!x.current && (
+            <button
+              className="link state"
+              onClick={async () => {
+                if (await call("revoke", { sid: x.sid })) reload();
+              }}
+            >
+              Odhlásit
+            </button>
+          )}
+        </div>
+      ))}
+      {(acc?.sessions.length ?? 0) > 1 && (
+        <button
+          className="ghost"
+          onClick={async () => {
+            if (await call("revoke-others")) reload();
+          }}
+        >
+          Odhlásit všechna ostatní zařízení
+        </button>
+      )}
+    </>
+  );
+}
+
 // Správa účtů (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová slova
 function AdminPanel() {
-  const [list, setList] = useState<{ name: string; email: boolean; access: Access }[] | null>(null);
+  const [list, setList] = useState<{ name: string; email: boolean; access: Access; twoFa: boolean; hashed: boolean }[] | null>(null);
+  const [plain, setPlain] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   useEffect(() => {
     fetch("/api/admin")
       .then((r) => r.json())
-      .then((d) => (d.users ? setList(d.users) : setError(d.error ?? "Nepodařilo se načíst účty")))
+      .then((d) => {
+        if (!d.users) return setError(d.error ?? "Nepodařilo se načíst účty");
+        setList(d.users);
+        setPlain(d.plain ?? []);
+      })
       .catch(() => setError("Nepodařilo se načíst účty"));
   }, []);
+
+  async function act(name: string, what: { reset2fa?: boolean; logoutAll?: boolean }, done: string) {
+    const res = await post("/api/admin", { name, ...what });
+    const d = await res.json();
+    if (!res.ok) return setError(d.error ?? "Nepodařilo se");
+    setError("");
+    if (what.reset2fa) setList((cur) => cur?.map((u) => (u.name === name ? { ...u, twoFa: false } : u)) ?? cur);
+    setSaved(`${name}: ${done}`);
+    setTimeout(() => setSaved(""), 2500);
+  }
 
   async function change(name: string, access: Access) {
     setList((cur) => cur?.map((u) => (u.name === name ? { ...u, access } : u)) ?? cur);
@@ -3301,6 +3495,16 @@ function AdminPanel() {
         v proměnné USERS.
       </p>
       {error && <div className="warn">{error}</div>}
+      {plain.length > 0 && (
+        <div className="warn">
+          Hesla účtů {plain.join(", ")} jsou ve Vercelu v čitelné podobě. Vyrob jejich odtlačky na stránce{" "}
+          <a href="/heslo" target="_blank" rel="noreferrer">
+            /heslo
+          </a>{" "}
+          a vlož je do USERS místo hesel.
+        </div>
+      )}
+      {saved.includes(":") && <p className="note saved">{saved}</p>}
       {list?.length === 0 && <p className="note">Kromě tebe tu zatím nikdo není.</p>}
       {list?.map((u) => {
         const names = u.access.presets ?? PRESETS.map((p) => p.name);
@@ -3330,6 +3534,20 @@ function AdminPanel() {
               <span>Smí upravovat klíčová slova a popis nabídky</span>
             </label>
             {!u.email && <span className="hint">Ranní e-mail nemá (jen upozornění na telefon).</span>}
+            <span className="hint">
+              Dvoufázové ověření: {u.twoFa ? "zapnuté" : "vypnuté"}
+              {u.hashed ? "" : " · heslo v čitelné podobě"}
+            </span>
+            <div className="row-btns">
+              {u.twoFa && (
+                <button className="ghost" onClick={() => act(u.name, { reset2fa: true }, "dvoufázové ověření vypnuto")}>
+                  Vypnout 2FA (ztracený telefon)
+                </button>
+              )}
+              <button className="ghost" onClick={() => act(u.name, { logoutAll: true }, "odhlášen ze všech zařízení")}>
+                Odhlásit ze všech zařízení
+              </button>
+            </div>
           </div>
         );
       })}

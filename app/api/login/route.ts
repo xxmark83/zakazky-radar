@@ -1,8 +1,13 @@
-import { COOKIE, MAX_AGE, makeSession, sameText } from "@/lib/session";
+import { verifyPassword } from "@/lib/crypto";
+import { COOKIE, MAX_AGE, makeSession } from "@/lib/session";
+import { checkTwoFa, twoFaEnabled } from "@/lib/twofa";
 import { authEnabled, findUser, users } from "@/lib/users";
 import { redis } from "@/lib/store";
 
-// proti hádání hesla: nejvýš 10 pokusů za 15 minut z jedné adresy
+// odtlačok, proti kterému se ověří neznámé jméno (stejná práce jako u skutečného účtu)
+const DUMMY = "pbkdf2-sha256$310000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+// proti hádání hesla i kódu: nejvýš 10 pokusů za 15 minut z jedné adresy
 const LIMIT = 10;
 const WINDOW = 15 * 60;
 const memory = new Map<string, { n: number; until: number }>(); // bez databáze jen v rámci jedné instance
@@ -27,18 +32,27 @@ export async function POST(req: Request) {
   if ((await attempt(ip)) > LIMIT) {
     return Response.json({ error: "Příliš mnoho pokusů. Zkus to znovu za 15 minut." }, { status: 429 });
   }
-  const body = (await req.json().catch(() => ({}))) as { name?: string; password?: string };
+  const body = (await req.json().catch(() => ({}))) as { name?: string; password?: string; code?: string };
   const user = findUser(body.name ?? "");
-  // neznámé jméno ověříme proti nesmyslu, ať odpověď trvá stejně dlouho a neprozradí, kdo existuje
-  if (!sameText(body.password ?? "", user?.password ?? `\u0000${users().length}`) || !user) {
+  // neznámé jméno ověříme proti nesmyslnému odtlačku, ať odpověď trvá stejně dlouho a neprozradí, kdo existuje
+  const ok = await verifyPassword(body.password ?? "", user?.password ?? DUMMY);
+  if (!ok || !user) {
     await new Promise((r) => setTimeout(r, 600));
     return Response.json({ error: "Nesprávné jméno nebo heslo." }, { status: 401 });
+  }
+  // druhý krok: kód z aplikace nebo záložní kód (bez něj cookie nedostane)
+  if (await twoFaEnabled(user)) {
+    if (!body.code) return Response.json({ need2fa: true });
+    if (!(await checkTwoFa(user, body.code))) {
+      await new Promise((r) => setTimeout(r, 600));
+      return Response.json({ error: "Kód nesedí.", need2fa: true }, { status: 401 });
+    }
   }
   if (redis) await redis.del(`zr:login:${ip}`);
   const res = Response.json({ ok: true });
   res.headers.append(
     "Set-Cookie",
-    `${COOKIE}=${await makeSession(user)}; Path=/; Max-Age=${MAX_AGE}; HttpOnly; Secure; SameSite=Lax`,
+    `${COOKIE}=${await makeSession(user, req.headers.get("user-agent") ?? "")}; Path=/; Max-Age=${MAX_AGE}; HttpOnly; Secure; SameSite=Lax`,
   );
   return res;
 }

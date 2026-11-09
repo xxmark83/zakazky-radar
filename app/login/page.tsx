@@ -7,6 +7,9 @@ export default function Login() {
   const [name, setName] = useState("");
   const [multi, setMulti] = useState(false);
   const [password, setPassword] = useState("");
+  // druhý krok: kód z aplikace (Google Authenticator, 1Password…) nebo záložní kód
+  const [need2fa, setNeed2fa] = useState(false);
+  const [code, setCode] = useState("");
   useEffect(() => {
     fetch("/api/login")
       .then((r) => r.json())
@@ -24,9 +27,14 @@ export default function Login() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password }),
+        body: JSON.stringify({ name, password, code: need2fa ? code : undefined }),
       });
       const d = await res.json().catch(() => ({}));
+      if (d.need2fa && res.ok) {
+        setNeed2fa(true);
+        setBusy(false);
+        return;
+      }
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       // jen adresy v rámci appky, ať se přes odkaz nedá přesměrovat jinam
       const next = new URLSearchParams(location.search).get("next") ?? "/";
@@ -75,9 +83,26 @@ export default function Login() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {need2fa && (
+          <>
+            <label htmlFor="code">Kód z aplikace</label>
+            <input
+              id="code"
+              name="one-time-code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              autoFocus
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="123 456"
+            />
+            <p className="hint">Šestimístný kód z ověřovací aplikace, nebo jeden ze záložních kódů.</p>
+          </>
+        )}
         {error && <div className="warn">{error}</div>}
-        <button className="primary big" disabled={busy || !password}>
-          {busy ? "Přihlašuji…" : "Přihlásit"}
+        <button className="primary big" disabled={busy || !password || (need2fa && !code)}>
+          {busy ? "Přihlašuji…" : need2fa ? "Ověřit" : "Přihlásit"}
         </button>
       </form>
     </main>
