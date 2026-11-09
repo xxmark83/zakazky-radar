@@ -107,3 +107,29 @@ export async function verifyTotp(secret: string, code: string, now = Date.now())
   for (const step of [0, -1, 1]) if (sameText(await totpAt(secret, t + step), c)) return t + step;
   return null;
 }
+
+// ---------- šifrování citlivých hodnot v databázi (AES-GCM) ----------
+// Klíč je v proměnné AUTH_KEY ve Vercelu, ne v databázi – samotný přístup k databázi tak nestačí.
+// Bez AUTH_KEY se ukládá jako dřív (nešifrovaně); po jeho nastavení se hodnoty zašifrují při dalším zápisu.
+async function aesKey() {
+  const k = process.env.AUTH_KEY;
+  if (!k) return null;
+  const raw = await crypto.subtle.digest("SHA-256", enc.encode(`zr-aes|${k}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+export async function seal(text: string) {
+  const key = await aesKey();
+  if (!key) return text;
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(text));
+  return `enc:v1:${b64url(iv)}:${b64url(ct)}`;
+}
+
+export async function unseal(stored: string) {
+  if (!stored.startsWith("enc:v1:")) return stored; // uloženo před nastavením AUTH_KEY
+  const key = await aesKey();
+  if (!key) throw new Error("Chybí AUTH_KEY pro dešifrování.");
+  const [, , iv, ct] = stored.split(":");
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64url(iv) }, key, fromB64url(ct)));
+}

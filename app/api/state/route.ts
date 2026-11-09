@@ -4,7 +4,11 @@ import { currentUser, users } from "@/lib/users";
 import { profilyInfo } from "@/lib/sources/profily";
 import { getKept, getMarkedTenders, getSpend, getState, saveProfiles, saveUi, setKept, setStatus, type Kept } from "@/lib/store";
 
-export async function GET() {
+export async function GET(req: Request) {
+  // účet musí nejdřív zapnout 2FA (proxy.ts): žádná data, jen pokyn
+  if (req.headers.get("x-zr-setup") === "1") {
+    return Response.json({ db: true, mustSetup2fa: true, user: (await currentUser()).name, multi: users().length > 1 });
+  }
   const state = await getState();
   const [marked, kept, spend] = state.db ? await Promise.all([getMarkedTenders(), getKept(), getSpend()]) : [[], null, null];
   return Response.json({

@@ -148,3 +148,9 @@ ${w.spend !== null ? `<p style="color:#666;font-size:13px;margin-top:20px">Útra
 </div>`;
   await send("Zakázky radar: týden v zakázkách", html);
 }
+
+/** Krátký textový e-mail (bezpečnostní upozornění). */
+export async function sendPlain(subject: string, text: string) {
+  const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  await send(subject, `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px"><h2 style="margin:0 0 8px">${esc(subject)}</h2><p>${esc(text)}</p><p style="color:#666;font-size:13px">Pokud jsi to nebyl ty, změň heslo a v Nastavení → Zabezpečení odhlas ostatní zařízení.</p></div>`);
+}

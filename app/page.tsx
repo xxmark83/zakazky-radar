@@ -87,8 +87,9 @@ type ServerState = {
   multi?: boolean;
   owner?: boolean;
   access?: Access; // co smí tento účet hledat (nastavuje vlastník)
+  mustSetup2fa?: boolean; // vlastník vyžaduje 2FA a účet ho ještě nemá
 };
-type Access = { presets: string[] | null; edit: boolean };
+type Access = { presets: string[] | null; edit: boolean; require2fa?: boolean };
 type Buyers = { buyers: { name: string; ico: string | null; added: string }[]; tenders: ScoredTender[] };
 
 // poznámky, AI rozbory, návrhy nabídek a změny – v databázi, bez ní v prohlížeči
@@ -273,6 +274,10 @@ export default function Home() {
     setToast({ text: watched ? `Už nesleduješ ${name}` : `Sleduješ ${name} – dám vědět o každé nové zakázce` });
     loadBuyers();
   };
+
+  // nové ověření pro citlivé kroky (ReauthCtx)
+  const [reauth, setReauth] = useState<((ok: boolean) => void) | null>(null);
+  const ask = () => new Promise<boolean>((resolve) => setReauth(() => resolve));
 
   // sledovaní konkurenti
   const [competitors, setCompetitors] = useState<{ name: string; added: string }[]>([]);
@@ -502,8 +507,29 @@ export default function Home() {
   // rozpracované zakázky – číslo u záložky Moje zakázky
   const working = Object.values(statuses).filter((s) => s === "maybe" || s === "bid" || s === "sent").length;
 
+  // vlastník vyžaduje 2FA: dokud ho účet nemá, jen obrazovka s nastavením
+  if (server.mustSetup2fa)
+    return (
+      <ReauthCtx.Provider value={ask}>
+        <main className="login">
+          <div className="card login-card setup-2fa">
+            <svg viewBox="0 0 456 312" width="52" height="36" aria-hidden="true">
+              <path fill="var(--accent)" fillRule="evenodd" d={MB_LOGO} />
+            </svg>
+            <h1>Zapni dvoufázové ověření</h1>
+            <p className="sub">Správce účtů ho vyžaduje. Bez něj se do aplikace nedostaneš – trvá to minutu.</p>
+            <SecurityPanel onEnabled={() => location.reload()} compact />
+            <button className="ghost logout" onClick={() => fetch("/api/logout", { method: "POST" }).finally(() => location.replace("/login"))}>
+              Odhlásit
+            </button>
+          </div>
+        </main>
+        {reauth && <ReauthDialog done={(ok) => (reauth(ok), setReauth(null))} />}
+      </ReauthCtx.Provider>
+    );
+
   return (
-    <>
+    <ReauthCtx.Provider value={ask}>
       <header className="top">
         <div className="top-in">
           <div className="brand">
@@ -681,7 +707,8 @@ export default function Home() {
           )}
         </div>
       )}
-    </>
+      {reauth && <ReauthDialog done={(ok) => (reauth(ok), setReauth(null))} />}
+    </ReauthCtx.Provider>
   );
 }
 
@@ -3272,13 +3299,68 @@ function WatchTab(props: {
   );
 }
 
+// Citlivé kroky (vypnutí 2FA, odhlášení zařízení, správa účtů) chtějí ověření do 10 minut od přihlášení.
+// Když vypršelo, ukáže se okno na heslo (a kód) a požadavek se zopakuje.
+const ReauthCtx = createContext<() => Promise<boolean>>(async () => false);
+async function postSensitive(url: string, body: object, ask: () => Promise<boolean>) {
+  let res = await post(url, body);
+  let d = await res.json();
+  if (res.status === 401 && d.reauth && (await ask())) {
+    res = await post(url, body);
+    d = await res.json();
+  }
+  return { ok: res.ok, d };
+}
+
+function ReauthDialog({ done }: { done: (ok: boolean) => void }) {
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="drawer-bg reauth-bg" onClick={() => done(false)}>
+      <form
+        className="card keys-help"
+        role="dialog"
+        aria-label="Ověření"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          const res = await post("/api/account", { action: "reauth", password, code });
+          const d = await res.json();
+          setBusy(false);
+          if (res.ok) done(true);
+          else setError(d.error ?? "Nepodařilo se");
+        }}
+      >
+        <b>Ověř se pro tento krok</b>
+        <p className="note">Kvůli bezpečnosti potřebujeme znovu tvoje heslo (a kód z aplikace, máš-li 2FA).</p>
+        <input type="password" autoComplete="current-password" placeholder="Heslo" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input inputMode="numeric" autoComplete="one-time-code" placeholder="Kód z aplikace (máš-li 2FA)" value={code} onChange={(e) => setCode(e.target.value)} />
+        {error && <div className="warn">{error}</div>}
+        <div className="row-btns">
+          <button className="primary" style={{ marginTop: 0 }} disabled={busy || !password}>
+            Ověřit
+          </button>
+          <button type="button" className="ghost" onClick={() => done(false)}>
+            Zrušit
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // Zabezpečení vlastního účtu: dvoufázové ověření (aplikace s kódy) a přihlášená zařízení
 type Account = {
   twoFa: boolean;
   recoveryLeft: number;
   sessions: { sid: string; created: string; seen: string; device: string; current: boolean }[];
+  events: { at: string; event: string; detail?: string; device?: string; ip?: string }[];
 };
-function SecurityPanel() {
+function SecurityPanel({ onEnabled, compact }: { onEnabled?: () => void; compact?: boolean } = {}) {
+  const ask = useContext(ReauthCtx);
   const [acc, setAcc] = useState<Account | null>(null);
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
   const [code, setCode] = useState("");
@@ -3295,9 +3377,8 @@ function SecurityPanel() {
 
   async function call(action: string, extra: object = {}) {
     setError("");
-    const res = await post("/api/account", { action, ...extra });
-    const d = await res.json();
-    if (!res.ok) {
+    const { ok, d } = await postSensitive("/api/account", { action, ...extra }, ask);
+    if (!ok) {
       setError(d.error ?? "Nepodařilo se");
       return null;
     }
@@ -3313,10 +3394,10 @@ function SecurityPanel() {
 
   return (
     <>
-      <h3 className="sec">Zabezpečení</h3>
+      {!compact && <h3 className="sec">Zabezpečení</h3>}
       {error && <div className="warn">{error}</div>}
 
-      <h4 className="sub-h">Dvoufázové ověření</h4>
+      {!compact && <h4 className="sub-h">Dvoufázové ověření</h4>}
       {recovery ? (
         <div className="card twofa">
           <b>Zapnuto. Ulož si záložní kódy</b>
@@ -3331,7 +3412,8 @@ function SecurityPanel() {
               className="primary"
               onClick={() => {
                 setRecovery(null);
-                reload();
+                if (onEnabled) onEnabled();
+                else reload();
               }}
             >
               Uloženo
@@ -3411,6 +3493,8 @@ function SecurityPanel() {
         </>
       )}
 
+      {!compact && (
+        <>
       <h4 className="sub-h">Přihlášená zařízení</h4>
       {acc?.sessions.map((x) => (
         <div key={x.sid} className="check ok">
@@ -3444,14 +3528,42 @@ function SecurityPanel() {
           Odhlásit všechna ostatní zařízení
         </button>
       )}
+
+      <h4 className="sub-h">Poslední události</h4>
+      <EventList events={acc?.events ?? []} />
+        </>
+      )}
     </>
+  );
+}
+
+// historie přihlášení a změn zabezpečení
+function EventList({ events, who }: { events: { at: string; user?: string; event: string; detail?: string; device?: string; ip?: string }[]; who?: boolean }) {
+  if (!events.length) return <p className="note">Zatím nic.</p>;
+  return (
+    <ul className="events">
+      {events.map((e, i) => (
+        <li key={i} className={/chybn|zamč/.test(e.event) ? "bad" : ""}>
+          <span className="hint">
+            {new Date(e.at).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </span>{" "}
+          {who && e.user ? <b>{e.user}: </b> : null}
+          {e.event}
+          {e.detail ? ` (${e.detail})` : ""}
+          {e.device || e.ip ? <span className="hint"> · {[e.device, e.ip].filter(Boolean).join(", ")}</span> : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
 // Správa účtů (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová slova
 function AdminPanel() {
+  const ask = useContext(ReauthCtx);
   const [list, setList] = useState<{ name: string; email: boolean; access: Access; twoFa: boolean; hashed: boolean }[] | null>(null);
   const [plain, setPlain] = useState<string[]>([]);
+  const [events, setEvents] = useState<{ at: string; user: string; event: string; detail?: string; device?: string; ip?: string }[]>([]);
+  const [authKey, setAuthKey] = useState(true);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   useEffect(() => {
@@ -3461,14 +3573,15 @@ function AdminPanel() {
         if (!d.users) return setError(d.error ?? "Nepodařilo se načíst účty");
         setList(d.users);
         setPlain(d.plain ?? []);
+        setEvents(d.events ?? []);
+        setAuthKey(Boolean(d.authKey));
       })
       .catch(() => setError("Nepodařilo se načíst účty"));
   }, []);
 
   async function act(name: string, what: { reset2fa?: boolean; logoutAll?: boolean }, done: string) {
-    const res = await post("/api/admin", { name, ...what });
-    const d = await res.json();
-    if (!res.ok) return setError(d.error ?? "Nepodařilo se");
+    const { ok, d } = await postSensitive("/api/admin", { name, ...what }, ask);
+    if (!ok) return setError(d.error ?? "Nepodařilo se");
     setError("");
     if (what.reset2fa) setList((cur) => cur?.map((u) => (u.name === name ? { ...u, twoFa: false } : u)) ?? cur);
     setSaved(`${name}: ${done}`);
@@ -3477,9 +3590,8 @@ function AdminPanel() {
 
   async function change(name: string, access: Access) {
     setList((cur) => cur?.map((u) => (u.name === name ? { ...u, access } : u)) ?? cur);
-    const res = await post("/api/admin", { name, access });
-    const d = await res.json();
-    if (!res.ok) setError(d.error ?? "Uložení selhalo");
+    const { ok, d } = await postSensitive("/api/admin", { name, access }, ask);
+    if (!ok) setError(d.error ?? "Uložení selhalo");
     else {
       setError("");
       setSaved(name);
@@ -3503,6 +3615,12 @@ function AdminPanel() {
           </a>{" "}
           a vlož je do proměnných účtů ve Vercelu (OWNER_… / USER_…) místo hesel.
         </div>
+      )}
+      {!authKey && (
+        <p className="note">
+          Tip: přidej ve Vercelu proměnnou AUTH_KEY (dlouhý náhodný řetězec). Zašifruje klíče 2FA v databázi a podpis
+          přihlášení nebude záviset na databázi.
+        </p>
       )}
       {saved.includes(":") && <p className="note saved">{saved}</p>}
       {list?.length === 0 && <p className="note">Kromě tebe tu zatím nikdo není.</p>}
@@ -3533,6 +3651,14 @@ function AdminPanel() {
               />
               <span>Smí upravovat klíčová slova a popis nabídky</span>
             </label>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={Boolean(u.access.require2fa)}
+                onChange={() => change(u.name, { ...u.access, require2fa: !u.access.require2fa })}
+              />
+              <span>Vyžadovat dvoufázové ověření</span>
+            </label>
             {!u.email && <span className="hint">Ranní e-mail nemá (jen upozornění na telefon).</span>}
             <span className="hint">
               Dvoufázové ověření: {u.twoFa ? "zapnuté" : "vypnuté"}
@@ -3551,6 +3677,8 @@ function AdminPanel() {
           </div>
         );
       })}
+      <h4 className="sub-h">Záznam událostí (všechny účty)</h4>
+      <EventList events={events.slice(0, 30)} who />
     </>
   );
 }

@@ -46,6 +46,7 @@ Každý profil musí podle vyhlášky 345/2023 Sb. vydávat stejné XML (`<profi
 | `ANTHROPIC_API_KEY` | AI hodnocení | ano |
 | `APP_PASSWORD` | heslo do aplikace | doporučeno |
 | `OWNER_JMENO`, `USER_JMENO` | účty: hodnota = odtlačok z /heslo (nebo heslo), volitelně `:e-mail`; OWNER = vlastník (Správa účtů, dosavadní data) | volitelné |
+| `AUTH_KEY` | dlouhý náhodný řetězec: šifruje klíče 2FA v databázi a podepisuje přihlášení (přístup k databázi pak nestačí) | doporučeno |
 | `USERS` | starší zápis víc účtů v jedné proměnné: `jméno:odtlačok[:e-mail],…` (odtlačok z /heslo, případně heslo v čitelné podobě); první je vlastník (dosavadní data), nahrazuje `APP_PASSWORD` | volitelné |
 | `HLIDAC_TOKEN` | podlimitní zakázky | ne |
 | `CRON_SECRET` | ranní spouštění (libovolný dlouhý řetězec) | pro e-maily |
@@ -65,6 +66,10 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.29** – vlastník může vyžadovat 2FA (bez něj jen obrazovka nastavení), upozornění na nové přihlášení a zámek účtu
+  (telefon a e-mail), zámek účtu po 5 chybách na 15 minut, nové ověření heslem pro citlivé kroky (10 minut),
+  záznam událostí (Zabezpečení a Správa účtů), šifrování klíčů 2FA a podpis přihlášení přes AUTH_KEY;
+  GitHub: Dependabot, automatické opravy, kontrola úniku klíčů.
 - **1.28.1** – každý účet má vlastní proměnnou ve Vercelu (OWNER_MAREK, USER_MICHAL…), změna jednoho nevyžaduje znát
   heslo druhého; /heslo ukáže název proměnné i hodnotu; USERS funguje dál.
 - **1.28** – zabezpečení: hesla v USERS jako odtlačky PBKDF2 (generátor na /heslo), podpis přihlášení tajným klíčem
