@@ -190,7 +190,10 @@ function mergeUi(ui: Record<string, unknown>) {
 const scoreColor = (s: number) => (s < 0 ? "var(--low)" : s >= 75 ? "var(--good)" : s >= 50 ? "var(--mid)" : "var(--low)");
 const scoreLabel = (s: number) => (s < 0 ? "bez AI" : s >= 75 ? "sedí" : s >= 50 ? "částečně" : "slabě");
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-const today = () => new Date().toISOString().slice(0, 10);
+// dnešek v místním čase (ne UTC – kolem půlnoci by jinak ukazoval včerejšek)
+const today = () => new Date().toLocaleDateString("sv-SE");
+// uložené výsledky bez zakázek, kterým mezitím prošla lhůta
+const loadResults = () => load<ScoredTender[]>("zr-results", []).filter((t) => !t.deadline || t.deadline.slice(0, 10) >= today());
 
 // Skóre se pamatují podle textu „Co nabízím“ (lib/profile-key.ts) – po jeho změně AI hodnotí znovu.
 const SCORE_CAP = 5000;
@@ -1084,7 +1087,7 @@ function SearchTab(props: {
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    setResults(load("zr-results", []));
+    setResults(loadResults());
     setFresh(new Set(load<string[]>("zr-fresh", [])));
     setSort(load("zr-sort", "score"));
     setRegion(load("zr-region", "all"));
@@ -1096,6 +1099,7 @@ function SearchTab(props: {
     if (form.name === "Zakázky na míru (živnost)") setValue((v) => (v === "all" ? "m" : v));
   }, [form.name]);
 
+  const [progress, setProgress] = useState<Progress>({});
   useEffect(() => {
     if (!loading) return;
     const start = Date.now();
@@ -1113,11 +1117,32 @@ function SearchTab(props: {
     setWarnings([]);
     try {
       const known = loadScores(form.profile);
+      setProgress({});
       const data = await Promise.all(
         (["open", "upcoming"] as const).map(async (mode) => {
-          const res = await post("/api/search", { ...form, mode, known, model: ai.model, noAi: ai.noAi, slovakia: ai.slovakia }, ctrl.signal);
-          const d = await res.json();
-          if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
+          const res = await post("/api/search?stream=1", { ...form, mode, known, model: ai.model, noAi: ai.noAi, slovakia: ai.slovakia }, ctrl.signal);
+          if (!res.ok || !res.body) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.error ?? `Chyba ${res.status}`);
+          }
+          // průběh po řádcích, poslední řádek je výsledek
+          const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+          let buf = "";
+          let d: any = null;
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += value;
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+            for (const line of lines.filter(Boolean)) {
+              const m = JSON.parse(line);
+              if (m.error) throw new Error(m.error);
+              if (m.result) d = m.result;
+              if (m.progress) setProgress((cur) => applyProgress(cur, mode, m.progress));
+            }
+          }
+          if (!d) throw new Error("Hledání skončilo bez výsledku, zkus to znovu.");
           return d as {
             total: number;
             open: number;
@@ -1235,19 +1260,54 @@ function SearchTab(props: {
   return (
     <>
       {loading ? (
-        <div className="card progress">
-          <div className="radar" aria-hidden="true" />
-          <div className="progress-text">
-            <b>
-              Prohledávám TED, NEN a {profily ? `${profily.toLocaleString("cs-CZ")} profilů zadavatelů` : "profily zadavatelů"}
-            </b>
-            <span>
-              AI hodnotí jen zakázky, které ještě neviděla, obvykle do minuty. {Math.floor(elapsed / 60)}:
-              {String(elapsed % 60).padStart(2, "0")}
-            </span>
+        <>
+          <div className="card progress">
+            <div className="radar" aria-hidden="true" />
+            <div className="progress-text">
+              <b>{progressTitle(progress)}</b>
+              <span>
+                Běží na serveru, nic se nestahuje do počítače. {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+              </span>
+              <div className="meter progress-meter">
+                <span style={{ width: `${progressPct(progress)}%` }} />
+              </div>
+              <ul className="progress-steps">
+                {SEARCH_SOURCES.map(([key, label]) => {
+                  const st = sourceState(progress, key);
+                  return (
+                    <li key={key} className={st ? (st.error ? "err" : "ok") : "wait"}>
+                      <Icon n={st ? (st.error ? "x" : "check") : "clock"} size={13} />
+                      {label}
+                      {st && !st.error && <small> {st.count.toLocaleString("cs-CZ")}</small>}
+                      {key === "Profily zadavatelů" && profily && !st && <small> {profily.toLocaleString("cs-CZ")} profilů</small>}
+                    </li>
+                  );
+                })}
+                {(() => {
+                  const a = aiState(progress);
+                  return (
+                    <li className={a ? (a.done >= a.all ? "ok" : "run") : "wait"}>
+                      <Icon n={a && a.done >= a.all ? "check" : "sparkle"} size={13} />
+                      AI hodnocení
+                      {a && (
+                        <small>
+                          {" "}
+                          {a.all ? `${a.done}/${a.all} dávek, ${a.fresh} nových` : "nic nového"}
+                          {a.cached ? `, ${a.cached} z minula` : ""}
+                        </small>
+                      )}
+                    </li>
+                  );
+                })()}
+              </ul>
+            </div>
+            <button onClick={() => abort.current?.abort()}>Zrušit</button>
           </div>
-          <button onClick={() => abort.current?.abort()}>Zrušit</button>
-        </div>
+          <div className="search-pill" role="status" aria-live="polite">
+            <span className="live" aria-hidden="true" />
+            {progressTitle(progress)} {progressPct(progress)} %
+          </div>
+        </>
       ) : (
         <button className="primary big" onClick={search}>
           <Icon n="search" size={18} />
@@ -1483,7 +1543,56 @@ const KEYS: [string, string][] = [
 const isNewSince = (t: ScoredTender, since: string | null, fresh: Set<string>) =>
   fresh.has(t.id) || Boolean(since && t.published && t.published >= since.slice(0, 10));
 
-const daysLeft = (d: string | null) => (d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400_000) : null);
+// dny do lhůty podle kalendářních dní (dnes = 0, včera = -1)
+const dayOf = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date(d).toLocaleDateString("sv-SE"));
+const daysLeft = (d: string | null) => (d ? Math.round((Date.parse(dayOf(d)) - Date.parse(today())) / 86400_000) : null);
+
+// ---------- průběh hledání (z /api/search?stream=1) ----------
+// průběh obou hledání (otevřené a připravované) zvlášť podle klíče „zdroj|režim“
+type Progress = {
+  src?: Record<string, { count: number; error?: string }>;
+  ai?: Record<string, { fresh: number; cached: number; done: number; all: number }>;
+};
+const SEARCH_SOURCES: [string, string][] = [
+  ["TED", "TED (EU)"],
+  ["NEN", "NEN"],
+  ["Hlídač státu", "Hlídač státu"],
+  ["Profily zadavatelů", "Profily zadavatelů"],
+  ["DNS", "Dynamické nákupní systémy"],
+];
+const MODES = ["open", "upcoming"];
+function applyProgress(cur: Progress, mode: string, p: any): Progress {
+  if (p.step === "source") return { ...cur, src: { ...cur.src, [`${p.name}|${mode}`]: { count: p.count ?? 0, error: p.error } } };
+  const m = cur.ai?.[mode] ?? { fresh: 0, cached: 0, done: 0, all: 0 };
+  const next = p.step === "ai" ? { ...m, fresh: p.fresh, cached: p.cached } : { ...m, done: p.done, all: p.all };
+  return { ...cur, ai: { ...cur.ai, [mode]: next } };
+}
+// zdroj je hotový, až když doběhl v obou hledáních
+function sourceState(p: Progress, name: string) {
+  const parts = MODES.map((m) => p.src?.[`${name}|${m}`]);
+  if (parts.some((x) => !x)) return null;
+  return { count: parts.reduce((a, x) => a + x!.count, 0), error: parts.find((x) => x!.error)?.error };
+}
+function aiState(p: Progress) {
+  const parts = MODES.map((m) => p.ai?.[m]);
+  if (parts.some((x) => !x)) return null;
+  const sum = (k: "fresh" | "cached" | "done" | "all") => parts.reduce((a, x) => a + x![k], 0);
+  // dávky se ohlásí až s první hotovou – do té doby počítáme s jednou na režim, kde je co hodnotit
+  const all = parts.reduce((a, x) => a + (x!.all || (x!.fresh ? 1 : 0)), 0);
+  return { fresh: sum("fresh"), cached: sum("cached"), done: sum("done"), all };
+}
+function progressPct(p: Progress) {
+  const src = SEARCH_SOURCES.filter(([k]) => sourceState(p, k)).length / SEARCH_SOURCES.length;
+  const ai = aiState(p);
+  return Math.min(99, Math.round(src * 40 + (ai ? 5 + (ai.all ? (ai.done / ai.all) * 54 : 54) : 0)));
+}
+function progressTitle(p: Progress) {
+  const left = SEARCH_SOURCES.filter(([k]) => !sourceState(p, k)).map(([, l]) => l);
+  if (left.length) return `Stahuji zakázky: ${left.slice(0, 2).join(", ")}${left.length > 2 ? "…" : ""}`;
+  const ai = aiState(p);
+  if (ai?.all && ai.done < ai.all) return `AI hodnotí ${ai.fresh} nových zakázek (${ai.done}/${ai.all})`;
+  return "Dokončuji a třídím výsledky";
+}
 
 function Deadline({ d, short, icon }: { d: string | null; short?: boolean; icon?: boolean }) {
   const left = daysLeft(d);
@@ -1495,9 +1604,9 @@ function Deadline({ d, short, icon }: { d: string | null; short?: boolean; icon?
       </span>
     );
   return (
-    <span className={`deadline ${left <= 3 ? "urgent" : left <= 7 ? "soon" : ""}`}>
+    <span className={`deadline ${left < 0 ? "over" : left <= 3 ? "urgent" : left <= 7 ? "soon" : ""}`}>
       {icon && <Icon n="clock" size={14} />}
-      {left <= 0 ? "končí dnes" : `${short ? "" : "lhůta "}za ${left} ${left === 1 ? "den" : left < 5 ? "dny" : "dní"}`}
+      {left < 0 ? "lhůta uplynula" : left === 0 ? "končí dnes" : left === 1 ? "končí zítra" : `${short ? "" : "lhůta "}za ${left} ${left < 5 ? "dny" : "dní"}`}
       <small>{new Date(d!).toLocaleDateString("cs-CZ")}</small>
     </span>
   );
@@ -2708,7 +2817,7 @@ function TodayTab(props: {
   const [results, setResults] = useState<ScoredTender[]>([]);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   useEffect(() => {
-    setResults(load("zr-results", []));
+    setResults(loadResults());
     setFresh(new Set(load<string[]>("zr-fresh", [])));
   }, []);
 
@@ -3062,7 +3171,7 @@ function BoardTab(props: {
   const { statuses, marked, changes, setStatus, openDetail } = props;
   const [results, setResults] = useState<ScoredTender[]>([]);
   const [over, setOver] = useState<string | null>(null);
-  useEffect(() => setResults(load("zr-results", [])), []);
+  useEffect(() => setResults(loadResults()), []);
 
   const all = new Map([...results, ...Object.values(marked)].map((t) => [t.id, t]));
   const items = (s: Status | "top") =>

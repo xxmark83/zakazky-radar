@@ -22,7 +22,7 @@ export async function sendAlert(
   const count = groups.reduce((n, g) => n + g.tenders.length, 0);
 
   const box = "border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px";
-  const daysLeft = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400_000);
+  const daysLeft = (d: string) => Math.max(0, Math.round((Date.parse(d.slice(0, 10)) - Date.parse(new Date().toISOString().slice(0, 10))) / 86400_000));
   const deadlinesHtml = extra.deadlines.length
     ? `<h3 style="margin:20px 0 8px;color:#e5484d">Blíží se lhůta</h3>${extra.deadlines
         .map(

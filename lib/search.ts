@@ -28,7 +28,13 @@ export type SearchResult = {
   results: ScoredTender[];
 };
 
-export async function runSearch(body: SearchRequest): Promise<SearchResult> {
+// průběh hledání pro appku: který zdroj je hotový a kolik dávek AI už ohodnotila
+export type SearchProgress =
+  | { step: "source"; name: string; count: number | null; error?: string }
+  | { step: "ai"; fresh: number; cached: number }
+  | { step: "batch"; done: number; all: number };
+
+export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProgress) => void): Promise<SearchResult> {
   const days = Math.min(Math.max(Number(body.days) || 30, 1), 365);
   const cpv = parseCpv(body.cpv);
   const keywords = splitList(body.keywords);
@@ -44,7 +50,17 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
     // DNS běží roky, takže se nefiltrují podle data zveřejnění
     ["DNS", Promise.resolve(kind === "open" ? fetchDns({ keywords, cpv }) : [])],
   ];
-  const settled = await Promise.allSettled(sources.map(([, p]) => p));
+  const settled = await Promise.allSettled(
+    sources.map(([name, p]) =>
+      p.then(
+        (list) => (onProgress?.({ step: "source", name, count: list.length }), list),
+        (e) => {
+          onProgress?.({ step: "source", name, count: null, error: String(e?.message ?? e) });
+          throw e;
+        },
+      ),
+    ),
+  );
   const tenders: Tender[] = [];
   settled.forEach((r, i) => {
     if (r.status === "fulfilled") tenders.push(...r.value);
@@ -68,6 +84,7 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
   const key = profileKey(body.profile);
   const known = { ...(await getScores(key, open.map((t) => t.id)).catch(() => ({}))), ...body.known };
   const fresh = open.filter((t) => !known[t.id]);
+  onProgress?.({ step: "ai", fresh: process.env.ANTHROPIC_API_KEY && !body.noAi ? fresh.length : 0, cached: open.length - fresh.length });
   const unscored = (t: Tender): ScoredTender => ({ ...t, score: -1, product: "–", reason: "" });
 
   let scored = new Map<string, ScoredTender>();
@@ -77,7 +94,7 @@ export async function runSearch(body: SearchRequest): Promise<SearchResult> {
   } else if (body.noAi) {
     if (fresh.length) warnings.push(`Měsíční limit za AI je vyčerpaný – ${fresh.length} nových zakázek je bez hodnocení.`);
   } else if (fresh.length) {
-    const r = await scoreTenders(body.profile, fresh, pickModel(body.model));
+    const r = await scoreTenders(body.profile, fresh, pickModel(body.model), (done, all) => onProgress?.({ step: "batch", done, all }));
     scored = new Map(r.tenders.map((t) => [t.id, t]));
     cost = r.cost;
   }

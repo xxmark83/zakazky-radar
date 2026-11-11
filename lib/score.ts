@@ -67,9 +67,17 @@ async function scoreBatch(profile: string, batch: Tender[], model: ModelChoice) 
   return { tenders, cost };
 }
 
-export async function scoreTenders(profile: string, tenders: Tender[], model: ModelChoice) {
+export async function scoreTenders(profile: string, tenders: Tender[], model: ModelChoice, onBatch?: (done: number, all: number) => void) {
   const batches: Tender[][] = [];
   for (let i = 0; i < tenders.length; i += BATCH) batches.push(tenders.slice(i, i + BATCH));
-  const results = await Promise.all(batches.map((b) => scoreBatch(profile, b, model)));
+  let done = 0;
+  const results = await Promise.all(
+    batches.map((b) =>
+      scoreBatch(profile, b, model).then((r) => {
+        onBatch?.(++done, batches.length);
+        return r;
+      }),
+    ),
+  );
   return { tenders: results.flatMap((r) => r.tenders), cost: results.reduce((a, r) => a + r.cost, 0) };
 }
