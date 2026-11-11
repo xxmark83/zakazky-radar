@@ -15,7 +15,9 @@ const GENERIC = new Set([
   "analyza", "testy", "bezpecnost", "tvorba", "stranky", "miru", "online", "zadosti", "elektronicke",
 ]);
 const ALWAYS = ["informacni system", "aplikac", "software"];
-const stem = (w: string) => (w.length >= 8 ? w.slice(0, -2) : w.length === 7 ? w.slice(0, -1) : w);
+// u šestipísmenných jen když končí samohláskou: „webová“ → „webov“ najde i „webových“, ale „portál“ zůstane celý
+// (z „porta“ by bylo „important“, „reportáž“…)
+const stem = (w: string) => (w.length >= 8 ? w.slice(0, -2) : w.length === 7 || (w.length === 6 && /[aeiouy]$/.test(w)) ? w.slice(0, -1) : w);
 
 export function localTerms(keywords: string[]): string[] {
   const words = keywords

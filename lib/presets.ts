@@ -6,14 +6,14 @@ export const PRESETS: Profile[] = [
     profile:
       "Nabízím levné cloudové řešení pro zakázky malého rozsahu (zhruba do 3 mil. Kč bez DPH): jednoduché CRM „Kotva“ (evidence kontaktů, klientů, žadatelů, obchodních případů, úkolů, helpdesk) a zákaznické / klientské portály (portál pro občany, klienty nebo partnery – přihlášení, formuláře, žádosti, stav vyřízení, dokumenty, objednávky). Zákazníci: obce, úřady, příspěvkové organizace, státní firmy. Rychlé nasazení, nízká cena, úpravy na míru. Nezajímají mě velké systémové integrace, hardware, stavby ani zakázky pro velké integrátory.",
     keywords:
-      "CRM, zákaznický portál, klientský portál, portál pro občany, objednávkový portál, helpdesk, evidence klientů, správa kontaktů, webová aplikace",
+      "CRM, zákaznický portál, klientský portál, portál pro občany, objednávkový portál, helpdesk, evidence klientů, správa kontaktů, webová aplikace, servicedesk, agendový systém",
     cpv: "48000000 72000000",
   },
   {
     name: "Vzdělávací portál",
     profile:
       "Nabízím vzdělávací portál / LMS: e-learningové kurzy, testy, certifikáty, evidence školení zaměstnanců, povinná školení (BOZP, GDPR, kyberbezpečnost). Ověřeno pilotem pro velkou státní firmu (Česká pošta). Levné SaaS řešení, zakázky malého rozsahu.",
-    keywords: "e-learning, LMS, vzdělávací portál, školení zaměstnanců, vzdělávací systém",
+    keywords: "e-learning, LMS, vzdělávací portál, školení zaměstnanců, vzdělávací systém, elearning, moodle",
     cpv: "80420000 80500000 48190000 72000000",
   },
   {
@@ -21,7 +21,7 @@ export const PRESETS: Profile[] = [
     profile:
       "Nabízím služby a řešení kybernetické bezpečnosti pro zakázky malého a středního rozsahu: GAP analýzu podle NIS2 a zákona o kybernetické bezpečnosti (vstupní audit, analýza rizik, plán opatření, bezpečnostní dokumentace, ISMS / ISO 27001), SIEM a SOC (sběr a vyhodnocení logů, dohled 24/7, reakce na incidenty), ochranu koncových stanic – endpoint, EDR / XDR, antivirus – a související služby (firewall, skenování zranitelností, penetrační testy, školení bezpečnosti). Zákazníci: obce, úřady, nemocnice, školy, příspěvkové organizace a státní firmy, hlavně nově povinné subjekty podle NIS2. Nezajímají mě fyzická ostraha, kamerové systémy, stavby ani velké dodávky hardwaru.",
     keywords:
-      "kybernetická bezpečnost, NIS2, GAP analýza, SIEM, SOC, endpoint, antivirus, EDR, XDR, kyberbezpečnost, firewall, penetrační testy, zranitelnost, ISO 27001",
+      "kybernetická bezpečnost, NIS2, GAP analýza, SIEM, SOC, endpoint, antivirus, EDR, XDR, kyberbezpečnost, firewall, penetrační testy, zranitelnost, ISO 27001, kyber, NÚKIB, dvoufaktorové, vícefaktorové, autentizace, phishing",
     cpv: "48730000 48760000 72000000 79417000",
   },
   {
@@ -29,10 +29,19 @@ export const PRESETS: Profile[] = [
     profile:
       "Jsem živnostník a vyvíjím software na míru pro zakázky malého rozsahu (do 2 mil. Kč bez DPH, ideálně 50 tis. – 1 mil. Kč): webové a mobilní aplikace (PWA), evidence a databáze (klienti, žádosti, smlouvy, majetek, vozidla, akce), jednoduché CRM a helpdesk, klientské a občanské portály s formuláři a elektronickými žádostmi, rezervační a objednávkové systémy, registrace na akce a kurzy, e-learning a testy, intranety, dashboardy a reporty z dat, mapové aplikace, weby obcí a organizací (i přístupnost WCAG), chatboty a AI asistenty nad dokumenty, napojení systémů přes API a převod dat. Dodávám rychle (týdny), s nízkou cenou a další podporou. Hodí se mi zakázky malého rozsahu, přímé výzvy a poptávky obcí, škol, příspěvkových organizací a menších úřadů. Nehodí se mi velké systémové integrace, atestované systémy (spisová služba, ekonomické systémy), dodávky hardwaru, nepřetržitý provoz 24/7 a zakázky s požadavkem na velký obrat, tým nebo firemní certifikace ISO.",
     keywords:
-      "vývoj aplikace, aplikace na míru, software na míru, webová aplikace, mobilní aplikace, webové stránky, rezervační systém, objednávkový systém, evidenční systém, databáze, formulář, portál, intranet, dashboard, chatbot, digitalizace, CRM, helpdesk, e-learning",
+      "vývoj aplikace, aplikace na míru, software na míru, webová aplikace, mobilní aplikace, webové stránky, rezervační systém, objednávkový systém, evidenční systém, databáze, formulář, portál, intranet, dashboard, chatbot, digitalizace, CRM, helpdesk, e-learning, web, webu, internetové stránky, redakční systém, CMS, elektronizace",
     cpv: "72200000 72212000 72262000 72413000 72230000 48000000",
   },
 ];
+
+// Klíčová slova před rozšířením z 11. 11. 2026 (web, servicedesk, kyber, dvoufaktorové, elearning…). Uložená hledání
+// a hlídání mají vlastní kopii slov; kdo je neupravoval (sedí přesně na starou podobu), dostane nová (upgradeProfile).
+const OLD_KEYWORDS: Record<string, string> = {
+  "CRM a zákaznické portály": "CRM, zákaznický portál, klientský portál, portál pro občany, objednávkový portál, helpdesk, evidence klientů, správa kontaktů, webová aplikace",
+  "Vzdělávací portál": "e-learning, LMS, vzdělávací portál, školení zaměstnanců, vzdělávací systém",
+  "Kybernetická bezpečnost": "kybernetická bezpečnost, NIS2, GAP analýza, SIEM, SOC, endpoint, antivirus, EDR, XDR, kyberbezpečnost, firewall, penetrační testy, zranitelnost, ISO 27001",
+  "Zakázky na míru (živnost)": "vývoj aplikace, aplikace na míru, software na míru, webová aplikace, mobilní aplikace, webové stránky, rezervační systém, objednávkový systém, evidenční systém, databáze, formulář, portál, intranet, dashboard, chatbot, digitalizace, CRM, helpdesk, e-learning",
+};
 
 // více oblastí najednou: jeden společný popis pro AI, sjednocená klíčová slova a CPV
 export const JOIN = " + ";
@@ -43,8 +52,8 @@ export const PRESET_SHORT: Record<string, string> = {
   "Zakázky na míru (živnost)": "Na míru",
 };
 export const selectedPresets = (name: string) => name.split(JOIN).filter((n) => PRESETS.some((p) => p.name === n));
-export function combine(names: string[]) {
-  const list = PRESETS.filter((p) => names.includes(p.name));
+export function combine(names: string[], old = false) {
+  const list = PRESETS.filter((p) => names.includes(p.name)).map((p) => (old ? { ...p, keywords: OLD_KEYWORDS[p.name] ?? p.keywords } : p));
   if (list.length === 1) return { ...list[0] };
   const uniq = (parts: string[], sep: RegExp) => [...new Set(parts.flatMap((x) => x.split(sep)).map((x) => x.trim()).filter(Boolean))];
   return {
@@ -55,4 +64,13 @@ export function combine(names: string[]) {
     keywords: uniq(list.map((p) => p.keywords), /,/).join(", "),
     cpv: uniq(list.map((p) => p.cpv), /[\s,;]+/).join(" "),
   };
+}
+
+/** Uložené hledání / hlídání se starými klíčovými slovy oblasti dostane nová; ručně upravená slova se nemění. */
+export function upgradeProfile<T extends Profile>(p: T): T {
+  const names = selectedPresets(p.name ?? "");
+  if (!names.length) return p;
+  const before = combine(names, true);
+  if (p.keywords !== before.keywords) return p;
+  return { ...p, keywords: combine(names).keywords };
 }

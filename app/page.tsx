@@ -9,7 +9,7 @@ import { coverSheet, eligibility, referenceList } from "@/lib/templates";
 import type { Company, Reference } from "@/lib/company";
 import qrcode from "qrcode-generator";
 import { MB_LOGO } from "@/lib/logo";
-import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets } from "@/lib/presets";
+import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets, upgradeProfile } from "@/lib/presets";
 import { diff } from "@/lib/diff";
 import { profileKey } from "@/lib/profile-key";
 import { REGIONS } from "@/lib/regions";
@@ -386,7 +386,7 @@ export default function Home() {
 
   useEffect(() => {
     const last = load<{ form?: typeof form }>("zr-form", {});
-    if (last.form) setForm(last.form);
+    if (last.form) setForm(upgradeProfile(last.form));
     const local = () => {
       setStatuses(load("zr-status", {}));
       setMarked(load("zr-marked", {}));
@@ -409,7 +409,7 @@ export default function Home() {
         if (s.db) {
           mergeUi(s.ui ?? {});
           const f = load<{ form?: typeof form }>("zr-form", {});
-          if (f.form) setForm(f.form);
+          if (f.form) setForm(upgradeProfile(f.form));
           setSynced((n) => n + 1);
         }
         setPrefs({ model: s.model ?? "haiku", budget: s.budget ?? 5, slovakia: false, ...load<Partial<Prefs>>("zr-prefs", {}) });
