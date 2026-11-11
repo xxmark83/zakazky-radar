@@ -2528,7 +2528,8 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
   const [docs, setDocs] = useState<{ name: string; chars: number; pages?: number; note?: string }[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [model, setModel] = useState<Model>(ai.model);
+  // vytažený text si pamatujeme, ať důkladná kontrola nečte soubory znovu
+  const [texts, setTexts] = useState<{ name: string; text: string }[] | null>(null);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
   useEffect(() => {
     fetch("/api/company")
@@ -2539,24 +2540,26 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
   useEffect(() => {
     setFiles([]);
     setDocs(null);
+    setTexts(null);
     setError("");
   }, [t.id]);
   const size = files.reduce((n, f) => n + f.size, 0);
 
-  async function run() {
+  async function run(model: Model) {
     setError("");
     try {
-      let texts: { name: string; text: string }[] = [];
-      if (files.length) {
+      let list = texts ?? [];
+      if (files.length && !texts) {
         setBusy("Čtu podklady v prohlížeči…");
         const { extractFiles } = await import("@/lib/extract");
         const out = await extractFiles(files, (name, i, all) => setBusy(`Čtu ${i + 1}/${all}: ${name}`));
         setDocs(out.map((d) => ({ name: d.name, chars: d.text.length, pages: d.pages, note: d.note })));
-        texts = out.filter((d) => d.text.trim()).map((d) => ({ name: d.name, text: d.text }));
-        if (!texts.length) throw new Error("Z nahraných souborů jsem nevytáhl žádný text (naskenované PDF nebo nepodporovaný formát).");
+        list = out.filter((d) => d.text.trim()).map((d) => ({ name: d.name, text: d.text }));
+        setTexts(list);
+        if (!list.length) throw new Error("Z nahraných souborů jsem nevytáhl žádný text (naskenované PDF nebo nepodporovaný formát).");
       }
-      setBusy(`AI posuzuje kvalifikaci a realizaci (${model === "opus" ? "Opus" : "Haiku"}), obvykle 1–3 minuty…`);
-      const res = await post("/api/assess", { tender: t, profile, model, texts });
+      setBusy(model === "opus" ? "Důkladná kontrola před podáním (Opus), obvykle 2–4 minuty…" : "Rychlé posouzení (Haiku), obvykle do minuty…");
+      const res = await post("/api/assess", { tender: t, profile, model, texts: list });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
@@ -2586,7 +2589,7 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
             type="file"
             multiple
             accept=".pdf,.docx,.xlsx,.odt,.ods,.zip,.txt,.csv"
-            onChange={(e) => (setFiles([...(e.target.files ?? [])]), setDocs(null))}
+            onChange={(e) => (setFiles([...(e.target.files ?? [])]), setDocs(null), setTexts(null))}
           />
           <Icon n="file" size={20} />
           <span>
@@ -2620,23 +2623,29 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
             ))}
           </ul>
         )}
-        <div className="row-btns">
-          <div className="flow model-pick">
-            <button className={model === "haiku" ? "on" : ""} onClick={() => setModel("haiku")}>
-              Haiku – levný
-            </button>
-            <button className={model === "opus" ? "on" : ""} onClick={() => setModel("opus")}>
-              Opus – přesnější
-            </button>
-          </div>
-          <button className="primary" style={{ marginTop: 0 }} disabled={busy !== null || ai.noAi} onClick={run}>
-            {a ? "Posoudit znovu" : "Posoudit"}
+        <div className="assess-modes">
+          <button className="assess-mode" disabled={busy !== null || ai.noAi} onClick={() => run("haiku")}>
+            <b>
+              <Icon n="search" size={15} /> Rychlé posouzení
+            </b>
+            <span>Na každou zajímavou zakázku: kvalifikace, odhad práce a verdikt.</span>
+            <small>Haiku, asi 1–10 centů, do minuty</small>
+          </button>
+          <button
+            className={`assess-mode deep ${a && a.model !== "opus" && (a.verdict === "podat" || a.verdict === "podat s partnerem") ? "recommended" : ""}`}
+            disabled={busy !== null || ai.noAi}
+            onClick={() => run("opus")}
+          >
+            <b>
+              <Icon n="shield" size={15} /> Důkladná kontrola před podáním
+            </b>
+            <span>Když zvažuješ podání: pečlivější čtení celé dokumentace, přesnější kvalifikace i odhad.</span>
+            <small>Opus, asi 0,3–1,5 $, 2–4 minuty</small>
+            {a && a.model !== "opus" && (a.verdict === "podat" || a.verdict === "podat s partnerem") && (
+              <em className="assess-tip">Doporučeno – rychlé posouzení vyšlo kladně</em>
+            )}
           </button>
         </div>
-        <span className="hint">
-          Odhad ceny: Haiku asi 1–10 centů, Opus asi 30 centů až 1,5 $ podle velikosti podkladů. Na rozhodnutí o podání doporučuji
-          Opus.
-        </span>
       </div>
       {busy && (
         <div className="ai-cta">
@@ -2647,6 +2656,9 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
       {error && <div className="warn">{error}</div>}
       {a && !busy && (
         <div className="analysis assess">
+          <span className={`assess-kind ${a.model === "opus" ? "deep" : ""}`}>
+            {a.model === "opus" ? "Důkladná kontrola před podáním" : "Rychlé posouzení"}
+          </span>
           <div className={`verdict ${VERDICT_CLS[a.verdict] ?? "mid"}`}>
             <b>{a.verdict === "podat" ? "Podat" : a.verdict === "podat s partnerem" ? "Podat s partnerem / poddodavatelem" : a.verdict === "nepodávat" ? "Nepodávat" : "Nejasné – doplň podklady nebo profil"}</b>
             <span>{a.verdictReason}</span>
@@ -2715,7 +2727,7 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
           <AnalysisList title="Doplň do firemního profilu" items={a.missingInfo} />
           <AnalysisList title="Dotazy na zadavatele" items={a.questions} />
           <p className="note sources">
-            {a.model === "opus" ? "Opus" : "Haiku"}, {a.at ? new Date(a.at).toLocaleString("cs-CZ") : ""}. Podklady: {a.sources?.join(", ") || "jen stránka zakázky"}.
+            {a.model === "opus" ? "Důkladná kontrola (Opus)" : "Rychlé posouzení (Haiku)"}, {a.at ? new Date(a.at).toLocaleString("cs-CZ") : ""}. Podklady: {a.sources?.join(", ") || "jen stránka zakázky"}.
             Je to odhad AI – před podáním ověř v dokumentaci.
           </p>
         </div>
