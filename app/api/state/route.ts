@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     spend,
     budget: Number(process.env.AI_BUDGET_USD) || 5,
     model: process.env.AI_MODEL === "opus" ? "opus" : "haiku",
-    email: Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL),
+    email: Boolean(process.env.RESEND_API_KEY && (await currentUser()).email), // e-mail účtu (OWNER_/USER_ … :e-mail) nebo ALERT_EMAIL
     cron: Boolean(process.env.CRON_SECRET),
     ai: Boolean(process.env.ANTHROPIC_API_KEY),
     profily: profilyInfo(),

@@ -860,7 +860,6 @@ function Settings(props: {
         <h3 className="sec">Připojení</h3>
         <Check ok={server.ai} label="AI hodnocení (ANTHROPIC_API_KEY)" />
         <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
-        <Check ok={server.email && server.cron} label="Ranní e-mail (RESEND_API_KEY, ALERT_EMAIL, CRON_SECRET)" />
 
         {server.db && <SecurityPanel />}
 
@@ -1871,16 +1870,40 @@ function Detail(props: {
   const draft = kept.drafts[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
   const [busy, setBusy] = useState<"analysis" | "draft" | null>(null);
+  // zadávací podklady nahrané jednou pro celou zakázku: text se vytáhne v prohlížeči (i velké soubory)
+  const [files, setFiles] = useState<File[]>([]);
+  const [docs, setDocs] = useState<{ name: string; chars: number; pages?: number; note?: string }[] | null>(null);
+  const [texts, setTexts] = useState<{ name: string; text: string }[] | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
+  async function pickFiles(list: File[]) {
+    setFiles(list);
+    setDocs(null);
+    setTexts(null);
+    if (!list.length) return;
+    setReading("Čtu podklady…");
+    try {
+      const { extractFiles } = await import("@/lib/extract");
+      const out = await extractFiles(list, (name, i, all) => setReading(`Čtu ${i + 1}/${all}: ${name}`));
+      setDocs(out.map((d) => ({ name: d.name, chars: d.text.length, pages: d.pages, note: d.note })));
+      const ok = out.filter((d) => d.text.trim()).map((d) => ({ name: d.name, text: d.text }));
+      setTexts(ok.length ? ok : null);
+      if (!ok.length) setError("Z nahraných souborů jsem nevytáhl žádný text (naskenované PDF nebo nepodporovaný formát).");
+    } catch (e: any) {
+      setError(`Podklady nejdou přečíst: ${e.message}`);
+    } finally {
+      setReading(null);
+    }
+  }
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
-  const [similar, setSimilar] = useState<Market | null>(null);
-  const [simBusy, setSimBusy] = useState(false);
 
   useEffect(() => {
     setNote(kept.notes[t.id] ?? "");
-    setSimilar(null);
     setError("");
+    setFiles([]);
+    setDocs(null);
+    setTexts(null);
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);
     if (!split) document.body.style.overflow = "hidden";
@@ -1898,11 +1921,11 @@ function Detail(props: {
     return () => clearTimeout(id);
   }, [note]);
 
-  async function runAi(kind: "analysis" | "draft", uploads?: { name: string; data: string }[]) {
+  async function runAi(kind: "analysis" | "draft") {
     setBusy(kind);
     setError("");
     try {
-      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model, uploads });
+      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model, texts: kind === "analysis" ? (texts ?? undefined) : undefined });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
@@ -1953,13 +1976,27 @@ function Detail(props: {
         muted: true,
       },
     ];
+    const as = kept.assess?.[t.id];
+    if (as) {
+      blocks.push(
+        { h2: `Zvládneme to?: ${as.verdict}` },
+        { p: as.verdictReason },
+        { h2: "Kvalifikace" },
+        { bullets: as.qualification.map((q) => `[${q.status}] ${q.requirement}${q.where ? ` (${q.where})` : ""}${q.how ? ` – ${q.how}` : ""}`) },
+        { h2: `Realizace: ${as.delivery.feasible}, odhad ${Math.round(as.delivery.totalMd)} člověkodní` },
+        { p: as.delivery.summary },
+        { bullets: as.delivery.parts.map((x) => `${x.item}: ${x.how} (${x.effortMd} MD, riziko ${x.risk})`) },
+      );
+      if (as.gaps.length) blocks.push({ h2: "Co chybí" }, { bullets: as.gaps });
+      if (as.questions.length) blocks.push({ h2: "Dotazy na zadavatele" }, { bullets: as.questions });
+    }
     if (analysis) {
-      blocks.push({ h2: `Rozbor: ${VERDICT[analysis.verdict].label}` }, { p: `${analysis.verdictReason}\n\n${analysis.summary}` });
-      if (analysis.requirements.length) blocks.push({ h2: "Podmínky a kvalifikace" }, { bullets: analysis.requirements });
+      blocks.push({ h2: "Rozbor" }, { p: analysis.summary });
+      if (!as && analysis.requirements.length) blocks.push({ h2: "Podmínky a kvalifikace" }, { bullets: analysis.requirements });
       if (analysis.criteria?.length) blocks.push({ h2: "Hodnoticí kritéria" }, { bullets: analysis.criteria });
       if (analysis.risks.length) blocks.push({ h2: "Rizika" }, { bullets: analysis.risks });
       blocks.push({ h2: "Co nabídnout" }, { p: analysis.offer });
-      if (analysis.questions.length) blocks.push({ h2: "Dotazy na zadavatele" }, { bullets: analysis.questions });
+      if (!as && analysis.questions.length) blocks.push({ h2: "Dotazy na zadavatele" }, { bullets: analysis.questions });
     }
     if (items.length) blocks.push({ h2: "Co připravit do nabídky" }, { checks: items.map((i) => ({ text: i, done: Boolean(checks?.done[i]) })) });
     if (draft) {
@@ -1977,29 +2014,6 @@ function Detail(props: {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // vlastní dokumentace (když ji portál nepustí): PDF, Word nebo ZIP, dohromady do 4 MB (limit požadavku)
-  async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    const list = [...files];
-    if (list.reduce((n, f) => n + f.size, 0) > 4_000_000) {
-      setError("Soubory jsou dohromady větší než 4 MB. Nahraj jen zadávací dokumentaci nebo výzvu.");
-      return;
-    }
-    const b64 = async (f: File) => {
-      const bytes = new Uint8Array(await f.arrayBuffer());
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      return btoa(bin);
-    };
-    runAi("analysis", await Promise.all(list.map(async (f) => ({ name: f.name, data: await b64(f) }))));
-  }
-  const uploadButton = (label: string) => (
-    <label className="link upload">
-      {label}
-      <input type="file" multiple accept=".pdf,.docx,.zip" hidden onChange={(e) => upload(e.target.files)} />
-    </label>
-  );
-
   const draftText = (d: Draft) =>
     [
       `Osnova nabídky: ${t.title}`,
@@ -2009,18 +2023,6 @@ function Detail(props: {
       ``,
       d.coverLetter,
     ].join("\n");
-
-  async function loadSimilar() {
-    setSimBusy(true);
-    try {
-      const res = await post("/api/market", { cpv: t.cpv.slice(0, 4).join(" "), keywords: "", days: 1095 });
-      const d = await res.json();
-      if (res.ok) setSimilar(d);
-      else setError(d.error);
-    } finally {
-      setSimBusy(false);
-    }
-  }
 
   return (
     <div className={`drawer-bg ${split ? "split" : ""}`} onClick={close}>
@@ -2152,16 +2154,53 @@ function Detail(props: {
           openCompetitor={openCompetitor}
         />
 
+        <h3 className="sec" id="d-docs">
+          Zadávací podklady
+        </h3>
+        <div className="assess-up">
+          <label className="assess-drop">
+            <input type="file" multiple accept=".pdf,.docx,.xlsx,.odt,.ods,.zip,.txt,.csv" onChange={(e) => pickFiles([...(e.target.files ?? [])])} />
+            <Icon n="file" size={20} />
+            <span>
+              <b>
+                {files.length
+                  ? `${files.length} ${files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"}, ${mb(files.reduce((n, f) => n + f.size, 0))}`
+                  : "Nahraj zadávací podklady (nepovinné)"}
+              </b>
+              <br />
+              <span className="hint">
+                Jednou pro celou zakázku – použije je AI rozbor, Zvládneme to? i Zeptej se dokumentace. PDF, Word, Excel, ZIP, i velké;
+                text se vytáhne v prohlížeči, soubory se nikam neukládají. Bez nahrání si AI dokumentaci najde sama.
+              </span>
+            </span>
+          </label>
+          {reading && <span className="hint">{reading}</span>}
+          {docs && (
+            <ul className="assess-files">
+              {docs.map((d, i) => (
+                <li key={i} className={d.note && !d.chars ? "err" : ""}>
+                  {d.chars ? "✓" : "✕"} {d.name}{" "}
+                  <small>
+                    {d.pages ? `${d.pages} str., ` : ""}
+                    {Math.round(d.chars / 1000)} tis. znaků{d.note ? ` – ${d.note}` : ""}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <h3 className="sec" id="d-ai">
-          AI rozbor
+          AI rozbor <span className="hint">co chtějí, rizika, co přiložit</span>
         </h3>
         {!analysis && busy !== "analysis" && (
           <div className="ai-cta">
             <span>
               {ai.noAi
                 ? "Měsíční limit za AI je vyčerpaný, změníš ho v Nastavení."
-                : "Najde a přečte zadávací dokumentaci (PDF, Word) a řekne, co chtějí, jaké mají podmínky, rizika, co nabídnout a co přiložit."}
-              {!ai.noAi && <> {uploadButton("Nebo nahraj dokumentaci sám")}</>}
+                : texts
+                  ? "Přečte nahrané podklady a řekne, co chtějí, rizika, co nabídnout, hodnoticí kritéria a co přiložit."
+                  : "Najde a přečte zadávací dokumentaci a řekne, co chtějí, rizika, co nabídnout, hodnoticí kritéria a co přiložit."}
             </span>
             <button className="primary" onClick={analyze} disabled={ai.noAi || busy !== null}>
               Udělat rozbor
@@ -2171,28 +2210,25 @@ function Detail(props: {
         {busy === "analysis" && (
           <div className="ai-cta">
             <div className="radar" aria-hidden="true" />
-            <span>Hledám a čtu zadávací dokumentaci, asi 30–60 vteřin…</span>
+            <span>{texts ? "Čtu nahrané podklady" : "Hledám a čtu zadávací dokumentaci"}, asi 30–60 vteřin…</span>
           </div>
         )}
         {error && <div className="warn">{error}</div>}
         {analysis && (
           <div className="analysis">
-            <div className={`verdict ${VERDICT[analysis.verdict].cls}`}>
-              <b>{VERDICT[analysis.verdict].label}</b>
-              <span>{analysis.verdictReason}</span>
-            </div>
             <p>{analysis.summary}</p>
-            <AnalysisList title="Podmínky a kvalifikace" items={analysis.requirements} />
             <AnalysisList title="Rizika" items={analysis.risks} />
             <h4>Co nabídnout</h4>
             <p>{analysis.offer}</p>
             <AnalysisList title="Hodnoticí kritéria" items={analysis.criteria ?? []} />
-            <AnalysisList title="Na co se zeptat zadavatele" items={analysis.questions} />
+            <p className="note">
+              Předběžný dojem: <b className={`pre-${VERDICT[analysis.verdict].cls}`}>{VERDICT[analysis.verdict].label}</b> – {analysis.verdictReason}{" "}
+              Kvalifikaci, dotazy na zadavatele a rozhodnutí o podání řeší <a href="#d-assess" onClick={(e) => (e.preventDefault(), document.getElementById("d-assess")?.scrollIntoView({ behavior: "smooth", block: "start" }))}>Zvládneme to?</a>
+            </p>
             <p className="note sources">
               {analysis.sources?.length
                 ? `Přečteno: ${analysis.sources.join(", ")}.`
-                : "Dokumentaci se nepodařilo stáhnout, rozbor je jen ze stránky zakázky."}{" "}
-              {!ai.noAi && busy !== "analysis" && uploadButton(analysis.sources?.length ? "Nahrát jinou dokumentaci" : "Nahraj ji sám")}
+                : "Dokumentaci se nepodařilo stáhnout, rozbor je jen ze stránky zakázky – nahraj podklady nahoře a udělej ho znovu."}
             </p>
             {busy !== "analysis" && !ai.noAi && (
               <button className="link" onClick={analyze}>
@@ -2210,17 +2246,17 @@ function Detail(props: {
           />
         ) : null}
 
-        <Assess t={t} profile={profile} ai={ai} saved={kept.assess?.[t.id] ?? null} keep={(v) => keep("assess", t.id, v)} />
+        <Assess t={t} profile={profile} ai={ai} texts={texts} saved={kept.assess?.[t.id] ?? null} keep={(v) => keep("assess", t.id, v)} />
 
-        <AskDocs t={t} ai={ai} />
+        <AskDocs t={t} ai={ai} texts={texts} />
 
-        <PriceHelper t={t} results={kept.results} marked={marked} />
+        <PriceHelper t={t} results={kept.results} marked={marked} openCompetitor={openCompetitor} />
 
         <div className="export">
           <button onClick={exportWord}>
             <Icon n="download" size={16} /> Stáhnout podklady do Wordu
           </button>
-          <span className="hint">rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
+          <span className="hint">Zvládneme to?, rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
         </div>
         <h3 className="sec">Dokumenty nabídky</h3>
         {company?.company.name ? (
@@ -2322,31 +2358,6 @@ function Detail(props: {
           onChange={(e) => setNote(e.target.value)}
         />
 
-        <h3 className="sec">Ceny podobných zakázek</h3>
-        {!similar ? (
-          <button onClick={loadSimilar} disabled={simBusy || !t.cpv.length}>
-            {simBusy ? "Načítám…" : t.cpv.length ? "Kdo a za kolik vyhrál podobné (3 roky)" : "Zakázka nemá CPV kódy"}
-          </button>
-        ) : (
-          <div className="similar">
-            <p>
-              {similar.count} zadaných zakázek se stejnými CPV
-              {similar.prices.median ? (
-                <>
-                  , medián <b>{money(similar.prices.median)}</b>
-                  {similar.prices.p25 && <>, běžně {money(similar.prices.p25, "")}– {money(similar.prices.p75)}</>}
-                </>
-              ) : null}
-              .
-            </p>
-            {similar.topWinners.slice(0, 5).map((w) => (
-              <button key={w.name} className="mine-row" onClick={() => openCompetitor(w.name)} title="Profil konkurenta">
-                <span>{w.name}</span>
-                <span className="note">{w.wins}× výhra</span>
-              </button>
-            ))}
-          </div>
-        )}
       </aside>
     </div>
   );
@@ -2404,10 +2415,12 @@ function PriceHelper({
   t,
   results,
   marked,
+  openCompetitor,
 }: {
   t: ScoredTender;
   results: Record<string, Outcome>;
   marked: Record<string, ScoredTender>;
+  openCompetitor: (name: string) => void;
 }) {
   const [m, setM] = useState<Market | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2447,10 +2460,10 @@ function PriceHelper({
 
   return (
     <>
-      <h3 className="sec">Doporučená cena a šance</h3>
+      <h3 className="sec">Cena, šance a konkurence</h3>
       {!m && !est ? (
         <button onClick={load} disabled={busy}>
-          {busy ? "Počítám…" : "Spočítat z cen podobných zakázek (zdarma)"}
+          {busy ? "Počítám…" : "Porovnat s podobnými zakázkami – cena, šance, kdo vyhrával (zdarma)"}
         </button>
       ) : (
         <div className="price">
@@ -2483,9 +2496,22 @@ function PriceHelper({
             {m?.offers ? <li>Průměrně {m.offers.avg.toFixed(1).replace(".", ",")} nabídky na zakázku.</li> : null}
           </ul>
           {m && <Chance t={t} offersAvg={m.offers?.avg ?? null} results={results} />}
+          {m && m.topWinners.length > 0 && (
+            <div className="similar">
+              <h4>Kdo vyhrával podobné (3 roky)</h4>
+              {m.topWinners.slice(0, 5).map((w) => (
+                <button key={w.name} className="mine-row" onClick={() => openCompetitor(w.name)} title="Profil konkurenta">
+                  <span>{w.name}</span>
+                  <span className="note">
+                    {w.wins}× výhra{w.avg ? `, průměr ${moneyShort(w.avg)}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           {!m && (
             <button className="link" onClick={load} disabled={busy}>
-              {busy ? "Načítám…" : "Porovnat s cenami podobných zakázek a spočítat šanci"}
+              {busy ? "Načítám…" : "Porovnat s podobnými zakázkami – šance a kdo vyhrával"}
             </button>
           )}
         </div>
@@ -2523,13 +2549,23 @@ function Chance({ t, offersAvg, results }: { t: ScoredTender; offersAvg: number 
 const mb = (b: number) => (b < 100_000 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${(b / 1_000_000).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} MB`);
 const Q_STATUS: Record<string, string> = { splněno: "ok", doložit: "doc", nesplněno: "no", nejasné: "q" };
 const VERDICT_CLS: Record<string, string> = { podat: "good", "podat s partnerem": "mid", nepodávat: "bad", nejasné: "mid" };
-function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: string; ai: Ai; saved: Assessment | null; keep: (v: Assessment | null) => void }) {
-  const [files, setFiles] = useState<File[]>([]);
-  const [docs, setDocs] = useState<{ name: string; chars: number; pages?: number; note?: string }[] | null>(null);
+function Assess({
+  t,
+  profile,
+  ai,
+  texts,
+  saved,
+  keep,
+}: {
+  t: ScoredTender;
+  profile: string;
+  ai: Ai;
+  texts: { name: string; text: string }[] | null;
+  saved: Assessment | null;
+  keep: (v: Assessment | null) => void;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
-  // vytažený text si pamatujeme, ať důkladná kontrola nečte soubory znovu
-  const [texts, setTexts] = useState<{ name: string; text: string }[] | null>(null);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
   useEffect(() => {
     fetch("/api/company")
@@ -2537,27 +2573,12 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
       .then((d) => setHasProfile(Boolean(d.company?.capabilities?.trim())))
       .catch(() => {});
   }, []);
-  useEffect(() => {
-    setFiles([]);
-    setDocs(null);
-    setTexts(null);
-    setError("");
-  }, [t.id]);
-  const size = files.reduce((n, f) => n + f.size, 0);
+  useEffect(() => setError(""), [t.id]);
 
   async function run(model: Model) {
     setError("");
     try {
-      let list = texts ?? [];
-      if (files.length && !texts) {
-        setBusy("Čtu podklady v prohlížeči…");
-        const { extractFiles } = await import("@/lib/extract");
-        const out = await extractFiles(files, (name, i, all) => setBusy(`Čtu ${i + 1}/${all}: ${name}`));
-        setDocs(out.map((d) => ({ name: d.name, chars: d.text.length, pages: d.pages, note: d.note })));
-        list = out.filter((d) => d.text.trim()).map((d) => ({ name: d.name, text: d.text }));
-        setTexts(list);
-        if (!list.length) throw new Error("Z nahraných souborů jsem nevytáhl žádný text (naskenované PDF nebo nepodporovaný formát).");
-      }
+      const list = texts ?? [];
       setBusy(model === "opus" ? "Důkladná kontrola před podáním (Opus), obvykle 2–4 minuty…" : "Rychlé posouzení (Haiku), obvykle do minuty…");
       const res = await post("/api/assess", { tender: t, profile, model, texts: list });
       const d = await res.json();
@@ -2584,45 +2605,9 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
         </div>
       )}
       <div className="assess-up">
-        <label className="assess-drop">
-          <input
-            type="file"
-            multiple
-            accept=".pdf,.docx,.xlsx,.odt,.ods,.zip,.txt,.csv"
-            onChange={(e) => (setFiles([...(e.target.files ?? [])]), setDocs(null), setTexts(null))}
-          />
-          <Icon n="file" size={20} />
-          <span>
-            <b>{files.length ? `${files.length} ${files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"}, ${mb(size)}` : "Nahraj všechny zadávací podklady"}</b>
-            <br />
-            <span className="hint">
-              PDF, Word, Excel, ZIP – i velké. Text se vytáhne přímo v prohlížeči, soubory se nikam neukládají. Bez nahrání AI vezme
-              dokumentaci, kterou najde sama.
-            </span>
-          </span>
-        </label>
-        {files.length > 0 && !docs && (
-          <ul className="assess-files">
-            {files.map((f) => (
-              <li key={f.name + f.size}>
-                {f.name} <small>{mb(f.size)}</small>
-              </li>
-            ))}
-          </ul>
-        )}
-        {docs && (
-          <ul className="assess-files">
-            {docs.map((d, i) => (
-              <li key={i} className={d.note && !d.chars ? "err" : ""}>
-                {d.chars ? "✓" : "✕"} {d.name}{" "}
-                <small>
-                  {d.pages ? `${d.pages} str., ` : ""}
-                  {Math.round(d.chars / 1000)} tis. znaků{d.note ? ` – ${d.note}` : ""}
-                </small>
-              </li>
-            ))}
-          </ul>
-        )}
+        <span className="hint">
+          {texts ? `Použije nahrané podklady (${texts.length}).` : "Podklady nahoře nejsou nahrané – AI vezme dokumentaci, kterou najde sama."}
+        </span>
         <div className="assess-modes">
           <button className="assess-mode" disabled={busy !== null || ai.noAi} onClick={() => run("haiku")}>
             <b>
@@ -2737,7 +2722,7 @@ function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: str
 }
 
 // otázky nad zadávací dokumentací, odpověď s odkazem na stranu
-function AskDocs({ t, ai }: { t: ScoredTender; ai: Ai }) {
+function AskDocs({ t, ai, texts }: { t: ScoredTender; ai: Ai; texts: { name: string; text: string }[] | null }) {
   const [q, setQ] = useState("");
   const [list, setList] = useState<{ q: string; a: string; cites: { doc: string; where: string }[] }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -2750,7 +2735,7 @@ function AskDocs({ t, ai }: { t: ScoredTender; ai: Ai }) {
     setBusy(true);
     setError("");
     try {
-      const res = await post("/api/ask", { tender: t, question, model: ai.model });
+      const res = await post("/api/ask", { tender: t, question, model: ai.model, texts: texts ?? undefined });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
@@ -2985,6 +2970,7 @@ function OutcomeForm({ won, value, save }: { won: boolean; value: Outcome | null
 const JUMPS: [string, string][] = [
   ["d-top", "Přehled"],
   ["d-history", "Historie"],
+  ["d-docs", "Podklady"],
   ["d-ai", "AI rozbor"],
   ["d-assess", "Zvládneme to?"],
   ["d-notes", "Poznámky"],
@@ -3908,14 +3894,13 @@ function WatchTab(props: {
         Každé ráno (cca 6–7 h) se stáhnou nové otevřené i připravované zakázky, AI je ohodnotí a pošle e-mail jen s těmi nad
         zvoleným skóre, které ti ještě nepřišly.
       </p>
-      <div className="card">
-        <Check ok={server.cron} label="Ranní spouštění (CRON_SECRET)" />
-        <Check ok={server.email} label="E-mail (RESEND_API_KEY + ALERT_EMAIL)" />
-        <Check ok={server.db} label="Databáze – vlastní profily a bez duplicit (Upstash Redis)" />
-        {!server.db && (
-          <p className="note">Bez databáze se hlídá výchozí profil „CRM a zákaznické portály“ se skóre 75+.</p>
-        )}
-      </div>
+      {(!server.cron || !server.email || !server.db) && (
+        <div className="warn">
+          {!server.db
+            ? "Bez databáze se hlídá jen výchozí profil „CRM a zákaznické portály“ se skóre 75+."
+            : "Ranní e-mail teď nechodí – co chybí, uvidíš v Nastavení → E-mailová upozornění."}
+        </div>
+      )}
 
       {server.db && (
         <>
@@ -4086,24 +4071,6 @@ function ContractWatch() {
     const icos = new Set(list.map((x) => x.ico));
     setFound((cur) => cur?.map((f) => ({ ...f, options: f.options.map((o) => (icos.has(o.ico) ? { ...o, watched: true } : o)) })) ?? cur);
     setMsg(d.added.length ? `Sleduješ: ${d.added.map((w: WatchedSubject) => w.name).join(", ")}.` : "Už sleduješ.");
-    reload();
-  }
-  async function add() {
-    setBusy("add");
-    setMsg("");
-    const res = await post("/api/contracts", { add: text });
-    const d = await res.json();
-    setBusy(null);
-    if (!res.ok) return setMsg(d.error ?? "Nepodařilo se");
-    setText("");
-    setMsg(
-      [
-        d.added.length ? `Přidáno: ${d.added.map((w: WatchedSubject) => `${w.name} (${w.ico})`).join(", ")}.` : "",
-        d.missing.length ? `Nenašel jsem: ${d.missing.join(", ")}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ") || "Nic nového – subjekty už sleduješ.",
-    );
     reload();
   }
   async function setFilter(w: WatchedSubject, filter: WatchedSubject["filter"] | null) {
@@ -4570,12 +4537,12 @@ function DataStatus() {
   const m = d.mail;
   return (
     <>
-      <h3 className="sec">Stav dat</h3>
-      <p className="note">
-        TED, NEN a Hlídač státu se čtou naživo při každém hledání. Tyhle zdroje se stahují dopředu, na pozadí – nic z toho
-        nejde do tvého počítače.
-      </p>
-      <DataDetails d={d} />
+      {d.refresh && (
+        <>
+          <h3 className="sec">Stažená data</h3>
+          <p className="note">Co je stažené, co se právě stahuje a kdy příště, vidíš na obrazovce Dnes.</p>
+        </>
+      )}
 
       {d.refresh && <RefreshAll r={d.refresh} running={d.running.length} reload={load} />}
 
@@ -4596,6 +4563,7 @@ function DataStatus() {
             </span>
           )}
           {!m.ready && <span className="warn-text">E-maily nejsou zapnuté (chybí RESEND_API_KEY nebo adresa).</span>}
+          {m.ready && !m.cron && <span className="warn-text">Chybí CRON_SECRET ve Vercelu – ranní běh se nespustí.</span>}
         </div>
         <div className="data-row">
           <div className="data-head">

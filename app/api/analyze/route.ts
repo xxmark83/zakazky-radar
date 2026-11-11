@@ -1,7 +1,6 @@
 import { pickModel } from "@/lib/ai";
 import { analyzeTender, draftOffer } from "@/lib/analyze";
 import { getReferences } from "@/lib/company";
-import { toDocs } from "@/lib/docs";
 import { addSpend, setKept } from "@/lib/store";
 import type { Analysis, Tender } from "@/lib/types";
 
@@ -18,7 +17,7 @@ export async function POST(req: Request) {
     tender: Tender;
     analysis?: Analysis | null;
     model?: string;
-    uploads?: { name: string; data: string }[]; // ručně nahraná dokumentace (base64), když ji nenajdeme sami
+    texts?: { name: string; text: string }[]; // podklady nahrané v detailu (text vytažený v prohlížeči)
   };
   const model = pickModel(body.model);
   try {
@@ -29,7 +28,10 @@ export async function POST(req: Request) {
             body.profile,
             body.tender,
             model,
-            (body.uploads ?? []).flatMap((u) => toDocs(u.name, "nahráno ručně", Buffer.from(u.data, "base64"))),
+            (body.texts ?? [])
+              .slice(0, 40)
+              .filter((d) => String(d.text).trim())
+              .map((d) => ({ name: String(d.name).slice(0, 200), type: "nahráno", text: String(d.text).slice(0, 200_000) })),
           );
     await Promise.all([
       addSpend(r.cost),

@@ -53,34 +53,6 @@ async function allowedFilter(filter: Watched["filter"]): Promise<Watched["filter
   return ok.length ? ok : a.presets ? allowed : "all";
 }
 
-// IČO → název, nebo název → IČO (ARES)
-async function ares(q: string): Promise<{ ico: string; name: string } | null> {
-  const headers = { "User-Agent": UA, "Content-Type": "application/json" };
-  const base = "https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty";
-  try {
-    if (/^\d{6,8}$/.test(q)) {
-      const ico = q.padStart(8, "0");
-      const res = await fetch(`${base}/${ico}`, { headers, signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) return null;
-      const d = await res.json();
-      return { ico, name: d.obchodniJmeno ?? ico };
-    }
-    const res = await fetch(`${base}/vyhledat`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ obchodniJmeno: q, pocet: 10 }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return null;
-    const list: { ico: string; obchodniJmeno: string }[] = (await res.json()).ekonomickeSubjekty ?? [];
-    const want = norm(q);
-    const hit = list.find((x) => norm(x.obchodniJmeno) === want) ?? list.find((x) => norm(x.obchodniJmeno).startsWith(want)) ?? list[0];
-    return hit ? { ico: hit.ico, name: hit.obchodniJmeno } : null;
-  } catch {
-    return null;
-  }
-}
-
 export type Candidate = { ico: string; name: string; address: string; watched: boolean };
 
 // ARES: IČO → jeden subjekt, název → až 6 nejbližších (ať si uživatel vybere správný)
@@ -136,25 +108,6 @@ export async function addSubjects(list: { ico: string; name: string }[]) {
   }
   await saveWatched([...cur, ...added]);
   return { added };
-}
-
-/** Přidat subjekty z jednoho políčka (IČO nebo názvy oddělené čárkou či novým řádkem). */
-export async function addWatched(text: string) {
-  const parts = text.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 30);
-  const list = await getWatched();
-  const added: Watched[] = [];
-  const missing: string[] = [];
-  for (const p of parts) {
-    const hit = await ares(p.replace(/\s/g, "").match(/^\d{6,8}$/) ? p.replace(/\s/g, "") : p);
-    if (!hit) {
-      missing.push(p);
-      continue;
-    }
-    if (list.some((w) => w.ico === hit.ico) || added.some((w) => w.ico === hit.ico)) continue;
-    added.push({ ...hit, filter: await allowedFilter("all"), added: new Date().toISOString().slice(0, 10) });
-  }
-  await saveWatched([...list, ...added]);
-  return { added, missing };
 }
 
 export async function updateWatched(ico: string, change: { filter?: Watched["filter"]; remove?: boolean }) {

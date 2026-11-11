@@ -1,5 +1,5 @@
 import { askCited, pickModel } from "@/lib/ai";
-import { fetchDocs } from "@/lib/docs";
+import { fetchDocs, type Doc } from "@/lib/docs";
 import { addSpend } from "@/lib/store";
 import type { Tender } from "@/lib/types";
 
@@ -12,10 +12,13 @@ a cituj je. Když odpověď v dokumentech není, napiš to otevřeně a navrhni,
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "Chybí ANTHROPIC_API_KEY." }, { status: 400 });
-  const body = (await req.json()) as { tender: Tender; question: string; model?: string };
+  const body = (await req.json()) as { tender: Tender; question: string; model?: string; texts?: { name: string; text: string }[] };
   if (!body.question?.trim()) return Response.json({ error: "Napiš otázku." }, { status: 400 });
   try {
-    const docs = await fetchDocs(body.tender);
+    const uploaded = (body.texts ?? []).filter((d) => String(d.text).trim()).slice(0, 40);
+    const docs: Doc[] = uploaded.length
+      ? uploaded.map((d) => ({ name: String(d.name).slice(0, 200), type: "nahráno", text: String(d.text).slice(0, 200_000) }))
+      : await fetchDocs(body.tender);
     if (!docs.length)
       return Response.json({ error: "Dokumentaci se nepodařilo stáhnout. Otevři zakázku na portálu a podívej se do ní tam." }, { status: 404 });
     const blocks = docs.map((d, i) => ({
@@ -30,6 +33,7 @@ export async function POST(req: Request) {
       model: pickModel(body.model),
       system: SYSTEM,
       content: [...blocks, { type: "text", text: `Zakázka: ${body.tender.title}\n\nOtázka: ${body.question.trim()}` }],
+      texts: docs.map((d) => ("text" in d ? d.text : "")),
     });
     await addSpend(r.cost).catch(() => {});
     return Response.json({ ...r.data, cost: r.cost, docs: docs.map((d) => d.name) });

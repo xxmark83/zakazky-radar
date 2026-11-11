@@ -55,7 +55,7 @@ export async function askJson<T>(opts: {
 export type Cited = { text: string; cites: { doc: string; where: string }[] };
 
 /** Odpověď volným textem s citacemi z přiložených dokumentů (otázky nad zadávací dokumentací). */
-export async function askCited(opts: { model: ModelChoice; system: string; content: object[] }): Promise<AiResult<Cited>> {
+export async function askCited(opts: { model: ModelChoice; system: string; content: object[]; texts?: string[] }): Promise<AiResult<Cited>> {
   const m = MODELS[opts.model];
   const response: any = await client.messages.create({
     model: m.id,
@@ -71,8 +71,19 @@ export async function askCited(opts: { model: ModelChoice; system: string; conte
     if (b.type !== "text") continue;
     text += b.text;
     for (const c of b.citations ?? []) {
+      // u textu z prohlížeče je strana ve značce „[str. N]“ před citovaným místem
+      const fromText = () => {
+        const src = opts.texts?.[c.document_index] ?? "";
+        const before = src.slice(0, c.start_char_index ?? 0);
+        const m = [...before.matchAll(/\[str\. (\d+)\]/g)].pop();
+        return m ? `str. ${m[1]}` : "text";
+      };
       const where =
-        c.type === "page_location" ? `str. ${c.start_page_number}${c.end_page_number - 1 > c.start_page_number ? `–${c.end_page_number - 1}` : ""}` : "text";
+        c.type === "page_location"
+          ? `str. ${c.start_page_number}${c.end_page_number - 1 > c.start_page_number ? `–${c.end_page_number - 1}` : ""}`
+          : c.type === "char_location"
+            ? fromText()
+            : "text";
       const doc = c.document_title ?? `dokument ${c.document_index + 1}`;
       if (!cites.some((x) => x.doc === doc && x.where === where)) cites.push({ doc, where });
     }

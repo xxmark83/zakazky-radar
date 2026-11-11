@@ -1,5 +1,5 @@
 import { accessFor, allowedPresets } from "@/lib/access";
-import { addSubjects, addWatched, checkContracts, lookupSubjects, getFeed, getWatched, passes, updateWatched, type Watched } from "@/lib/contracts";
+import { addSubjects, checkContracts, lookupSubjects, getFeed, getWatched, passes, updateWatched, type Watched } from "@/lib/contracts";
 import { redis } from "@/lib/store";
 
 export const maxDuration = 60;
@@ -24,7 +24,6 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!redis) return Response.json({ error: "Sledování potřebuje databázi (Upstash)." }, { status: 400 });
   const body = (await req.json()) as {
-    add?: string;
     lookup?: string;
     subjects?: { ico: string; name: string }[];
     ico?: string;
@@ -36,12 +35,6 @@ export async function POST(req: Request) {
   // krok 2: sledovat vybrané
   if (body.subjects) {
     const r = await addSubjects(body.subjects);
-    if (r.added.length) await checkContracts();
-    return Response.json(r);
-  }
-  if (body.add) {
-    const r = await addWatched(body.add);
-    // smlouvy nových subjektů za posledních 45 dní hned do přehledu (bez upozornění – nejsou nové)
     if (r.added.length) await checkContracts();
     return Response.json(r);
   }

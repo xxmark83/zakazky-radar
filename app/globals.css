@@ -825,6 +825,8 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .md-table .risk.mid { color: var(--mid); }
 .capabilities { min-height: 150px; }
 
+.pre-good { color: var(--good); } .pre-mid { color: var(--mid); } .pre-bad { color: var(--bad); }
+
 /* stav dat */
 .data-today { margin: 0 0 18px; }
 .data-today .mine-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }

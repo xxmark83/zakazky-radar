@@ -145,7 +145,22 @@ async function download(url: string, depth = 0): Promise<{ res: Response; bytes:
 }
 
 /** Stáhne nejdůležitější dokumenty zakázky (nejvýš 4, PDF dohromady do 20 MB). */
+// stažená dokumentace na 30 minut v paměti serveru: rozbor, Zvládneme to? a dotazy ke stejné zakázce
+// ji pak ze stránek zadavatele nestahují pokaždé znovu
+const docCache = new Map<string, { at: number; docs: Doc[] }>();
 export async function fetchDocs(t: Tender): Promise<Doc[]> {
+  const key = t.url || t.id;
+  const hit = docCache.get(key);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.docs;
+  const docs = await fetchDocsFresh(t);
+  if (docs.length) {
+    docCache.set(key, { at: Date.now(), docs });
+    while (docCache.size > 8) docCache.delete(docCache.keys().next().value!);
+  }
+  return docs;
+}
+
+async function fetchDocsFresh(t: Tender): Promise<Doc[]> {
   const out: Doc[] = [];
   let pdfBytes = 0;
   for (const ref of (await findDocs(t)).slice(0, 8)) {
