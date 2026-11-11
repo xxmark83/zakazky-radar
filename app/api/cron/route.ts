@@ -39,8 +39,11 @@ async function runFor(req: Request): Promise<string[]> {
       ? PRESETS.slice(0, 1).map((p) => ({ ...p, minScore: defaultMin, watch: true }))
       : [];
 
-  // s databází hlídáme delší okno a duplicity odfiltrujeme; bez ní jen poslední den
-  const days = redis ? 3 : 1;
+  // S databází hlídáme 30 dní zpět: část profilů se stahuje se zpožděním několika dní, takže zakázka,
+  // o které se dozvíme pozdě, by z krátkého okna vypadla a upozornění by nikdy nepřišlo. Co už e-mailem
+  // odešlo, si pamatujeme (filterUnseen), a AI skóre se berou z paměti – delší okno nestojí nic navíc.
+  // Bez databáze jen poslední den.
+  const days = redis ? 30 : 1;
   const groups: { profile: string; tenders: ScoredTender[] }[] = [];
   const log: string[] = [];
 
@@ -48,7 +51,8 @@ async function runFor(req: Request): Promise<string[]> {
     for (const mode of ["open", "upcoming"] as const) {
       try {
         const minScore = p.minScore || defaultMin;
-        const r = await runSearch({ ...p, mode, days, minScore });
+        // NEN naživo jen krátce, ať ranní běh stihne všechna hlídání (zakázky z NEN jsou i ve sběru profilů)
+        const r = await runSearch({ ...p, mode, days, minScore, nenBudgetMs: 20_000 });
         // bez AI klíče mají zakázky skóre -1 – e-mailem posíláme jen ohodnocené
         const good = r.results.filter((t) => t.score >= minScore);
         const fresh = await filterUnseen(good.map((t) => t.id));

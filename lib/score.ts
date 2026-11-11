@@ -56,28 +56,47 @@ async function scoreBatch(profile: string, batch: Tender[], model: ModelChoice) 
   const byId = new Map(data.results.map((r) => [r.id, r]));
   const tenders: ScoredTender[] = batch.map((t) => {
     const r = byId.get(t.id);
+    // AI některou zakázku vynechala: skóre -1 = nehodnoceno. Neukládá se, příští hledání ji pošle znovu
+    // (dřív dostala natrvalo 0 a už se nikdy neukázala).
+    if (!r) return { ...t, score: -1, product: "–", reason: "" };
     return {
       ...t,
-      score: r ? Math.max(0, Math.min(100, r.score)) : 0,
-      product: r?.product ?? "–",
-      reason: r?.reason ?? "AI nevrátila hodnocení",
-      region: r?.region ?? "neznámý",
+      score: Math.max(0, Math.min(100, r.score)),
+      product: r.product ?? "–",
+      reason: r.reason ?? "",
+      region: r.region ?? "neznámý",
     };
   });
   return { tenders, cost };
 }
 
+const PARALLEL = 4; // dávek najednou – víc naráz naráží na limit počtu dotazů API
+
 export async function scoreTenders(profile: string, tenders: Tender[], model: ModelChoice, onBatch?: (done: number, all: number) => void) {
   const batches: Tender[][] = [];
   for (let i = 0; i < tenders.length; i += BATCH) batches.push(tenders.slice(i, i + BATCH));
   let done = 0;
-  const results = await Promise.all(
-    batches.map((b) =>
-      scoreBatch(profile, b, model).then((r) => {
-        onBatch?.(++done, batches.length);
-        return r;
-      }),
-    ),
-  );
-  return { tenders: results.flatMap((r) => r.tenders), cost: results.reduce((a, r) => a + r.cost, 0) };
+  let next = 0;
+  let cost = 0;
+  let failed = 0; // zakázky z dávek, které selhaly – zůstanou nehodnocené, hledání kvůli nim nespadne
+  let error = "";
+  const out: ScoredTender[][] = [];
+  const worker = async () => {
+    while (next < batches.length) {
+      const i = next++;
+      try {
+        const r = await scoreBatch(profile, batches[i], model);
+        out[i] = r.tenders;
+        cost += r.cost;
+      } catch (e: any) {
+        out[i] = batches[i].map((t) => ({ ...t, score: -1, product: "–", reason: "" }));
+        failed += batches[i].length;
+        error = String(e?.message ?? e);
+      }
+      onBatch?.(++done, batches.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, batches.length) }, worker));
+  const all = out.flat();
+  return { tenders: all, cost, failed, error, skipped: all.filter((t) => t.score < 0).length - failed };
 }

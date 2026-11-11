@@ -52,6 +52,21 @@ export async function saveScores(key: string, scores: Record<string, Score>) {
   if (redis && Object.keys(scores).length) await redis.hset(await K.scores(key), scores);
 }
 
+// Stálé id zakázky napříč zdroji (lib/dedupe.ts): hash klíč -> id. Společné pro všechny účty.
+const CANON = "zr:canon";
+export async function getCanon(fields: string[]): Promise<Record<string, string>> {
+  if (!redis || !fields.length) return {};
+  const out: Record<string, string> = {};
+  for (let i = 0; i < fields.length; i += 500) {
+    const vals = await redis.hmget<Record<string, string>>(CANON, ...fields.slice(i, i + 500));
+    for (const [f, v] of Object.entries(vals ?? {})) if (v) out[f] = String(v);
+  }
+  return out;
+}
+export async function saveCanon(map: Record<string, string>) {
+  if (redis && Object.keys(map).length) await redis.hset(CANON, map);
+}
+
 const month = () => new Date().toISOString().slice(0, 7);
 export async function addSpend(usd: number) {
   if (redis && usd > 0) await redis.incrbyfloat(await K.spend(month()), usd);

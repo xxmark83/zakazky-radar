@@ -38,8 +38,9 @@ export const terms = (keywords: string[]) => {
     .flatMap((k) => k.split(/\s+/))
     .filter((w) => w.length >= 3 && !STOP.has(w.toLowerCase()))
     .map((w) => (w.length >= 8 ? w.slice(0, -2) : w).toLowerCase());
-  // víc oblastí najednou = víc slov; NEN se ptáme postupně, 24 slov se vejde do limitu hledání
-  return [...new Set([...words, ...ALWAYS])].slice(0, 24);
+  // víc oblastí najednou = víc slov; NEN se ptáme postupně, 24 slov se vejde do limitu hledání.
+  // Obecná IT slova jdou první, aby je limit nikdy neodřízl. (Naše stažená data limit nemají – lib/match.ts.)
+  return [...new Set([...ALWAYS, ...words])].slice(0, 24);
 };
 
 async function page(term: string, n: number) {
@@ -55,14 +56,20 @@ async function page(term: string, n: number) {
   return rows;
 }
 
-export async function fetchNen(opts: { keywords: string[] }): Promise<Tender[]> {
+// budgetMs: jedna stránka NEN trvá kolem 5 s, 24 slov po dvou stránkách by zabralo až 4 minuty.
+// Po vyčerpání času vrátíme, co máme – stejné zakázky jsou i v denním sběru profilů (nen.nipez.cz/profil/…).
+export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }): Promise<Tender[]> {
   const today = new Date().toISOString().slice(0, 10);
+  const stopAt = Date.now() + (opts.budgetMs ?? 90_000);
   const seen = new Map<string, Tender>();
 
   // NEN při souběžných dotazech vrací 503 – ptáme se postupně a chybu jednoho slova přeskočíme
   const list = terms(opts.keywords);
   let failed = 0;
+  let asked = 0;
   for (const term of list) {
+    if (Date.now() > stopAt) break;
+    asked++;
     try {
       for (const n of [1, 2]) {
         const rows = await page(term, n);
@@ -93,6 +100,6 @@ export async function fetchNen(opts: { keywords: string[] }): Promise<Tender[]> 
       failed++;
     }
   }
-  if (failed === list.length) throw new Error("NEN neodpovídá");
+  if (failed === asked) throw new Error("NEN neodpovídá");
   return [...seen.values()];
 }

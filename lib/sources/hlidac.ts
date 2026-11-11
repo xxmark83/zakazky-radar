@@ -23,34 +23,42 @@ export async function fetchHlidac(opts: {
   const today = new Date().toISOString().slice(0, 10);
   const seen = new Map<string, Tender>();
 
-  for (const kw of opts.keywords.slice(0, 8)) {
+  // všechna hesla (dřív jen prvních 8 – při více oblastech najednou se zbylé vůbec nehledaly);
+  // stránka má 25 zakázek, nově zveřejněné první, bereme nejvýš 3 stránky na heslo
+  const rows: any[] = [];
+  for (const kw of [...new Set(opts.keywords)].slice(0, 40)) {
     const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
-    const q = new URLSearchParams({ dotaz: `${early}${kw}`, zverejnenoOd: since, strana: "1", razeni: "1" });
-    // fronta s limitem dotazů; stejný dotaz se hodinu bere z paměti
-    const data = await hlidacGet(`${URL}?${q}`, 3600);
-    const rows: any[] = data.results ?? data.Results ?? [];
-    for (const r of rows) {
-      const id = String(first(r.id, r.Id) ?? "");
-      if (!id || seen.has(`hs-${id}`)) continue;
-      const s = r.souhrn ?? {};
-      const deadline = day(first(s.lhutaDoruceni, s.lhutaPrihlaseni));
-      if (opts.kind === "open" && deadline && deadline < today) continue;
-      const value = Number(first(s.predpokladanaHodnotaBezDPH, r.predpokladanaHodnotaBezDPHVCZK, s.konecnaHodnotaBezDPH));
-      seen.set(`hs-${id}`, {
-        id: `hs-${id}`,
-        source: "Hlídač státu",
-        kind: opts.kind,
-        title: first(r.nazevVerejneZakazky) ?? "(bez názvu)",
-        buyer: first(s.nazevZadavatele) ?? "",
-        published: day(s.datumUverejneni),
-        deadline,
-        value: Number.isFinite(value) && value > 0 ? value : null,
-        currency: value ? (s.mena ?? "CZK") : null,
-        cpv: (s.cpvKody ?? []).filter((c: unknown) => typeof c === "string"),
-        description: String(first(r.predmet?.popisPredmetu) ?? "").slice(0, 1500),
-        url: `https://www.hlidacstatu.cz/verejnezakazky/zakazka/${id}`,
-      });
+    for (let page = 1; page <= 3; page++) {
+      const q = new URLSearchParams({ dotaz: `${early}${kw}`, zverejnenoOd: since, strana: String(page), razeni: "1" });
+      // fronta s limitem dotazů; stejný dotaz se hodinu bere z paměti
+      const data = await hlidacGet(`${URL}?${q}`, 3600);
+      const part: any[] = data.results ?? data.Results ?? [];
+      rows.push(...part);
+      const total = Number(data.total ?? data.Total);
+      if (part.length < 25 || (Number.isFinite(total) && total <= page * 25)) break;
     }
+  }
+  for (const r of rows) {
+    const id = String(first(r.id, r.Id) ?? "");
+    if (!id || seen.has(`hs-${id}`)) continue;
+    const s = r.souhrn ?? {};
+    const deadline = day(first(s.lhutaDoruceni, s.lhutaPrihlaseni));
+    if (opts.kind === "open" && deadline && deadline < today) continue;
+    const value = Number(first(s.predpokladanaHodnotaBezDPH, r.predpokladanaHodnotaBezDPHVCZK, s.konecnaHodnotaBezDPH));
+    seen.set(`hs-${id}`, {
+      id: `hs-${id}`,
+      source: "Hlídač státu",
+      kind: opts.kind,
+      title: first(r.nazevVerejneZakazky) ?? "(bez názvu)",
+      buyer: first(s.nazevZadavatele) ?? "",
+      published: day(s.datumUverejneni),
+      deadline,
+      value: Number.isFinite(value) && value > 0 ? value : null,
+      currency: value ? (s.mena ?? "CZK") : null,
+      cpv: (s.cpvKody ?? []).filter((c: unknown) => typeof c === "string"),
+      description: String(first(r.predmet?.popisPredmetu) ?? "").slice(0, 1500),
+      url: `https://www.hlidacstatu.cz/verejnezakazky/zakazka/${id}`,
+    });
   }
   return [...seen.values()];
 }
