@@ -347,6 +347,26 @@ export default function Home() {
     };
   }, [detailOpen]);
 
+  // upozornění na telefonu vede na /?z=<id zakázky>: otevřít rovnou její detail
+  const [linked, setLinked] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get("z");
+    if (!id) return;
+    setLinked(id);
+    history.replaceState(history.state, "", location.pathname);
+  }, []);
+  useEffect(() => {
+    if (!linked || !ready) return;
+    const local = marked[linked] ?? load<ScoredTender[]>("zr-results", []).find((t) => t.id === linked) ?? buyers.tenders.find((t) => t.id === linked);
+    setLinked(null);
+    if (local) return setDetail(local);
+    // zakázku z ranního běhu prohlížeč ještě nezná – vezme se ze serveru
+    fetch(`/api/tender?id=${encodeURIComponent(linked)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => (d?.tender ? setDetail(d.tender) : setToast({ text: "Zakázku z upozornění se nepodařilo najít – zkus Hledat znovu." })))
+      .catch(() => {});
+  }, [linked, ready]);
+
   // poslední návštěva: co je novější, je „nové od minula“. Pauza nad 30 min = nová návštěva.
   const [since, setSince] = useState<string | null>(null);
   useEffect(() => {
@@ -1144,6 +1164,10 @@ function SearchTab(props: {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("all");
   const [sort, setSort] = useState<Sort>("score");
+  // hustý seznam (řádky) pro rychlé projití stovek zakázek na počítači; na telefonu jsou karty kompaktní vždy
+  const [dense, setDense] = useState(false);
+  // jednorázová nápověda k potažení karty (jen telefon)
+  const [swipeHint, setSwipeHint] = useState(false);
   const [region, setRegion] = useState("all");
   const [value, setValue] = useState<ValueRange>("all");
   const abort = useRef<AbortController | null>(null);
@@ -1152,6 +1176,8 @@ function SearchTab(props: {
     setResults(loadResults());
     setFresh(new Set(load<string[]>("zr-fresh", [])));
     setSort(load("zr-sort", "score"));
+    setDense(load("zr-dense", false));
+    setSwipeHint(!load("zr-swipe-hint", 0));
     setRegion(load("zr-region", "all"));
     setValue(load("zr-value", "all"));
   }, []);
@@ -1435,9 +1461,22 @@ function SearchTab(props: {
                 </button>
               ))}
             </div>
-            <button className="ghost" onClick={() => exportCsv(shown)} disabled={!shown.length} title="Stáhnout zobrazené zakázky pro Excel">
-              <Icon n="download" /> Excel
-            </button>
+            <div className="filterbar-tools">
+              <button
+                className={`ghost dense-toggle ${dense ? "on" : ""}`}
+                onClick={() => {
+                  setDense(!dense);
+                  save("zr-dense", !dense);
+                }}
+                aria-pressed={dense}
+                title={dense ? "Zobrazit karty s popisem" : "Zobrazit hustý seznam – víc zakázek najednou"}
+              >
+                {dense ? "Karty" : "Řádky"}
+              </button>
+              <button className="ghost" onClick={() => exportCsv(shown)} disabled={!shown.length} title="Stáhnout zobrazené zakázky pro Excel">
+                <Icon n="download" /> Excel
+              </button>
+            </div>
           </div>
           <button className={`filter-btn ${active ? "on" : ""}`} onClick={() => setSheet(true)}>
             <Icon n="search" size={15} />
@@ -1516,7 +1555,21 @@ function SearchTab(props: {
           </div>
         </div>
       )}
-      <div className="list">
+      {swipeHint && shown.length > 0 && !loading && (
+        <button
+          className="swipe-hint"
+          onClick={() => {
+            setSwipeHint(false);
+            save("zr-swipe-hint", 1);
+          }}
+        >
+          <span>
+            Potáhni kartu <b>doprava = Zvažuji</b>, <b>doleva = Ne</b>. Ťuknutím otevřeš detail.
+          </span>
+          <b>Rozumím</b>
+        </button>
+      )}
+      <div className={`list ${dense ? "dense" : ""}`}>
         {loading && [0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}
         {!loading &&
           [newer, older].map((group, i) =>
@@ -2143,6 +2196,18 @@ function Detail(props: {
           <button className="icon" onClick={close} aria-label="Zavřít">
             ×
           </button>
+        </div>
+        {/* telefon: rozhodnutí pořád u palce, ať se pro něj nemusí rolovat zpátky nahoru */}
+        <div className="detail-bar" role="group" aria-label="Co s zakázkou">
+          {ACTIONS.map(({ s, label, icon }) => (
+            <button key={s} className={`${s} ${status === s ? "on" : ""}`} onClick={() => setStatus(t, status === s ? "new" : s)} aria-pressed={status === s}>
+              <Icon n={icon} size={16} />
+              {label}
+            </button>
+          ))}
+          <a className="open" href={t.url} target="_blank" rel="noreferrer" aria-label="Otevřít zakázku u zadavatele" title="Otevřít zakázku">
+            ↗
+          </a>
         </div>
         <h2 className="drawer-title" id="d-top">
           {t.title || "(bez názvu)"}
@@ -3222,7 +3287,7 @@ function TodayTab(props: {
     <>
       <div className="today-chips">
         {chips.map((x) => (
-          <button key={x.l} className={x.v ? "has" : ""} onClick={x.go} disabled={!x.go}>
+          <button key={x.l} className={x.v ? "has" : "zero"} onClick={x.go} disabled={!x.go}>
             <b>{x.v}</b> {x.l}
           </button>
         ))}

@@ -6,7 +6,7 @@ import { sendPush } from "@/lib/push";
 import { buyerTenders, competitorWins } from "@/lib/watch";
 import { PRESETS } from "@/lib/presets";
 import { runSearch } from "@/lib/search";
-import { addSpend, filterUnseen, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
+import { addSpend, filterUnseen, keepAlerted, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
 import { changesFromProfily } from "@/lib/track";
 import type { Award, Change, Outcome, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 import { currentUser, userKey, users, withUser } from "@/lib/users";
@@ -161,17 +161,20 @@ async function runFor(req: Request): Promise<string[]> {
     const count = groups.reduce((n, g) => n + g.tenders.length, 0);
     const best = groups.flatMap((g) => g.tenders).sort((a, b) => b.score - a.score)[0];
     let pushed = 0;
+    // ťuknutí na upozornění otevře rovnou detail zakázky (/?z=id), ne jen úvodní stránku
+    const link = (t: { id: string }) => `/?z=${encodeURIComponent(t.id)}`;
+    await keepAlerted([...groups.flatMap((g) => g.tenders), ...buyerNews.flatMap((g) => g.tenders)]).catch(() => {});
     if (count)
       pushed += await sendPush({
         title: `${count} ${count === 1 ? "nová zakázka" : count < 5 ? "nové zakázky" : "nových zakázek"}`,
         body: best ? `${best.score} – ${best.title}` : "",
-        url: "/",
+        url: best ? link(best) : "/",
         tag: "nove",
       });
     for (const t of deadlines.filter((x) => x.deadline! <= new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10)))
-      pushed += await sendPush({ title: "Blíží se lhůta", body: `${t.deadline!.split("-").reverse().join(". ")} – ${t.title}`, url: "/", tag: `lhuta-${t.id}` });
+      pushed += await sendPush({ title: "Blíží se lhůta", body: `${t.deadline!.split("-").reverse().join(". ")} – ${t.title}`, url: link(t), tag: `lhuta-${t.id}` });
     for (const g of buyerNews)
-      pushed += await sendPush({ title: g.buyer, body: `Nová zakázka: ${g.tenders[0].title}`, url: "/", tag: `zadavatel-${g.buyer}` });
+      pushed += await sendPush({ title: g.buyer, body: `Nová zakázka: ${g.tenders[0].title}`, url: link(g.tenders[0]), tag: `zadavatel-${g.buyer}` });
     for (const [subject, list] of Object.entries(Object.groupBy(contractNews, (c) => c.subject)))
       pushed += await sendPush({
         title: `${subject}: ${list!.length === 1 ? "nová smlouva" : `${list!.length} nové smlouvy`}`,
@@ -183,7 +186,7 @@ async function runFor(req: Request): Promise<string[]> {
       pushed += await sendPush({
         title: "Za 2 dny končí lhůta na dotazy",
         body: `${t.title}${estimated ? " (odhad – ověř v dokumentaci)" : ""}`,
-        url: "/",
+        url: link(t),
         tag: `dotazy-${t.id}`,
       });
     for (const c of competitorNews)
