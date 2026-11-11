@@ -23,15 +23,17 @@ export async function fetchHlidac(opts: {
   const today = new Date().toISOString().slice(0, 10);
   const seen = new Map<string, Tender>();
 
-  // všechna hesla (dřív jen prvních 8 – při více oblastech najednou se zbylé vůbec nehledaly);
-  // stránka má 25 zakázek, nově zveřejněné první, bereme nejvýš 3 stránky na heslo
+  // Hlídač státu počítá každý dotaz (zkušební přístup jich má jen 50, placený je také omezený), proto se hesla
+  // neposílají po jednom, ale spojená přes OR po deseti: 43 hesel = 5 dotazů místo 43. Stránka má 25 zakázek,
+  // nově zveřejněné první; druhá stránka jen když první nestačila. Stejný dotaz se 6 hodin bere z paměti.
   const rows: any[] = [];
-  for (const kw of [...new Set(opts.keywords)].slice(0, 40)) {
-    const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
-    for (let page = 1; page <= 3; page++) {
-      const q = new URLSearchParams({ dotaz: `${early}${kw}`, zverejnenoOd: since, strana: String(page), razeni: "1" });
-      // fronta s limitem dotazů; stejný dotaz se hodinu bere z paměti
-      const data = await hlidacGet(`${URL}?${q}`, 3600);
+  const words = [...new Set(opts.keywords.map((k) => k.replace(/["()]/g, "").trim()).filter(Boolean))].slice(0, 60);
+  const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
+  for (let i = 0; i < words.length; i += 10) {
+    const any = words.slice(i, i + 10).map((k) => (k.includes(" ") ? `(${k})` : k)).join(" OR ");
+    for (let page = 1; page <= 2; page++) {
+      const q = new URLSearchParams({ dotaz: `${early}(${any})`, zverejnenoOd: since, strana: String(page), razeni: "1" });
+      const data = await hlidacGet(`${URL}?${q}`, 6 * 3600);
       const part: any[] = data.results ?? data.Results ?? [];
       rows.push(...part);
       const total = Number(data.total ?? data.Total);

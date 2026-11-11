@@ -5,7 +5,7 @@ import { questionsDeadline } from "@/lib/bidmath";
 import { checkContracts, type SignedContract } from "@/lib/contracts";
 import { sendPush } from "@/lib/push";
 import { buyerTenders, competitorWins } from "@/lib/watch";
-import { PRESETS } from "@/lib/presets";
+import { PRESETS, upgradeProfile } from "@/lib/presets";
 import { runSearch } from "@/lib/search";
 import { addSpend, filterUnseen, keepAlerted, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
 import { changesFromProfily } from "@/lib/track";
@@ -33,7 +33,8 @@ export async function GET(req: Request) {
 
 async function runFor(req: Request, started: number): Promise<string[]> {
   const defaultMin = Number(process.env.WATCH_MIN_SCORE) || 75;
-  const saved = (await getProfiles()).filter((p) => p.watch);
+  // hlídání uložená se starými klíčovými slovy oblasti hledají s novými (ručně upravená se nemění)
+  const saved = (await getProfiles()).filter((p) => p.watch).map(upgradeProfile);
   // bez vlastních hlídání dostane výchozí profil jen vlastník (ostatním by AI zbytečně pálila kredit)
   const profiles: WatchedProfile[] = saved.length
     ? saved
