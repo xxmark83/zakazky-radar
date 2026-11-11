@@ -619,6 +619,7 @@ export default function Home() {
           </aside>
         )}
         <div className="content">
+          {tab === "today" && <DataStrip open={() => setSettings(true)} />}
           {tab === "today" && (
             <TodayTab
               key={synced}
@@ -4429,6 +4430,49 @@ function DataStatus() {
         {msg && <span className="note">{msg}</span>}
       </div>
     </>
+  );
+}
+
+// krátký přehled stavu dat na obrazovce Dnes
+const SHORT_NAME: Record<string, string> = { profily: "Profily", vhodne: "Vhodné uveřejnění", isvz: "ISVZ", dns: "DNS", smlouvy: "Registr smluv" };
+function DataStrip({ open }: { open: () => void }) {
+  const [d, setD] = useState<DataStatusRes | null>(null);
+  const load = () =>
+    fetch("/api/datastatus")
+      .then((r) => r.json())
+      .then((x) => x.datasets && setD(x))
+      .catch(() => {});
+  useEffect(() => {
+    load();
+  }, []);
+  useEffect(() => {
+    if (!d?.running.length) return;
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, [d?.running.length]);
+  if (!d) return null;
+  const macBusy = d.refresh?.request && d.refresh.request.id !== d.refresh.done?.id;
+  const late = d.datasets.filter((x) => x.late);
+  return (
+    <button className="data-strip" onClick={open} title="Podrobnosti v Nastavení → Stav dat">
+      <span className="ds-title">
+        <span className={`live ${d.running.length || macBusy ? "" : late.length ? "bad" : "idle"}`} aria-hidden="true" />
+        Data
+      </span>
+      {d.running.map((r) => (
+        <span key={r.url} className="ds-chip run">
+          stahuje se {r.name.replace(/^Sběr zakázek z /, "").replace(/^IT smlouvy z /, "")} ({when(r.started).replace("před ", "")})
+        </span>
+      ))}
+      {macBusy && <span className="ds-chip run">Mac: celé stažení čeká nebo běží</span>}
+      {d.datasets
+        .filter((x) => x.id !== "dns")
+        .map((x) => (
+          <span key={x.id} className={`ds-chip ${x.late ? "late" : ""}`}>
+            {SHORT_NAME[x.id] ?? x.name} <small>{when(x.updated)}</small>
+          </span>
+        ))}
+    </button>
   );
 }
 

@@ -792,6 +792,14 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .cw-found .link { justify-self: start; }
 
 /* stav dat */
+.data-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; width: 100%; height: auto; margin: 0 0 14px; padding: 9px 12px; text-align: left; font-size: 13px; font-weight: 500; white-space: normal; border-radius: 12px; }
+.ds-title { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; margin-right: 4px; }
+.ds-chip { padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--text, inherit); }
+.ds-chip small { color: var(--muted); font-weight: 400; }
+.ds-chip.run { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.ds-chip.late { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.live.idle { animation: none; opacity: .7; }
+.live.bad { background: var(--bad); animation: none; }
 .data-list { display: grid; gap: 8px; }
 .data-row { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 14px; }
 .data-row.late { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
