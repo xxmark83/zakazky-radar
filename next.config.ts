@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // číslo verze v patičce a v Nastavení – při každém vydání zvýšit v package.json
   env: { APP_VERSION: pkg.version },
   // zakázky z profilů zadavatelů (plní GitHub Actions, scripts/crawl.mjs) čteme za běhu ze souboru
-  outputFileTracingIncludes: { "/api/**": ["./data/profily.json", "./data/vhodne.json", "./data/isvz-vysledky.json", "./data/isvz-dns.json", "./data/smlouvy-it.json"] },
+  outputFileTracingIncludes: { "/api/**": ["./data/profily.json", "./data/vhodne.json", "./data/isvz-vysledky.json", "./data/isvz-dns.json", "./data/smlouvy-it.json"], "/api/guide/**": ["./guide/**"] },
   // bezpečnostní hlavičky: žádné vkládání do cizích rámů, skripty a data jen z vlastní domény,
   // žádný přístup ke kameře/mikrofonu/poloze. Inline skripty potřebuje Next.js a nastavení vzhledu.
   async headers() {

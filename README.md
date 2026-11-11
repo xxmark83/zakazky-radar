@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.33.0** – Návody k funkcím v Nastavení: 12 obrázkových videí krok za krokem (přiblížení, zvýraznění, automatické přehrávání, šipky a mezerník), jen pro správce – snímky v `guide/`, vydává je `/api/guide` jen vlastníkovi. Nové snímky: `node scripts/guide-shots.cjs` (popis v souboru).
 - **1.32.0** – Firma a reference (IČO → ARES, knihovna referencí), krycí list, čestné prohlášení (§ 74) a seznam referencí do Wordu jedním klikem, AI vybírá reference do návrhu nabídky, „Zeptej se dokumentace“ s odkazem na stranu, lhůta na dotazy v detailu, kalendáři a push 2 dny předem, ranní AI rozbor nejlepších zakázek s verdiktem v e-mailu, odhad šance na výhru, průzkum trhu podle kraje s průměrnou cenou vítěze.
 - **1.31.1** – útrata za AI počítá i vyšší cenu Haiku 5.5 u vstupu nad 100 tis. tokenů (velká dokumentace).
 - **1.31** – smlouvy sledovaných subjektů: jedno políčko na IČO nebo názvy (ARES), každé ráno nové uzavřené smlouvy

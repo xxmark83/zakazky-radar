@@ -1,6 +1,8 @@
 "use client";
 
 import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { GuideChapter } from "@/lib/guide";
 import { makeDocx, type Block } from "@/lib/docx";
 import { questionsDeadline, winChance } from "@/lib/bidmath";
 import { coverSheet, eligibility, referenceList } from "@/lib/templates";
@@ -51,6 +53,13 @@ const ICONS = {
   radar: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-4a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm0-6 7-7",
   home: "M3 11 12 3l9 8M5 10v10h5v-6h4v6h5V10",
   eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  play: "M8 5v14l11-7z",
+  pause: "M8 5v14M16 5v14",
+  prev: "M6 5v14M19 5 9 12l10 7z",
+  next: "M18 5v14M5 5l10 7-10 7z",
+  file: "M14 3H6v18h12V7zM14 3v4h4M9 13h6M9 17h6",
+  chat: "M4 5h16v11H9l-5 4z",
+  mail: "M3 6h18v12H3zM3 7l9 6 9-6",
   calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
 };
 type IconName = keyof typeof ICONS;
@@ -756,6 +765,8 @@ function Settings(props: {
             ×
           </button>
         </div>
+        {server.owner && <GuideList />}
+
         <h3 className="sec">Vzhled</h3>
         <div className="flow">
           {(Object.keys(THEMES) as Theme[]).map((t) => (
@@ -4103,6 +4114,201 @@ function EventList({ events, who }: { events: { at: string; user?: string; event
 }
 
 // Správa účtů (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová slova
+// ---------- obrázkové návody (jen správce) ----------
+const stepMs = (text: string) => 4500 + text.length * 45;
+
+function GuideList() {
+  const [chapters, setChapters] = useState<GuideChapter[] | null>(null);
+  const [open, setOpen] = useState<{ ci: number; all: boolean } | null>(null);
+  useEffect(() => {
+    fetch("/api/guide")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.chapters && setChapters(d.chapters))
+      .catch(() => {});
+  }, []);
+  if (!chapters) return null;
+  const total = chapters.reduce((a, c) => a + c.steps.reduce((b, st) => b + stepMs(st.text), 0), 0);
+  return (
+    <>
+      <h3 className="sec">Návody k funkcím</h3>
+      <p className="note">
+        Krátká obrázková videa krok za krokem. Vidíš je jen ty jako správce. Doporučené pořadí je shora, celé to trvá asi{" "}
+        {Math.round(total / 60000)} minut.
+      </p>
+      <button className="primary guide-all" onClick={() => setOpen({ ci: 0, all: true })}>
+        <Icon n="play" size={15} /> Přehrát všechno
+      </button>
+      <div className="guide-grid">
+        {chapters.map((c, i) => (
+          <button key={c.id} className="guide-tile" onClick={() => setOpen({ ci: i, all: false })}>
+            <span className="guide-ic">
+              <Icon n={(c.icon in ICONS ? c.icon : "sparkle") as IconName} size={18} />
+            </span>
+            <span>
+              <b>
+                {i + 1}. {c.title}
+              </b>
+              <span className="hint">
+                {c.intro} {c.steps.length} {c.steps.length === 1 ? "krok" : c.steps.length < 5 ? "kroky" : "kroků"}, asi{" "}
+                {Math.max(1, Math.round(c.steps.reduce((a, st) => a + stepMs(st.text), 0) / 1000 / 10) * 10)} s
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+      {open && <GuidePlayer chapters={chapters} start={open.ci} all={open.all} close={() => setOpen(null)} />}
+    </>
+  );
+}
+
+function GuidePlayer({ chapters, start, all, close }: { chapters: GuideChapter[]; start: number; all: boolean; close: () => void }) {
+  const [ci, setCi] = useState(start);
+  const [si, setSi] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [done, setDone] = useState(false);
+  const [zoom, setZoom] = useState(false);
+  const [run, setRun] = useState(0); // nové spuštění animace kroku
+  const ch = chapters[ci];
+  const step = ch.steps[si];
+
+  useEffect(() => {
+    setZoom(false);
+    const id = setTimeout(() => setZoom(true), 350);
+    // další obrázek načíst dopředu
+    const nx = ch.steps[si + 1] ?? chapters[ci + 1]?.steps[0];
+    if (nx) new Image().src = `/api/guide/${nx.img}.jpg`;
+    return () => clearTimeout(id);
+  }, [ci, si, run]);
+
+  function go(c: number, st: number) {
+    setDone(false);
+    setCi(c);
+    setSi(st);
+    setRun((r) => r + 1);
+  }
+  function next() {
+    if (si + 1 < ch.steps.length) return go(ci, si + 1);
+    if (all && ci + 1 < chapters.length) return go(ci + 1, 0);
+    setDone(true);
+    setPlaying(false);
+  }
+  function prev() {
+    if (si > 0) return go(ci, si - 1);
+    if (ci > 0) return go(ci - 1, chapters[ci - 1].steps.length - 1);
+    go(ci, 0);
+  }
+  // klávesy: šipky, mezerník, Esc (zachytit dřív, než zavřou Nastavení)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key;
+      if (!["Escape", "ArrowLeft", "ArrowRight", " "].includes(k)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (k === "Escape") close();
+      else if (k === "ArrowRight") next();
+      else if (k === "ArrowLeft") prev();
+      else setPlaying((p) => !p);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+
+  const b = step.box;
+  // přiblížení na zvýrazněné místo (jako kamera ve videu)
+  const scale = b ? Math.min(1.7, Math.max(1, 0.6 / Math.max(b[2] / 100, (b[3] / 100) * 0.8))) : 1;
+  const ox = b ? b[0] + b[2] / 2 : 50;
+  const oy = b ? b[1] + b[3] / 2 : 50;
+  const ms = stepMs(step.text);
+
+  return createPortal(
+    <div className="guide-bg" onClick={(e) => (e.stopPropagation(), close())}>
+      <div className="guide-player" role="dialog" aria-modal="true" aria-label={`Návod: ${ch.title}`} onClick={(e) => e.stopPropagation()}>
+        <div className="guide-bars" aria-hidden="true">
+          {ch.steps.map((_, i) => (
+            <span key={i}>
+              <i
+                key={`${ci}-${i}-${run}`}
+                className={i < si || (i === si && done) ? "full" : i === si ? "run" : ""}
+                style={i === si && !done ? { animationDuration: `${ms}ms`, animationPlayState: playing ? "running" : "paused" } : undefined}
+                onAnimationEnd={i === si ? next : undefined}
+              />
+            </span>
+          ))}
+        </div>
+        <div className="guide-stage" onClick={() => setPlaying((p) => !p)}>
+          <div
+            key={`${ci}-${si}`}
+            className="guide-cam"
+            style={{ transformOrigin: `${ox}% ${oy}%`, transform: zoom ? `scale(${scale})` : "scale(1)" }}
+          >
+            <img src={`/api/guide/${step.img}.jpg`} alt={step.title} draggable={false} />
+            {b && (
+              <span
+                className={`guide-spot ${zoom ? "on" : ""}`}
+                style={{ left: `${b[0]}%`, top: `${b[1]}%`, width: `${b[2]}%`, height: `${b[3]}%` }}
+              />
+            )}
+            {b && zoom && (
+              <span className="guide-cursor" style={{ left: `${Math.min(b[0] + b[2] * 0.5, 96)}%`, top: `${Math.min(b[1] + Math.min(b[3] * 0.5, 6), 96)}%` }}>
+                <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+                  <path d="M4 2l16 9-7 1.6L9.6 20z" fill="#fff" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
+                </svg>
+              </span>
+            )}
+          </div>
+          {!playing && !done && (
+            <span className="guide-paused" aria-hidden="true">
+              <Icon n="play" size={30} />
+            </span>
+          )}
+          {done && (
+            <div className="guide-end" onClick={(e) => e.stopPropagation()}>
+              <b>Hotovo: {ch.title}</b>
+              <div className="row-btns">
+                <button onClick={() => (go(ci, 0), setPlaying(true))}>Znovu</button>
+                {ci + 1 < chapters.length && (
+                  <button className="primary" style={{ marginTop: 0 }} onClick={() => (go(ci + 1, 0), setPlaying(true))}>
+                    Další: {chapters[ci + 1].title}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="guide-cap">
+          <span className="hint">
+            {ci + 1}. {ch.title}, krok {si + 1} z {ch.steps.length}
+          </span>
+          <b>{step.title}</b>
+          <p>{step.text}</p>
+        </div>
+        <div className="guide-ctl">
+          <button className="icon" onClick={prev} aria-label="Předchozí krok">
+            <Icon n="prev" size={16} />
+          </button>
+          <button className="icon play" onClick={() => (done ? (go(ci, 0), setPlaying(true)) : setPlaying((p) => !p))} aria-label={playing ? "Pozastavit" : "Přehrát"}>
+            <Icon n={playing ? "pause" : "play"} size={18} />
+          </button>
+          <button className="icon" onClick={next} aria-label="Další krok">
+            <Icon n="next" size={16} />
+          </button>
+          <select value={ci} onChange={(e) => go(Number(e.target.value), 0)} aria-label="Návod">
+            {chapters.map((c, i) => (
+              <option key={c.id} value={i}>
+                {i + 1}. {c.title}
+              </option>
+            ))}
+          </select>
+          <button className="icon" onClick={close} aria-label="Zavřít">
+            ×
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function AdminPanel() {
   const ask = useContext(ReauthCtx);
   const [list, setList] = useState<{ name: string; email: boolean; access: Access; twoFa: boolean; hashed: boolean }[] | null>(null);

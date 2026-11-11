@@ -766,6 +766,47 @@ a.hist-row.contract { text-decoration: none; color: inherit; }
 a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .hist-title { line-height: 1.4; }
 
+/* obrázkové návody */
+.guide-all { margin: 4px 0 10px; display: inline-flex; align-items: center; gap: 8px; }
+.guide-grid { display: grid; gap: 8px; grid-template-columns: 1fr; }
+.guide-tile { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 10px 12px; height: auto; white-space: normal; }
+.guide-tile b { display: block; font-size: 14px; margin-bottom: 2px; }
+.guide-tile .hint { display: block; font-weight: 400; line-height: 1.35; }
+.guide-ic { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--soft); color: var(--accent); }
+.guide-bg { position: fixed; inset: 0; z-index: 50; background: rgba(6, 8, 12, .82); display: grid; place-items: center; padding: 16px; animation: fade .2s; }
+.guide-player { width: min(1120px, 100%); max-height: 100%; display: grid; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; box-shadow: 0 30px 80px rgba(0,0,0,.5); overflow: auto; }
+.guide-bars { display: flex; gap: 4px; }
+.guide-bars > span { flex: 1; height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.guide-bars i { display: block; height: 100%; width: 0; background: var(--accent); }
+.guide-bars i.full { width: 100%; }
+.guide-bars i.run { animation: guide-fill linear forwards; }
+@keyframes guide-fill { from { width: 0; } to { width: 100%; } }
+.guide-stage { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 10px; background: #0b0d12; cursor: pointer; }
+.guide-cam { position: absolute; inset: 0; transition: transform 1.6s cubic-bezier(.4, 0, .2, 1); animation: fade .35s; }
+.guide-cam img { width: 100%; height: 100%; display: block; object-fit: cover; user-select: none; }
+.guide-spot { position: absolute; border-radius: 10px; border: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0); transition: box-shadow .9s .5s, opacity .5s; opacity: 0; }
+.guide-spot.on { opacity: 1; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .5), 0 0 0 6px color-mix(in srgb, var(--accent) 30%, transparent); animation: guide-pulse 2s 1.4s infinite; }
+@keyframes guide-pulse { 50% { border-color: #fff; } }
+.guide-cursor { position: absolute; width: 26px; height: 26px; pointer-events: none; animation: guide-move 1.3s .3s cubic-bezier(.3, 0, .2, 1) both; filter: drop-shadow(0 2px 4px rgba(0,0,0,.6)); }
+.guide-cursor::after { content: ""; position: absolute; left: -10px; top: -10px; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; opacity: 0; animation: guide-click .7s 1.6s ease-out; }
+@keyframes guide-move { from { transform: translate(120px, 90px); opacity: 0; } 30% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes guide-click { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.guide-paused { position: absolute; inset: 0; margin: auto; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,.55); color: #fff; }
+.guide-end { position: absolute; inset: 0; display: grid; place-content: center; gap: 14px; text-align: center; background: rgba(6, 8, 12, .78); cursor: default; }
+.guide-end b { font-size: 20px; color: #fff; }
+.guide-cap { display: grid; gap: 4px; padding: 0 4px; min-height: 92px; }
+.guide-cap b { font-size: 18px; }
+.guide-cap p { margin: 0; line-height: 1.5; }
+.guide-ctl { display: flex; gap: 8px; align-items: center; }
+.guide-ctl select { flex: 1; min-width: 0; margin: 0; }
+.guide-ctl .play { background: var(--accent); color: #fff; border-color: transparent; }
+@media (max-width: 640px) {
+  .guide-bg { padding: 0; place-items: stretch; }
+  .guide-player { border-radius: 0; border: 0; align-content: start; }
+  .guide-cap b { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .guide-cam, .guide-cursor, .guide-spot { transition: none; animation: none; } }
+
 /* šance, otázky nad dokumentací, firma */
 .chance { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border-left: 4px solid var(--low); background: var(--soft); display: grid; gap: 4px; }
 .chance.hi { border-left-color: var(--good); }
