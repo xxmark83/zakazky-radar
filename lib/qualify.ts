@@ -1,7 +1,7 @@
 import type { Company, Reference } from "./company";
 import type { Assessment, PriceCheck, QualItem } from "./types";
 
-// „Zvládneme to?“ – čísla se neodhadují, ale počítají. AI z dokumentace vytáhne, co zadavatel chce
+// Posouzení zakázky – čísla se neodhadují, ale počítají. AI z dokumentace vytáhne, co zadavatel chce
 // (druh požadavku, částku, počet, období, které reference obsahem sedí), a tady se to porovná s firemním
 // profilem: obrat po letech, limit pojištění, hodnota a stáří referencí. Výsledek výpočtu má přednost před
 // odhadem AI a u požadavku je vidět, z čeho vyšel.

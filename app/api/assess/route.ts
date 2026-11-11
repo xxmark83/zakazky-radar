@@ -6,7 +6,7 @@ import type { Tender } from "@/lib/types";
 
 export const maxDuration = 300;
 
-// „Zvládneme to?“ – kvalifikace a realizace z nahraných podkladů (text vytažený v prohlížeči) nebo z nalezené dokumentace
+// Posouzení zakázky – kvalifikace a realizace z nahraných podkladů (text vytažený v prohlížeči) nebo z nalezené dokumentace
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "Chybí ANTHROPIC_API_KEY." }, { status: 400 });
   const body = (await req.json()) as { tender: Tender; profile: string; model?: string; texts?: { name: string; text: string }[] };

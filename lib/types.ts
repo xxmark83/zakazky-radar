@@ -111,7 +111,7 @@ export type BuyerAi = {
   items: { id: string; relevance: number; note: string }[];
 };
 
-// Posouzení „Zvládneme to?“: kvalifikace proti firemnímu profilu a referencím a odhad realizace
+// Posouzení Posouzení zakázky: kvalifikace proti firemnímu profilu a referencím a odhad realizace
 export type QualItem = {
   area: "základní" | "profesní" | "ekonomická" | "technická" | "jiné";
   requirement: string;

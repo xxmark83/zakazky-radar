@@ -9,8 +9,20 @@ import { userKey } from "./users";
 // a najdeme nové uzavřené smlouvy zadaných IČO – jako objednatel i jako dodavatel. U každého subjektu
 // jde vybrat „vše“, nebo jen oblasti z „Co hledáš“ (podle jejich klíčových slov v předmětu smlouvy).
 const UA = "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)";
-const DAYS = 45; // smlouva se zveřejňuje až 30 dní po podpisu, proto okno podle podpisu delší
-const FEED_KEEP = 300;
+// smlouva se zveřejňuje až 30 dní po podpisu, proto je výchozí okno podle podpisu delší; období si volí uživatel
+export const PERIODS = [45, 90, 180, 365, 730];
+const DEFAULT_DAYS = 45;
+const FEED_KEEP = 2000;
+const PAGES = 12; // po 25 smlouvách, tj. nejvýš 300 na subjekt a období
+
+export async function getDays(): Promise<number> {
+  const d = redis ? Number(await redis.get<number>(await userKey("contractDays"))) : 0;
+  return PERIODS.includes(d) ? d : DEFAULT_DAYS;
+}
+export async function setDays(days: number) {
+  if (redis && PERIODS.includes(days)) await redis.set(await userKey("contractDays"), days);
+}
+export const sinceDay = (days: number) => new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 
 export type Watched = { ico: string; name: string; filter: "all" | string[]; added: string };
 export type SignedContract = {
@@ -110,22 +122,25 @@ export async function addSubjects(list: { ico: string; name: string }[]) {
   return { added };
 }
 
-export async function updateWatched(ico: string, change: { filter?: Watched["filter"]; remove?: boolean }) {
+// Starší záznamy mohou být bez IČO (dřív šlo sledovat jen podle názvu) – ty se poznají podle názvu,
+// jinak by nešly odebrat ani upravit.
+export async function updateWatched(ico: string, change: { filter?: Watched["filter"]; remove?: boolean; name?: string }) {
   const list = await getWatched();
+  const is = (w: Watched) => (ico ? w.ico === ico : !w.ico && w.name === change.name);
   const next = change.remove
-    ? list.filter((w) => w.ico !== ico)
-    : await Promise.all(list.map(async (w) => (w.ico === ico && change.filter ? { ...w, filter: await allowedFilter(change.filter) } : w)));
+    ? list.filter((w) => !is(w))
+    : await Promise.all(list.map(async (w) => (is(w) && change.filter ? { ...w, filter: await allowedFilter(change.filter) } : w)));
   await saveWatched(next);
   return next;
 }
 
 // ---------- smlouvy z Hlídače státu ----------
-async function fetchFor(w: Watched): Promise<SignedContract[]> {
+async function fetchFor(w: Watched, days: number): Promise<SignedContract[]> {
   const token = process.env.HLIDAC_TOKEN;
-  if (!token) return [];
-  const since = new Date(Date.now() - DAYS * 86400_000).toISOString().slice(0, 10);
+  if (!token || !/^\d{8}$/.test(w.ico)) return []; // bez IČO se v registru hledat nedá
+  const since = sinceDay(days);
   const out: SignedContract[] = [];
-  for (let strana = 1; strana <= 3; strana++) {
+  for (let strana = 1; strana <= PAGES; strana++) {
     const q = new URLSearchParams({ dotaz: `ico:${w.ico} AND podepsano:[${since} TO *]`, strana: String(strana), razeni: "1" });
     const data = await hlidacGet(`https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?${q}`, 3 * 3600).catch(() => null);
     if (!data) break;
@@ -163,18 +178,20 @@ async function feedKey() {
 export async function getFeed(): Promise<SignedContract[]> {
   if (!redis) return [];
   const all = (await redis.hgetall<Record<string, SignedContract>>(await feedKey())) ?? {};
-  return Object.values(all).sort((a, b) => b.found.localeCompare(a.found) || (b.signed ?? "").localeCompare(a.signed ?? ""));
+  // nejnověji podepsané první (při delším období je „kdy jsme ji našli“ u všech stejné)
+  return Object.values(all).sort((a, b) => (b.signed ?? "").localeCompare(a.signed ?? "") || b.found.localeCompare(a.found));
 }
 
 /** Projde sledované subjekty a vrátí smlouvy, které jsme ještě neviděli (a uloží je do přehledu). */
 export async function checkContracts(): Promise<SignedContract[]> {
   if (!redis) return [];
   const watched = await getWatched();
+  const days = await getDays();
   const key = await feedKey();
   const known = new Set(Object.keys((await redis.hgetall<Record<string, unknown>>(key)) ?? {}));
   const fresh: SignedContract[] = [];
   for (const w of watched) {
-    for (const c of await fetchFor(w).catch(() => [])) {
+    for (const c of await fetchFor(w, days).catch(() => [])) {
       const id = `${w.ico}:${c.id}`;
       if (known.has(id) || !passes(w, c)) continue;
       known.add(id);

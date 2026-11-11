@@ -1,5 +1,5 @@
 import { accessFor, allowedPresets } from "@/lib/access";
-import { addSubjects, checkContracts, lookupSubjects, getFeed, getWatched, passes, updateWatched, type Watched } from "@/lib/contracts";
+import { addSubjects, checkContracts, lookupSubjects, getDays, getFeed, getWatched, passes, PERIODS, setDays, sinceDay, updateWatched, type Watched } from "@/lib/contracts";
 import { redis } from "@/lib/store";
 
 export const maxDuration = 60;
@@ -10,14 +10,19 @@ export async function GET(req: Request) {
   if (new URL(req.url).searchParams.get("check")) await checkContracts();
   const watched = await getWatched();
   const byIco = new Map(watched.map((w) => [w.ico, w]));
+  const days = await getDays();
+  const since = sinceDay(days);
   return Response.json({
+    days,
+    periods: PERIODS,
     db: Boolean(redis),
     hlidac: Boolean(process.env.HLIDAC_TOKEN),
     areas: allowedPresets(await accessFor()).map((p) => p.name),
     all: !(await accessFor()).presets, // smí vybrat „vše“
     watched,
     // přehled jen pro subjekty, které pořád sledujeme, a podle jejich aktuálního filtru
-    feed: (await getFeed()).filter((c) => byIco.has(c.ico) && passes(byIco.get(c.ico)!, c)).slice(0, 150),
+    // a jen ze zvoleného období (podle data podpisu)
+    feed: (await getFeed()).filter((c) => byIco.has(c.ico) && passes(byIco.get(c.ico)!, c) && (!c.signed || c.signed >= since)).slice(0, 600),
   });
 }
 
@@ -27,8 +32,10 @@ export async function POST(req: Request) {
     lookup?: string;
     subjects?: { ico: string; name: string }[];
     ico?: string;
+    name?: string;
     filter?: Watched["filter"];
     remove?: boolean;
+    days?: number;
   };
   // krok 1: vyhledat v ARES, nic neukládat
   if (body.lookup) return Response.json(await lookupSubjects(body.lookup));
@@ -38,6 +45,15 @@ export async function POST(req: Request) {
     if (r.added.length) await checkContracts();
     return Response.json(r);
   }
-  if (body.ico) return Response.json({ watched: await updateWatched(body.ico, { filter: body.filter, remove: body.remove }) });
+  // změna období: uložit a rovnou dohledat starší smlouvy. Uloží se do přehledu, takže ráno nepřijdou jako „nové“.
+  if (body.days) {
+    if (!PERIODS.includes(body.days)) return Response.json({ error: "Neznámé období." }, { status: 400 });
+    await setDays(body.days);
+    await checkContracts();
+    return Response.json({ days: body.days });
+  }
+  // subjekt bez IČO (starší záznam) se pozná podle názvu
+  if (body.ico || ((body.remove || body.filter) && body.name))
+    return Response.json({ watched: await updateWatched(body.ico ?? "", { filter: body.filter, remove: body.remove, name: body.name }) });
   return Response.json({ error: "Nic k provedení." }, { status: 400 });
 }
