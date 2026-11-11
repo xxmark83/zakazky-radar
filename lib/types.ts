@@ -127,6 +127,12 @@ export type QualItem = {
   calc?: string; // výsledek výpočtu proti profilu (doplní server)
   refNames?: string[]; // reference, které prošly i čísly (doplní server)
 };
+// smluvní riziko z návrhu smlouvy / obchodních podmínek
+export type ContractRisk = { risk: string; where: string; severity: "nízké" | "střední" | "vysoké"; note: string };
+// vyjde zakázka cenově? odhad pracnosti × denní sazba proti předpokladané hodnotě (lib/qualify.ts)
+export type PriceCheck = { md: number; dayRate: number; cost: number; value: number | null; level: "ok" | "těsné" | "ztráta" | "bez hodnoty"; text: string };
+// kdo podobné zakázky vyhrává – možný partner nebo poddodavatel (lib/partners.ts)
+export type Partner = { name: string; wins: number; total: number | null; example: string };
 export type DeliveryPart = { item: string; how: string; effortMd: number; risk: "nízké" | "střední" | "vysoké" };
 export type Assessment = {
   verdict: "podat" | "podat s partnerem" | "nepodávat" | "nejasné";
@@ -138,6 +144,9 @@ export type Assessment = {
   questions: string[];
   sources?: string[];
   skipped?: { name: string; why: string }[]; // dokumenty, které se nepřečetly, a proč
+  contract?: ContractRisk[];
+  price?: PriceCheck | null;
+  partners?: Partner[];
   model?: string;
   at?: string;
 };

@@ -1,5 +1,5 @@
 import type { Company, Reference } from "./company";
-import type { Assessment, QualItem } from "./types";
+import type { Assessment, PriceCheck, QualItem } from "./types";
 
 // „Zvládneme to?“ – čísla se neodhadují, ale počítají. AI z dokumentace vytáhne, co zadavatel chce
 // (druh požadavku, částku, počet, období, které reference obsahem sedí), a tady se to porovná s firemním
@@ -114,4 +114,20 @@ export function applyChecks(a: Assessment, c: Company | null, refs: Reference[],
       verdictReason: `Výpočet z tvého profilu ukázal nesplněný požadavek: ${failed.join("; ")}. ${a.verdictReason}`,
     };
   return { ...a, qualification };
+}
+
+/** Vyjde zakázka cenově? Odhad pracnosti × denní sazba proti předpokladané hodnotě. Bez sazby nebo odhadu null. */
+export function priceCheck(md: number, dayRate: number | null | undefined, value: number | null, currency: string | null): PriceCheck | null {
+  if (!dayRate || !(md > 0)) return null;
+  const cost = Math.round(md * dayRate);
+  const base = `Odhad ${Math.round(md)} člověkodní × ${kc(dayRate)} = ${kc(cost)}`;
+  if (!value || (currency ?? "CZK") !== "CZK")
+    return { md, dayRate, cost, value: null, level: "bez hodnoty", text: `${base}. Zadavatel předpokládanou hodnotu neuvádí – nabídni aspoň tolik.` };
+  const margin = (value - cost) / value;
+  const pct = Math.round(Math.abs(margin) * 100);
+  if (cost > value)
+    return { md, dayRate, cost, value, level: "ztráta", text: `${base}; předpokládaná hodnota je ${kc(value)} → o ${pct} % méně, než tě práce stojí. Jde to jen s vlastním hotovým produktem, užším rozsahem nebo nižší sazbou.` };
+  if (margin < 0.2)
+    return { md, dayRate, cost, value, level: "těsné", text: `${base}; předpokládaná hodnota je ${kc(value)} → rezerva jen ${pct} %. Vítězná cena bývá pod předpokládanou hodnotou, takže to vyjde natěsno.` };
+  return { md, dayRate, cost, value, level: "ok", text: `${base}; předpokládaná hodnota je ${kc(value)} → rezerva ${pct} %, prostor na soutěžní slevu je.` };
 }

@@ -15,6 +15,7 @@ type Row = {
   cpv: string;
   description: string;
   url: string;
+  detail?: string; // přímý odkaz na zakázku, když ho známe (jinak se počítá níž, nebo zbývá adresa profilu)
 };
 type Data = { updated: string; profiles: number; ok: number; never?: number; tenders: Row[] };
 
@@ -65,6 +66,20 @@ export function profilyById(ids: string[]): Map<string, { title: string; deadlin
   return new Map((d?.tenders ?? []).filter((t) => want.has(t.id)).map((t) => [t.id, t]));
 }
 
+// Profil v XML neuvádí adresu zakázky, jen její id. U E-ZAKu (kraje, města, univerzity – „VZ-855“) z něj jde
+// adresa složit: contract_display_855.html vedle profilu. Tender arena má adresu z rychlého seznamu (sběr ji
+// uloží do detail). Jinde zůstává adresa profilu zadavatele.
+export function detailUrl(t: Row): string {
+  if (t.detail) return t.detail;
+  const m = t.id.match(/#VZ-(\d+)$/);
+  if (m && /^https?:\/\//.test(t.url)) {
+    try {
+      return new URL(`contract_display_${m[1]}.html`, /\.html?$/i.test(t.url) ? t.url : `${t.url.replace(/\/+$/, "")}/`).href;
+    } catch {}
+  }
+  return t.url;
+}
+
 const toTender = (t: Row): Tender => ({
   id: t.id,
   source: "Profily zadavatelů",
@@ -77,7 +92,7 @@ const toTender = (t: Row): Tender => ({
   currency: null,
   cpv: t.cpv && t.cpv !== "00000000" ? [t.cpv] : [],
   description: [t.regime, t.description].filter(Boolean).join(" – "),
-  url: t.url,
+  url: detailUrl(t),
 });
 
 export function fetchProfily(opts: { keywords: string[]; cpv: string[]; days: number }): Tender[] {

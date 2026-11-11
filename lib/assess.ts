@@ -1,7 +1,8 @@
 import { askJson, type ModelChoice } from "./ai";
 import type { Company, Reference } from "./company";
 import { fetchDocsReport, type Doc } from "./docs";
-import { applyChecks, profileFacts } from "./qualify";
+import { suggestPartners } from "./partners";
+import { applyChecks, priceCheck, profileFacts } from "./qualify";
 import { pageText } from "./analyze";
 import type { Assessment, Tender } from "./types";
 
@@ -54,11 +55,20 @@ const SCHEMA = {
       required: ["feasible", "summary", "parts", "totalMd", "stack", "timeline"],
       additionalProperties: false,
     },
+    contract: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { risk: str, where: str, severity: { type: "string", enum: ["nízké", "střední", "vysoké"] }, note: str },
+        required: ["risk", "where", "severity", "note"],
+        additionalProperties: false,
+      },
+    },
     gaps: { type: "array", items: str },
     missingInfo: { type: "array", items: str },
     questions: { type: "array", items: str },
   },
-  required: ["verdict", "verdictReason", "qualification", "delivery", "gaps", "missingInfo", "questions"],
+  required: ["verdict", "verdictReason", "qualification", "delivery", "contract", "gaps", "missingInfo", "questions"],
   additionalProperties: false,
 } as const;
 
@@ -88,6 +98,11 @@ Pravidla:
   vlastní produkt dodavatele, úprava, nový vývoj, nákup licencí), odhad pracnosti v člověkodnech (effortMd, realisticky,
   vč. analýzy, testů a nasazení) a riziko. totalMd = součet. stack = doporučené technologie. timeline = zda se to vejde
   do požadovaného termínu plnění při velikosti týmu z profilu.
+- contract: smluvní rizika z návrhu smlouvy a obchodních podmínek (nejvýš 8, nejzávažnější první): smluvní pokuty a jejich
+  výše, odpovědnost za škodu a její limit, délka záruky, SLA a reakční doby, předání zdrojového kódu a licence, platební
+  podmínky a splatnost, jistota nebo bankovní záruka, výpověď a odstoupení. risk = co přesně smlouva říká (s čísly),
+  where = článek nebo strana, severity = dopad na malou firmu, note = co s tím (zeptat se zadavatele, započítat do ceny,
+  pro malou firmu nepřijatelné). Když návrh smlouvy mezi podklady není, vrať prázdné pole a napiš to do missingInfo.
 - verdict: podat = kvalifikaci splní a dílo zvládne; podat s partnerem = chybí něco, co vyřeší poddodavatel/partner;
   nepodávat = zásadní překážka; nejasné = chybí podklady nebo profil. verdictReason: 1–2 věty.
 - gaps: co přesně chybí k podání a jak to vyřešit (max 6). questions: dotazy na zadavatele, které by pomohly (max 5).
@@ -146,5 +161,9 @@ export async function assessTender(opts: {
   const r = await askJson<Assessment>({ model: opts.model, system: SYSTEM, schema: SCHEMA, effort: "high", content, maxTokens: 24000 });
   // čísla (obrat, pojištění, hodnota a stáří referencí) se přepočítají proti profilu – výpočet má přednost před odhadem AI
   const data = applyChecks(r.data, c, opts.references, now);
-  return { ...r, data: { ...data, sources: docs.map((d) => d.name), skipped, model: opts.model, at: now.toISOString() } };
+  // vyjde to cenově? a když něco nesplníme, kdo podobné zakázky vyhrává (možný partner)
+  const price = priceCheck(data.delivery.totalMd, c?.dayRate, t.value, t.currency);
+  const needPartner = data.verdict === "podat s partnerem" || data.qualification.some((q) => q.status === "nesplněno");
+  const partners = needPartner ? suggestPartners(t, c?.name ?? "") : [];
+  return { ...r, data: { ...data, price, partners, sources: docs.map((d) => d.name), skipped, model: opts.model, at: now.toISOString() } };
 }

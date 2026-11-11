@@ -56,5 +56,9 @@ export function cleanTenders(tenders, { today, dropped = new Set(), maxDays = 12
     (t) => !dropped.has(t.url) && (!t.deadline || t.deadline >= today) && (t.deadline || !t.published || t.published >= oldest),
   );
   const full = new Set(live.filter((t) => !t.id.startsWith("ta-")).map(key));
-  return live.filter((t) => !t.id.startsWith("ta-") || !full.has(key(t)));
+  // profil neuvádí adresu zakázky – záznam z rychlého seznamu ano, tak ji před vyřazením předá
+  const taUrl = new Map(live.filter((t) => t.id.startsWith("ta-")).map((t) => [key(t), t.url]));
+  return live
+    .filter((t) => !t.id.startsWith("ta-") || !full.has(key(t)))
+    .map((t) => (!t.id.startsWith("ta-") && !t.detail && taUrl.has(key(t)) ? { ...t, detail: taUrl.get(key(t)) } : t));
 }

@@ -18,6 +18,7 @@ export type Company = {
   // čísla pro kvalifikaci – „Zvládneme to?“ je porovnává výpočtem (lib/qualify.ts), ne odhadem AI
   turnover?: Record<string, number | null>; // rok -> obrat v Kč bez DPH
   insurance?: number | null; // limit pojištění odpovědnosti v Kč
+  dayRate?: number | null; // denní sazba v Kč bez DPH – pro kontrolu, jestli zakázka cenově vyjde
   certs?: Cert[];
   team?: Member[];
 };
@@ -51,6 +52,7 @@ export async function saveCompany(c: Company) {
         .map(([y, v]) => [y, num(v)]),
     ),
     insurance: num(c.insurance),
+    dayRate: num(c.dayRate),
     certs: (c.certs ?? []).slice(0, 30).map((x) => ({ name: text(x.name, 120), until: /^\d{4}-\d{2}/.test(x.until ?? "") ? x.until.slice(0, 7) : "" })).filter((x) => x.name),
     team: (c.team ?? []).slice(0, 30).map((m) => ({ role: text(m.role, 120), years: num(m.years), note: text(m.note, 200) })).filter((m) => m.role),
   };
