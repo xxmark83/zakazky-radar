@@ -15,7 +15,7 @@ export type Company = {
   web: string;
   bank: string;
   capabilities?: string; // co firma umí a čím disponuje: tým, technologie, certifikace, obrat, pojištění, partneři
-  // čísla pro kvalifikaci – „Zvládneme to?“ je porovnává výpočtem (lib/qualify.ts), ne odhadem AI
+  // čísla pro kvalifikaci – Posouzení zakázky je porovnává výpočtem (lib/qualify.ts), ne odhadem AI
   turnover?: Record<string, number | null>; // rok -> obrat v Kč bez DPH
   insurance?: number | null; // limit pojištění odpovědnosti v Kč
   dayRate?: number | null; // denní sazba v Kč bez DPH – pro kontrolu, jestli zakázka cenově vyjde

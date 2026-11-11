@@ -34,16 +34,16 @@ export const GUIDE: GuideChapter[] = [
     steps: [
       s("detail-1", "Základní fakta", "Klikni na kartu a otevře se detail: lhůta, hodnota, zveřejnění, AI skóre a poslední den na dotazy zadavateli."),
       s("detail-2", "Stav zakázky", "Zvažuji, Připravuji, Podáno, Vyhráno, Nevyšlo nebo Ne. Stav zakázku přesune na nástěnku Moje zakázky a do kalendáře lhůt."),
-      s("podklady-1", "Zadávací podklady", "Nepovinné: nahraj podklady jednou pro celou zakázku – PDF, Word, Excel nebo ZIP, i velké. Použije je rozbor, Zvládneme to? i Zeptej se dokumentace. Bez nich si AI dokumentaci najde sama."),
+      s("podklady-1", "Zadávací podklady", "Nepovinné: nahraj podklady jednou pro celou zakázku – PDF, Word, Excel nebo ZIP, i velké. Použije je rozbor, Posouzení zakázky i Zeptej se dokumentace. Bez nich si AI dokumentaci najde sama."),
       s("detail-3", "Udělat rozbor", "AI přečte podklady a řekne, co zadavatel chce. Stojí jednotky centů."),
-      s("detail-4", "Co v rozboru najdeš", "Shrnutí, rizika, co nabídnout a hodnoticí kritéria. Předběžný dojem je jen orientační – o podání rozhoduje Zvládneme to?."),
+      s("detail-4", "Co v rozboru najdeš", "Shrnutí, rizika, co nabídnout a hodnoticí kritéria. Předběžný dojem je jen orientační – o podání rozhoduje Posouzení zakázky."),
       s("detail-5", "Co připravit", "Checklist dokladů a příloh z dokumentace. Odškrtávej, co máš hotové, vlastní položku přidáš dole."),
       s("detail-6", "Návrh nabídky", "Navrhnout: osnova nabídky a průvodní dopis na míru zakázce, s vybranými referencemi. Všechno stáhneš jedním souborem přes Stáhnout podklady do Wordu."),
     ],
   },
   {
     id: "zvladneme",
-    title: "Zvládneme to?",
+    title: "Posouzení zakázky",
     icon: "shield",
     intro: "Kvalifikace proti tvé firmě a odhad, jestli to naprogramujete.",
     steps: [

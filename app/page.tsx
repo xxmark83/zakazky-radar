@@ -899,7 +899,7 @@ function Settings(props: {
         </select>
         <p className="note">
           Ráno AI přečte dokumentaci nejlepších nových zakázek (skóre 75+), verdikt „podat / zvážit / nechat“ pošle rovnou
-          v e-mailu a udělá i rychlé „Zvládneme to?“ – na kartě pak hned vidíš, jestli tě nezastaví obrat nebo reference.
+          v e-mailu a udělá i rychlé posouzení zakázky – na kartě pak hned vidíš, jestli tě nezastaví obrat nebo reference.
           Počítá se do měsíčního limitu (asi dvojnásobek uvedené ceny).
         </p>
 
@@ -2055,7 +2055,7 @@ function Detail(props: {
     ? {
         cls: VERDICT_CLS[assessed.verdict] ?? "mid",
         label: assessed.verdict === "podat" ? "Podat" : assessed.verdict === "podat s partnerem" ? "Podat s partnerem" : assessed.verdict === "nepodávat" ? "Nepodávat" : "Nejasné",
-        from: `Zvládneme to?${assessed.qualification.filter((q) => q.status === "nesplněno").length ? ` · ${assessed.qualification.filter((q) => q.status === "nesplněno").length}× nesplněno` : ""}`,
+        from: `Posouzení zakázky${assessed.qualification.filter((q) => q.status === "nesplněno").length ? ` · ${assessed.qualification.filter((q) => q.status === "nesplněno").length}× nesplněno` : ""}`,
       }
     : ana
       ? { cls: VERDICT[ana.verdict]?.cls ?? "mid", label: VERDICT[ana.verdict]?.label ?? "Zvážit", from: "AI rozbor · kvalifikace neposouzena" }
@@ -2188,7 +2188,7 @@ function Detail(props: {
     const as = kept.assess?.[t.id];
     if (as) {
       blocks.push(
-        { h2: `Zvládneme to?: ${as.verdict}` },
+        { h2: `Posouzení zakázky: ${as.verdict}` },
         { p: as.verdictReason },
         { h2: "Kvalifikace" },
         { bullets: as.qualification.map((q) => `[${q.status}] ${q.requirement}${q.where ? ` (${q.where})` : ""}${q.how ? ` – ${q.how}` : ""}`) },
@@ -2337,7 +2337,7 @@ function Detail(props: {
             </dd>
           </div>
           <div>
-            <dt>Zvládneme to?</dt>
+            <dt>Posouzení</dt>
             <dd className={assessed ? `pre-${VERDICT_CLS[assessed.verdict] ?? "mid"}` : "hint"}>{assessed ? assessed.verdict : "neposouzeno"}</dd>
           </div>
           {qd && qd.date >= today() && (
@@ -2413,7 +2413,7 @@ function Detail(props: {
               </b>
               <br />
               <span className="hint">
-                Jednou pro celou zakázku – použije je AI rozbor, Zvládneme to? i Zeptej se dokumentace. PDF, Word, Excel, ZIP, i velké;
+                Jednou pro celou zakázku – použije je AI rozbor, Posouzení zakázky i Zeptej se dokumentace. PDF, Word, Excel, ZIP, i velké;
                 text se vytáhne v prohlížeči, soubory se nikam neukládají. Bez nahrání si AI dokumentaci najde sama.
               </span>
             </span>
@@ -2492,7 +2492,7 @@ function Detail(props: {
             <AnalysisList title="Hodnoticí kritéria" items={analysis.criteria ?? []} />
             <p className="note">
               Předběžný dojem: <b className={`pre-${VERDICT[analysis.verdict].cls}`}>{VERDICT[analysis.verdict].label}</b> – {analysis.verdictReason}{" "}
-              Kvalifikaci, dotazy na zadavatele a rozhodnutí o podání řeší <a href="#d-assess" onClick={(e) => (e.preventDefault(), document.getElementById("d-assess")?.scrollIntoView({ behavior: "smooth", block: "start" }))}>Zvládneme to?</a>
+              Kvalifikaci, dotazy na zadavatele a rozhodnutí o podání řeší <a href="#d-assess" onClick={(e) => (e.preventDefault(), document.getElementById("d-assess")?.scrollIntoView({ behavior: "smooth", block: "start" }))}>Posouzení zakázky</a>
             </p>
             <p className="note sources">
               {analysis.sources?.length
@@ -2604,7 +2604,7 @@ function Detail(props: {
           <button onClick={exportWord}>
             <Icon n="download" size={16} /> Stáhnout podklady do Wordu
           </button>
-          <span className="hint">Zvládneme to?, rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
+          <span className="hint">Posouzení zakázky, rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
         </div>
 
         <h2 className="phase" id="d-context">
@@ -2825,7 +2825,7 @@ function Chance({ t, offersAvg, results }: { t: ScoredTender; offersAvg: number 
   );
 }
 
-// „Zvládneme to?“ – nahrané podklady (text se vytáhne v prohlížeči) → kvalifikace vs. firma a reference + odhad realizace
+// Posouzení zakázky – nahrané podklady (text se vytáhne v prohlížeči) → kvalifikace vs. firma a reference + odhad realizace
 const mb = (b: number) => (b < 100_000 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${(b / 1_000_000).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} MB`);
 const Q_STATUS: Record<string, string> = { splněno: "ok", doložit: "doc", nesplněno: "no", nejasné: "q" };
 const VERDICT_CLS: Record<string, string> = { podat: "good", "podat s partnerem": "mid", nepodávat: "bad", nejasné: "mid" };
@@ -2885,7 +2885,7 @@ function Assess({
   return (
     <>
       <h3 className="sec" id="d-assess">
-        Zvládneme to? <span className="hint">kvalifikace a realizace</span>
+        Posouzení zakázky <span className="hint">kvalifikace, realizace, cena, smlouva</span>
       </h3>
       {hasProfile === false && (
         <div className="warn">
@@ -3217,7 +3217,7 @@ function CompanyPanel() {
       </div>
       <h4 className="sub-h">Čísla pro kvalifikaci</h4>
       <p className="note">
-        „Zvládneme to?“ je porovná s požadavky zadavatele výpočtem, ne odhadem – obrat, limit pojištění, platnost certifikátů. Co
+        Posouzení zakázky je porovná s požadavky zadavatele výpočtem, ne odhadem – obrat, limit pojištění, platnost certifikátů. Co
         nevyplníš, vyjde jako nejasné.
       </p>
       <div className="row">
@@ -3280,7 +3280,7 @@ function CompanyPanel() {
       <button className="ghost add-fact" onClick={() => setC({ ...c, team: [...team, { role: "", years: null, note: "" }] })}>
         + Přidat člena týmu
       </button>
-      <label>Co umíš a čím disponuješ (pro posouzení „Zvládneme to?“)</label>
+      <label>Co umíš a čím disponuješ (pro posouzení zakázky)</label>
       <textarea
         className="capabilities"
         value={c.capabilities ?? ""}
@@ -3430,7 +3430,7 @@ function nextKind(status: Status, assess: Assessment | null | undefined, analysi
   return "word";
 }
 const NEXT_TEXT: Record<Exclude<NextKind, null>, string> = {
-  assess: "Posoudit, jestli to zvládneme",
+  assess: "Posoudit zakázku",
   analysis: "Udělat AI rozbor",
   draft: "Navrhnout nabídku",
   word: "Stáhnout podklady a podat",
@@ -4531,6 +4531,8 @@ type ContractsState = {
   all: boolean;
   watched: WatchedSubject[];
   feed: SignedContract[];
+  days?: number; // zvolené období (dny podle data podpisu)
+  periods?: number[];
 };
 
 function ContractRowSigned({ c }: { c: SignedContract }) {
@@ -4596,9 +4598,23 @@ function ContractWatch() {
     reload();
   }
   async function setFilter(w: WatchedSubject, filter: WatchedSubject["filter"] | null) {
-    const res = await post("/api/contracts", filter === null ? { ico: w.ico, remove: true } : { ico: w.ico, filter });
-    if (res.ok) reload();
+    const res = await post("/api/contracts", filter === null ? { ico: w.ico, name: w.name, remove: true } : { ico: w.ico, name: w.name, filter });
+    if (res.ok) {
+      if (filter === null) setMsg(`Už nesleduješ ${w.name}.`);
+      return reload();
+    }
+    const d = await res.json().catch(() => ({}));
+    setMsg(d.error ?? "Nepodařilo se uložit – zkus to znovu.");
   }
+  async function setPeriod(days: number) {
+    setBusy("check");
+    setMsg("");
+    const res = await post("/api/contracts", { days });
+    if (!res.ok) setMsg((await res.json().catch(() => ({}))).error ?? "Období se nepodařilo změnit.");
+    await reload();
+    setBusy(null);
+  }
+  const periodLabel = (d: number) => (d < 365 ? `${d} dní` : d === 365 ? "1 rok" : `${d / 365} roky`);
 
   if (!st) return null;
   const feed = all ? st.feed : st.feed.slice(0, 15);
@@ -4668,10 +4684,10 @@ function ContractWatch() {
             setFilter(w, next.length ? next : st.all ? "all" : st.areas);
           };
           return (
-            <div key={w.ico} className="watched-subject">
+            <div key={w.ico || w.name} className="watched-subject">
               <div className="ws-head">
                 <b>{w.name}</b>
-                <span className="hint">IČO {w.ico}</span>
+                <span className="hint">{w.ico ? `IČO ${w.ico}` : "bez IČO – smlouvy nejdou dohledat; odeber a přidej znovu přes vyhledání"}</span>
                 <button className="link state" onClick={() => setFilter(w, null)}>
                   Přestat sledovat
                 </button>
@@ -4696,7 +4712,16 @@ function ContractWatch() {
       {st.watched.length > 0 && (
         <>
           <div className="report-head">
-            <h4 className="sub-h">Nalezené smlouvy (posledních 45 dní)</h4>
+            <h4 className="sub-h">
+              Nalezené smlouvy za{" "}
+              <select className="period" value={st.days ?? 45} disabled={busy !== null} onChange={(e) => setPeriod(Number(e.target.value))} aria-label="Období">
+                {(st.periods ?? [45]).map((d) => (
+                  <option key={d} value={d}>
+                    {periodLabel(d)}
+                  </option>
+                ))}
+              </select>
+            </h4>
             <button
               className="ghost"
               disabled={busy !== null}

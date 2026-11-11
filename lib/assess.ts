@@ -6,7 +6,7 @@ import { applyChecks, priceCheck, profileFacts } from "./qualify";
 import { pageText } from "./analyze";
 import type { Assessment, Tender } from "./types";
 
-// „Zvládneme to?“ – AI projde zadávací podklady, vypíše všechny kvalifikační předpoklady a u každého porovná
+// Posouzení zakázky – AI projde zadávací podklady, vypíše všechny kvalifikační předpoklady a u každého porovná
 // s firemním profilem a referencemi; pak odhadne, jestli a za kolik člověkodní to firma dokáže dodat (naprogramovat).
 const str = { type: "string" } as const;
 const SCHEMA = {

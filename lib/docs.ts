@@ -194,7 +194,7 @@ async function download(url: string, depth = 0, waited = false): Promise<{ res: 
 /** Co se z dokumentace přečetlo a co ne (a proč) – aby bylo vidět, na čem posouzení stojí. */
 export type DocReport = { docs: Doc[]; skipped: { name: string; why: string }[] };
 
-// stažená dokumentace na 30 minut v paměti serveru: rozbor, Zvládneme to? a dotazy ke stejné zakázce
+// stažená dokumentace na 30 minut v paměti serveru: rozbor, Posouzení zakázky a dotazy ke stejné zakázce
 // ji pak ze stránek zadavatele nestahují pokaždé znovu
 const docCache = new Map<string, { at: number; report: DocReport }>();
 export async function fetchDocsReport(t: Tender): Promise<DocReport> {

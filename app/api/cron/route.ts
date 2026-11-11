@@ -152,7 +152,7 @@ async function runFor(req: Request, started: number): Promise<string[]> {
         }
       }
       log.push(`ranní rozbor: ${morning.length}`);
-      // u stejných zakázek rovnou rychlé „Zvládneme to?“ – na kartě je pak vidět stopka (nesplněný obrat, reference…)
+      // u stejných zakázek rovnou rychlé posouzení zakázky – na kartě je pak vidět stopka (nesplněný obrat, reference…)
       // dřív, než ji otevřeš. Jen když na to ranní běh ještě má čas (limit 300 s na všechno).
       if (best.length && Date.now() - started < 170_000) {
         const [company, references] = await Promise.all([getCompany(), getReferences()]);
@@ -164,7 +164,7 @@ async function runFor(req: Request, started: number): Promise<string[]> {
                 await setKept("assess", t.id, r.data);
                 const m = morning.find((x) => x.tender.id === t.id);
                 const stop = r.data.qualification.filter((q) => q.status === "nesplněno").length;
-                if (m && (stop || r.data.verdict !== "podat")) m.reason = `${m.reason} Zvládneme to?: ${r.data.verdict}${stop ? `, ${stop}× nesplněno` : ""}.`;
+                if (m && (stop || r.data.verdict !== "podat")) m.reason = `${m.reason} Posouzení zakázky: ${r.data.verdict}${stop ? `, ${stop}× nesplněno` : ""}.`;
                 return true;
               })
               .catch((e) => (log.push(`ranní posouzení selhalo: ${e.message}`), false)),

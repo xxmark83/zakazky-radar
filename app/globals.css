@@ -793,7 +793,7 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .cw-option .saved { flex: none; display: inline-flex; align-items: center; gap: 4px; }
 .cw-found .link { justify-self: start; }
 
-/* zvládneme to? */
+/* posouzení zakázky */
 .assess-up { display: grid; gap: 8px; }
 .assess-drop { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 2px dashed var(--line); border-radius: 12px; cursor: pointer; font-size: 14px; }
 .assess-drop:hover { border-color: var(--accent); }
@@ -1321,7 +1321,7 @@ button.ghost.dense-toggle.on { color: var(--text); }
   :root[data-theme^="space"] .drawer:has(.detail-bar) .drawer-title { font-size: 21px; line-height: 1.12; }
 }
 
-/* ---------- 1.45: Zvládneme to? – čísla z profilu, výpočet u požadavku, co se přečetlo ---------- */
+/* ---------- 1.45: Posouzení zakázky – čísla z profilu, výpočet u požadavku, co se přečetlo ---------- */
 .fact-row { align-items: center; }
 .fact-row input { flex: 1; min-width: 0; }
 .fact-row input.narrow, .fact-row input[type="month"] { flex: 0 0 132px; }
@@ -1367,7 +1367,7 @@ button.data-line .live { flex: none; }
 :root[data-theme^="space"] .data-today.late button.data-line { border-radius: 14px; border-color: color-mix(in srgb, var(--bad) 60%, var(--hair)); }
 .data-today button.data-line + * { margin-top: 8px; }
 
-/* ---------- 1.47: Zvládneme to? komplet, Sedí / Možná, verdikt v detailu ---------- */
+/* ---------- 1.47: Posouzení zakázky komplet, Sedí / Možná, verdikt v detailu ---------- */
 .price-check { padding: 8px 10px; border-radius: 8px; background: var(--soft); border-left: 3px solid var(--line); font-size: 14px; }
 .price-check.good { border-left-color: var(--good); } .price-check.good b { color: var(--good); }
 .price-check.mid { border-left-color: var(--mid); } .price-check.mid b { color: var(--mid); }
@@ -1413,3 +1413,6 @@ button.maybe-toggle > span:last-child { flex: none; color: var(--text); font-wei
   :root[data-theme^="space"] .decide.good { border-left-color: var(--good); } :root[data-theme^="space"] .decide.bad { border-left-color: var(--bad); }
   :root[data-theme^="space"] .decide.mid { border-left-color: var(--mid); }
 }
+
+/* smlouvy sledovaných subjektů: volba období v nadpisu */
+select.period { display: inline-block; width: auto; height: auto; padding: 3px 26px 3px 10px; margin: 0 2px; font: inherit; font-size: 14px; font-weight: 600; vertical-align: baseline; }

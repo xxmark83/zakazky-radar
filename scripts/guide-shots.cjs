@@ -166,11 +166,11 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
   await shot('detail-6', section('.drawer', 'Návrh nabídky'));
   await toTop('.drawer', 'Zadávací podklady');
   await shot('podklady-1', section('.drawer', 'Zadávací podklady'));
-  await toTop('.drawer', 'Zvládneme to?');
+  await toTop('.drawer', 'Posouzení zakázky');
   await shot('zvladneme-1', p.locator('.drawer .assess-modes'));
   await p.locator('.drawer .assess-mode').first().click();
   await p.locator('.drawer .assess .verdict').waitFor();
-  await toTop('.drawer', 'Zvládneme to?');
+  await toTop('.drawer', 'Posouzení zakázky');
   await shot('zvladneme-2', p.locator('.drawer .assess .verdict'), p.locator('.drawer .qual-list'));
   await p.evaluate(() => [...document.querySelectorAll('.drawer h4')].find((e) => e.textContent.startsWith('Realizace'))?.scrollIntoView({ block: 'start' }));
   await p.evaluate(() => (document.querySelector('.drawer').scrollTop -= 60));
