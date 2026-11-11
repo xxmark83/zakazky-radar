@@ -1,3 +1,4 @@
+import type { SignedContract } from "./contracts";
 import type { Award, Change, ScoredTender } from "./types";
 import { currentUser } from "./users";
 
@@ -12,6 +13,7 @@ export async function sendAlert(
     deadlines: ScoredTender[];
     buyers?: { buyer: string; tenders: ScoredTender[] }[];
     competitors?: { name: string; awards: Award[] }[];
+    contracts?: SignedContract[];
   } = { changed: [], deadlines: [] },
 ) {
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -58,18 +60,28 @@ ${c.changes.map((ch) => `<div style="font-size:14px">${FIELD[ch.field]}: <s>${es
         )
         .join("")}`
     : "";
+  const contracts = extra.contracts ?? [];
+  const contractsHtml = contracts.length
+    ? `<h3 style="margin:20px 0 8px">Nové smlouvy sledovaných subjektů</h3>${contracts
+        .map(
+          (c) => `<div style="${box}"><b>${esc(c.subject)}</b> (${c.role}) – <a href="${esc(c.url)}" style="color:#16181d">${esc(c.title)}</a>
+<div style="color:#666;font-size:13px">${esc(c.counterpart || "–")} · ${c.value ? `${c.value.toLocaleString("cs-CZ")} Kč bez DPH` : "cena neuvedena"} · podepsáno ${c.signed ?? "?"}</div></div>`,
+        )
+        .join("")}`
+    : "";
   const parts = [
     count ? `${count} nových zakázek` : "",
     extra.deadlines.length ? `${extra.deadlines.length}× blížící se lhůta` : "",
     extra.changed.length ? `${extra.changed.length}× změna` : "",
     buyers.length ? `${buyers.reduce((n, g) => n + g.tenders.length, 0)}× od sledovaných zadavatelů` : "",
     competitors.length ? `${competitors.reduce((n, c) => n + c.awards.length, 0)}× konkurence` : "",
+    contracts.length ? `${contracts.length}× nová smlouva` : "",
   ].filter(Boolean);
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px">
 <h2 style="margin:0 0 4px">Zakázky radar: ${parts.join(", ")}</h2>
 <p style="color:#666;margin:0 0 16px"><a href="${esc(appUrl)}">Otevřít aplikaci</a></p>
-${deadlinesHtml}${changesHtml}${buyersHtml}${competitorsHtml}
+${deadlinesHtml}${changesHtml}${buyersHtml}${competitorsHtml}${contractsHtml}
 ${groups
   .map(
     (g) => `<h3 style="margin:20px 0 8px">${esc(g.profile)}</h3>

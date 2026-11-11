@@ -1,4 +1,5 @@
 import { sendAlert, sendWeekly } from "@/lib/email";
+import { checkContracts, type SignedContract } from "@/lib/contracts";
 import { sendPush } from "@/lib/push";
 import { buyerTenders, competitorWins } from "@/lib/watch";
 import { PRESETS } from "@/lib/presets";
@@ -111,6 +112,10 @@ async function runFor(req: Request): Promise<string[]> {
     log.push(`konkurenti: ${competitorNews.reduce((n, c) => n + c.awards.length, 0)} nových výher`);
   }
 
+  // smlouvy sledovaných subjektů v Registru smluv
+  const contractNews: SignedContract[] = redis ? await checkContracts().catch(() => []) : [];
+  if (redis) log.push(`smlouvy sledovaných subjektů: ${contractNews.length} nových`);
+
   // upozornění na telefon: shrnutí nových, každá blížící se lhůta, každý sledovaný zadavatel
   if (redis) {
     const count = groups.reduce((n, g) => n + g.tenders.length, 0);
@@ -127,6 +132,13 @@ async function runFor(req: Request): Promise<string[]> {
       pushed += await sendPush({ title: "Blíží se lhůta", body: `${t.deadline!.split("-").reverse().join(". ")} – ${t.title}`, url: "/", tag: `lhuta-${t.id}` });
     for (const g of buyerNews)
       pushed += await sendPush({ title: g.buyer, body: `Nová zakázka: ${g.tenders[0].title}`, url: "/", tag: `zadavatel-${g.buyer}` });
+    for (const [subject, list] of Object.entries(Object.groupBy(contractNews, (c) => c.subject)))
+      pushed += await sendPush({
+        title: `${subject}: ${list!.length === 1 ? "nová smlouva" : `${list!.length} nové smlouvy`}`,
+        body: `${list![0].title}${list![0].value ? `, ${Math.round(list![0].value).toLocaleString("cs-CZ")} Kč` : ""}`,
+        url: "/",
+        tag: `smlouvy-${subject}`,
+      });
     for (const c of competitorNews)
       pushed += await sendPush({ title: `Konkurent: ${c.name}`, body: `Vyhrál: ${c.awards[0].title}`, url: "/", tag: `konkurent-${c.name}` });
     log.push(`upozornění na telefon: ${pushed}`);
@@ -169,12 +181,12 @@ async function runFor(req: Request): Promise<string[]> {
     }
   }
 
-  if (groups.length || changed.length || deadlines.length || buyerNews.length || competitorNews.length) {
+  if (groups.length || changed.length || deadlines.length || buyerNews.length || competitorNews.length || contractNews.length) {
     const appUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : new URL(req.url).origin;
     try {
-      await sendAlert(groups, appUrl, { changed, deadlines, buyers: buyerNews, competitors: competitorNews });
+      await sendAlert(groups, appUrl, { changed, deadlines, buyers: buyerNews, competitors: competitorNews, contracts: contractNews });
       await markSeen([
         ...[...groups, ...buyerNews].flatMap((g) => g.tenders.map((t) => t.id)),
         ...competitorNews.flatMap((c) => c.awards.map((a) => `c:${a.id}`)),

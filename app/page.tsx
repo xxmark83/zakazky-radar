@@ -2482,6 +2482,7 @@ function TodayTab(props: {
               ))}
             </div>
           )}
+          <RecentContracts />
           {fromBuyers.length > 0 && (
             <>
               <h2>
@@ -3236,6 +3237,8 @@ function WatchTab(props: {
             Hlídat aktuální profil „{form.name}“
           </button>
           {msg && <span className="note"> {msg}</span>}
+          <ContractWatch />
+
           <h2>Sledovaní zadavatelé</h2>
           <p className="note">
             Upozorním na každou novou zakázku od nich, i když nesedí na klíčová slova. Přidáš je v detailu zakázky tlačítkem
@@ -3307,6 +3310,207 @@ function WatchTab(props: {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// Smlouvy sledovaných subjektů v Registru smluv (lib/contracts.ts)
+type SignedContract = {
+  id: string;
+  ico: string;
+  subject: string;
+  role: "objednatel" | "dodavatel";
+  counterpart: string;
+  title: string;
+  value: number | null;
+  signed: string | null;
+  url: string;
+  areas: string[];
+  found: string;
+};
+type WatchedSubject = { ico: string; name: string; filter: "all" | string[]; added: string };
+type ContractsState = {
+  db: boolean;
+  hlidac: boolean;
+  areas: string[];
+  all: boolean;
+  watched: WatchedSubject[];
+  feed: SignedContract[];
+};
+
+function ContractRowSigned({ c }: { c: SignedContract }) {
+  return (
+    <a className="hist-row contract" href={c.url} target="_blank" rel="noreferrer">
+      <div className="hist-main">
+        <span className="hist-title">{c.title}</span>
+        <div className="hist-meta">
+          <b>{c.subject}</b>
+          <span>
+            {c.role === "objednatel" ? "objednal od" : "dodal pro"} {c.counterpart || "–"}
+          </span>
+          {c.signed && <span>podepsáno {new Date(c.signed).toLocaleDateString("cs-CZ")}</span>}
+        </div>
+      </div>
+      <div className="hist-side">
+        <b>{c.value ? money(c.value) : "–"}</b>
+        <span className="tags">
+          {c.areas.slice(0, 2).map((a) => (
+            <span key={a} className="tag accent">
+              {PRESET_SHORT[a] ?? a}
+            </span>
+          ))}
+        </span>
+      </div>
+    </a>
+  );
+}
+
+function ContractWatch() {
+  const [st, setSt] = useState<ContractsState | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState<"add" | "check" | null>(null);
+  const [msg, setMsg] = useState("");
+  const [all, setAll] = useState(false);
+  const reload = (check = false) =>
+    fetch(`/api/contracts${check ? "?check=1" : ""}`)
+      .then((r) => r.json())
+      .then((d) => d.watched && setSt(d))
+      .catch(() => {});
+  useEffect(() => {
+    reload();
+  }, []);
+
+  async function add() {
+    setBusy("add");
+    setMsg("");
+    const res = await post("/api/contracts", { add: text });
+    const d = await res.json();
+    setBusy(null);
+    if (!res.ok) return setMsg(d.error ?? "Nepodařilo se");
+    setText("");
+    setMsg(
+      [
+        d.added.length ? `Přidáno: ${d.added.map((w: WatchedSubject) => `${w.name} (${w.ico})`).join(", ")}.` : "",
+        d.missing.length ? `Nenašel jsem: ${d.missing.join(", ")}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ") || "Nic nového – subjekty už sleduješ.",
+    );
+    reload();
+  }
+  async function setFilter(w: WatchedSubject, filter: WatchedSubject["filter"] | null) {
+    const res = await post("/api/contracts", filter === null ? { ico: w.ico, remove: true } : { ico: w.ico, filter });
+    if (res.ok) reload();
+  }
+
+  if (!st) return null;
+  const feed = all ? st.feed : st.feed.slice(0, 15);
+  return (
+    <>
+      <h2>Smlouvy sledovaných subjektů</h2>
+      <p className="note">
+        Každé ráno zkontroluju Registr smluv: nové uzavřené smlouvy zadaných subjektů (jako objednatel i dodavatel) ti
+        přijdou e-mailem a na telefon. U každého vybereš, jestli chceš všechny smlouvy, nebo jen tvoje oblasti.
+      </p>
+      {!st.hlidac && <div className="warn">Potřebuje token Hlídače státu (HLIDAC_TOKEN ve Vercelu).</div>}
+      <div className="card contract-watch">
+        <label htmlFor="cw">IČO nebo názvy, oddělené čárkou</label>
+        <div className="add-item">
+          <input
+            id="cw"
+            placeholder="např. 00253014, Město Bílina, Seyfor"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && text.trim() && add()}
+          />
+          <button className="primary" style={{ marginTop: 0 }} disabled={!text.trim() || busy !== null} onClick={add}>
+            {busy === "add" ? "Hledám…" : "Sledovat"}
+          </button>
+        </div>
+        {msg && <p className="note">{msg}</p>}
+
+        {st.watched.map((w) => {
+          const sel = w.filter === "all" ? [] : w.filter;
+          const toggle = (a: string) => {
+            const next = sel.includes(a) ? sel.filter((x) => x !== a) : [...sel, a];
+            setFilter(w, next.length ? next : st.all ? "all" : st.areas);
+          };
+          return (
+            <div key={w.ico} className="watched-subject">
+              <div className="ws-head">
+                <b>{w.name}</b>
+                <span className="hint">IČO {w.ico}</span>
+                <button className="link state" onClick={() => setFilter(w, null)}>
+                  Přestat sledovat
+                </button>
+              </div>
+              <div className="chips">
+                {st.all && (
+                  <button className={w.filter === "all" ? "on" : ""} onClick={() => setFilter(w, "all")}>
+                    Vše
+                  </button>
+                )}
+                {st.areas.map((a) => (
+                  <button key={a} className={sel.includes(a) ? "on" : ""} onClick={() => toggle(a)}>
+                    {PRESET_SHORT[a] ?? a}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {st.watched.length > 0 && (
+        <>
+          <div className="report-head">
+            <h4 className="sub-h">Nalezené smlouvy (posledních 45 dní)</h4>
+            <button
+              className="ghost"
+              disabled={busy !== null}
+              onClick={async () => {
+                setBusy("check");
+                await reload(true);
+                setBusy(null);
+              }}
+            >
+              {busy === "check" ? "Kontroluji…" : "Zkontrolovat teď"}
+            </button>
+          </div>
+          {feed.length ? feed.map((c) => <ContractRowSigned key={`${c.ico}:${c.id}`} c={c} />) : <p className="note">Zatím žádné.</p>}
+          {!all && st.feed.length > 15 && (
+            <button className="link" onClick={() => setAll(true)}>
+              Zobrazit všech {st.feed.length}
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// Dnes: nové smlouvy sledovaných subjektů za týden
+function RecentContracts() {
+  const [feed, setFeed] = useState<SignedContract[]>([]);
+  useEffect(() => {
+    fetch("/api/contracts")
+      .then((r) => r.json())
+      .then((d) => d.feed && setFeed(d.feed))
+      .catch(() => {});
+  }, []);
+  const week = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const recent = feed.filter((c) => c.found >= week).slice(0, 5);
+  if (!recent.length) return null;
+  return (
+    <>
+      <h2>
+        <Icon n="eye" size={16} /> Nové smlouvy sledovaných
+      </h2>
+      <div className="card mine">
+        {recent.map((c) => (
+          <ContractRowSigned key={`${c.ico}:${c.id}`} c={c} />
+        ))}
+      </div>
     </>
   );
 }
