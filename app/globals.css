@@ -780,6 +780,17 @@ a.hist-row.contract { text-decoration: none; color: inherit; }
 a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .hist-title { line-height: 1.4; }
 
+.watch-add { display: block; width: 100%; margin-bottom: 8px; }
+
+/* smlouvy: vyhledat → sledovat */
+.cw-found { display: grid; gap: 8px; margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; background: var(--soft); }
+.cw-group { display: grid; gap: 6px; }
+.cw-q { font-size: 13px; }
+.cw-option { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); font-size: 14px; }
+.cw-option button { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.cw-option .saved { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.cw-found .link { justify-self: start; }
+
 /* stav dat */
 .data-list { display: grid; gap: 8px; }
 .data-row { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 14px; }

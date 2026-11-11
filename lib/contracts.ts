@@ -81,6 +81,63 @@ async function ares(q: string): Promise<{ ico: string; name: string } | null> {
   }
 }
 
+export type Candidate = { ico: string; name: string; address: string; watched: boolean };
+
+// ARES: IČO → jeden subjekt, název → až 6 nejbližších (ať si uživatel vybere správný)
+async function aresCandidates(q: string): Promise<Omit<Candidate, "watched">[]> {
+  const headers = { "User-Agent": UA, "Content-Type": "application/json" };
+  const base = "https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty";
+  const addr = (d: any) => String(d?.sidlo?.textovaAdresa ?? "");
+  try {
+    const digits = q.replace(/\s/g, "");
+    if (/^\d{6,8}$/.test(digits)) {
+      const ico = digits.padStart(8, "0");
+      const res = await fetch(`${base}/${ico}`, { headers, signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) return [];
+      const d = await res.json();
+      return [{ ico, name: d.obchodniJmeno ?? ico, address: addr(d) }];
+    }
+    const res = await fetch(`${base}/vyhledat`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ obchodniJmeno: q, pocet: 10 }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const list: any[] = (await res.json()).ekonomickeSubjekty ?? [];
+    const want = norm(q);
+    // přesná shoda názvu první, pak začátek názvu, pak ostatní
+    const rank = (n: string) => (norm(n) === want ? 0 : norm(n).startsWith(want) ? 1 : 2);
+    return list
+      .sort((a, b) => rank(a.obchodniJmeno) - rank(b.obchodniJmeno))
+      .slice(0, 6)
+      .map((d) => ({ ico: d.ico, name: d.obchodniJmeno, address: addr(d) }));
+  } catch {
+    return [];
+  }
+}
+
+/** Krok 1: jen vyhledat (nic se neukládá) – ke každému dotazu nalezené subjekty. */
+export async function lookupSubjects(text: string) {
+  const parts = text.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 10);
+  const watched = new Set((await getWatched()).map((w) => w.ico));
+  const found: { query: string; options: Candidate[] }[] = [];
+  for (const q of parts) found.push({ query: q, options: (await aresCandidates(q)).map((c) => ({ ...c, watched: watched.has(c.ico) })) });
+  return { found };
+}
+
+/** Krok 2: sledovat vybrané subjekty (IČO a název z vyhledání). */
+export async function addSubjects(list: { ico: string; name: string }[]) {
+  const cur = await getWatched();
+  const added: Watched[] = [];
+  for (const s of list.slice(0, 30)) {
+    if (!/^\d{8}$/.test(s.ico) || cur.some((w) => w.ico === s.ico) || added.some((w) => w.ico === s.ico)) continue;
+    added.push({ ico: s.ico, name: String(s.name).slice(0, 200), filter: await allowedFilter("all"), added: new Date().toISOString().slice(0, 10) });
+  }
+  await saveWatched([...cur, ...added]);
+  return { added };
+}
+
 /** Přidat subjekty z jednoho políčka (IČO nebo názvy oddělené čárkou či novým řádkem). */
 export async function addWatched(text: string) {
   const parts = text.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 30);

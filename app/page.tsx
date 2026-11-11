@@ -3690,10 +3690,12 @@ function WatchTab(props: {
 
       {server.db && (
         <>
-          <button className="primary" onClick={addCurrent}>
-            Hlídat aktuální profil „{form.name}“
-          </button>
-          {msg && <span className="note"> {msg}</span>}
+          <div className="watch-add">
+            <button className="primary" onClick={addCurrent}>
+              Hlídat aktuální profil „{form.name}“
+            </button>
+            {msg && <span className="note"> {msg}</span>}
+          </div>
           <ContractWatch />
 
           <h2>Sledovaní zadavatelé</h2>
@@ -3837,6 +3839,26 @@ function ContractWatch() {
     reload();
   }, []);
 
+  // krok 1: vyhledat (nic se neukládá), krok 2: u nalezeného kliknout Sledovat
+  const [found, setFound] = useState<{ query: string; options: { ico: string; name: string; address: string; watched: boolean }[] }[] | null>(null);
+  async function lookup() {
+    setBusy("add");
+    setMsg("");
+    const res = await post("/api/contracts", { lookup: text });
+    const d = await res.json();
+    setBusy(null);
+    if (!res.ok) return setMsg(d.error ?? "Nepodařilo se");
+    setFound(d.found);
+  }
+  async function follow(list: { ico: string; name: string }[]) {
+    const res = await post("/api/contracts", { subjects: list });
+    const d = await res.json();
+    if (!res.ok) return setMsg(d.error ?? "Nepodařilo se");
+    const icos = new Set(list.map((x) => x.ico));
+    setFound((cur) => cur?.map((f) => ({ ...f, options: f.options.map((o) => (icos.has(o.ico) ? { ...o, watched: true } : o)) })) ?? cur);
+    setMsg(d.added.length ? `Sleduješ: ${d.added.map((w: WatchedSubject) => w.name).join(", ")}.` : "Už sleduješ.");
+    reload();
+  }
   async function add() {
     setBusy("add");
     setMsg("");
@@ -3871,19 +3893,54 @@ function ContractWatch() {
       </p>
       {!st.hlidac && <div className="warn">Potřebuje token Hlídače státu (HLIDAC_TOKEN ve Vercelu).</div>}
       <div className="card contract-watch">
-        <label htmlFor="cw">IČO nebo názvy, oddělené čárkou</label>
+        <label htmlFor="cw">1. Najdi subjekt – IČO nebo název (víc oddělíš čárkou)</label>
         <div className="add-item">
           <input
             id="cw"
-            placeholder="např. 00253014, Město Bílina, Seyfor"
+            placeholder="např. 00253014, Nemocnice Pardubického kraje"
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && text.trim() && add()}
+            onChange={(e) => (setText(e.target.value), setFound(null))}
+            onKeyDown={(e) => e.key === "Enter" && text.trim() && lookup()}
           />
-          <button className="primary" style={{ marginTop: 0 }} disabled={!text.trim() || busy !== null} onClick={add}>
-            {busy === "add" ? "Hledám…" : "Sledovat"}
+          <button className="primary" style={{ marginTop: 0 }} disabled={!text.trim() || busy !== null} onClick={lookup}>
+            <Icon n="search" size={15} /> {busy === "add" ? "Hledám…" : "Vyhledat"}
           </button>
         </div>
+        {found && (
+          <div className="cw-found">
+            <span className="hint">2. Vyber, co chceš sledovat (z ARES):</span>
+            {found.map((f) => (
+              <div key={f.query} className="cw-group">
+                {found.length > 1 && <b className="cw-q">„{f.query}“</b>}
+                {!f.options.length && <span className="hint">Nic jsem nenašel – zkus IČO nebo přesnější název.</span>}
+                {f.options.map((o) => (
+                  <div key={o.ico} className="cw-option">
+                    <span>
+                      <b>{o.name}</b>
+                      <br />
+                      <span className="hint">
+                        IČO {o.ico}
+                        {o.address ? `, ${o.address}` : ""}
+                      </span>
+                    </span>
+                    {o.watched ? (
+                      <span className="saved">
+                        <Icon n="check" size={14} /> sleduješ
+                      </span>
+                    ) : (
+                      <button onClick={() => follow([{ ico: o.ico, name: o.name }])}>
+                        <Icon n="eye" size={14} /> Sledovat
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+            <button className="link" onClick={() => (setFound(null), setText(""))}>
+              Hotovo, zavřít výsledky
+            </button>
+          </div>
+        )}
         {msg && <p className="note">{msg}</p>}
 
         {st.watched.map((w) => {
