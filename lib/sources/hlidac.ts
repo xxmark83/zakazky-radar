@@ -25,7 +25,20 @@ export async function fetchHlidac(opts: {
   for (const kw of opts.keywords.slice(0, 8)) {
     const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
     const q = new URLSearchParams({ dotaz: `${early}${kw}`, zverejnenoOd: since, strana: "1", razeni: "1" });
-    const res = await fetch(`${URL}?${q}`, { headers: { Authorization: `Token ${token}` }, cache: "no-store" });
+    // nejvýš 4 dotazy za sekundu (a otevřené i připravované běží souběžně) – mezi dotazy pauza,
+    // při 429 jednou počkat a zkusit znovu
+    const get = () =>
+      fetch(`${URL}?${q}`, {
+        headers: { Authorization: `Token ${token}`, "User-Agent": "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(20_000),
+      });
+    await new Promise((r) => setTimeout(r, 600));
+    let res = await get();
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 2500));
+      res = await get();
+    }
     if (!res.ok) throw new Error(`Hlídač státu ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const data = await res.json();
     const rows: any[] = data.results ?? data.Results ?? [];

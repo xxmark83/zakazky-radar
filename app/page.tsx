@@ -1277,10 +1277,12 @@ function SearchTab(props: {
                 {SEARCH_SOURCES.map(([key, label]) => {
                   const st = sourceState(progress, key);
                   return (
-                    <li key={key} className={st ? (st.error ? "err" : "ok") : "wait"}>
+                    <li key={key} className={st ? (st.error ? "err" : "ok") : "wait"} title={st?.error ?? (LIVE.has(key) ? "hledá se naživo na webu zdroje" : "čte se ze staženého")}>
                       <Icon n={st ? (st.error ? "x" : "check") : "clock"} size={13} />
                       {label}
+                      <small className="src-kind">{LIVE.has(key) ? "naživo" : "staženo"}</small>
                       {st && !st.error && <small> {st.count.toLocaleString("cs-CZ")}</small>}
+                      {st?.error && <small className="src-err"> {st.error.slice(0, 80)}</small>}
                       {key === "Profily zadavatelů" && profily && !st && <small> {profily.toLocaleString("cs-CZ")} profilů</small>}
                     </li>
                   );
@@ -1563,6 +1565,8 @@ const SEARCH_SOURCES: [string, string][] = [
   ["DNS", "Dynamické nákupní systémy"],
 ];
 const MODES = ["open", "upcoming"];
+// TED, NEN a Hlídač státu se ptají naživo, profily a DNS se čtou ze staženého
+const LIVE = new Set(["TED", "NEN", "Hlídač státu"]);
 function applyProgress(cur: Progress, mode: string, p: any): Progress {
   if (p.step === "source") return { ...cur, src: { ...cur.src, [`${p.name}|${mode}`]: { count: p.count ?? 0, error: p.error } } };
   const m = cur.ai?.[mode] ?? { fresh: 0, cached: 0, done: 0, all: 0 };
