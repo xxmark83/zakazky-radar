@@ -1,4 +1,5 @@
 import { datasets, runningJobs } from "@/lib/datastatus";
+import { refreshReady, refreshState } from "@/lib/refresh";
 import { sendPlain } from "@/lib/email";
 import { redis } from "@/lib/store";
 import { currentUser, userKey } from "@/lib/users";
@@ -6,13 +7,15 @@ import { currentUser, userKey } from "@/lib/users";
 // stav stažených dat + kam chodí e-maily a jak dopadl poslední ranní e-mail
 export async function GET() {
   const me = await currentUser();
-  const [running, last] = await Promise.all([
+  const [running, refresh, last] = await Promise.all([
     runningJobs(),
+    me.owner ? refreshState() : null,
     redis ? redis.get<{ at: string; log: string[] }>(await userKey("mailLog")) : null,
   ]);
   return Response.json({
     datasets: datasets(),
     running,
+    refresh: me.owner ? { ready: refreshReady(), ...refresh } : null,
     mail: {
       to: me.email,
       from: process.env.ALERT_FROM ?? "Zakázky radar <onboarding@resend.dev>",

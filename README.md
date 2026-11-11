@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.36.0** – Nastavení → Stav dat → „Stáhnout všechno znovu“ (jen správce, dvojí potvrzení + nové ověření heslem, nejvýš jednou za 6 h): spustí na GitHubu plný sběr profilů (120 dní) a Registr smluv za 3 měsíce a zapíše `data/refresh-request.json` pro Mac, který při dalším běhu projde celé Vhodné uveřejnění (35 dní) a ISVZ za 3 měsíce (`data/refresh-done.json`). Potřebuje `GH_DISPATCH_TOKEN` ve Vercelu (fine-grained, jen toto repo, Actions + Contents: Read and write).
 - **1.35.0** – Nastavení → Stav dat: co je stažené (profily, Vhodné uveřejnění, ISVZ, DNS, Registr smluv), kdy se to doplnilo, co ještě zbývá, kdy příště a co se právě stahuje na GitHubu (živě). E-mailová upozornění: na jakou adresu chodí, odesílatel, záznam posledního ranního běhu a zkušební e-mail (`/api/datastatus`).
 - **1.34.0** – průběh hledání naživo (`/api/search?stream=1`): který zdroj je hotový a s kolika zakázkami, AI dávky, procenta a plovoucí ukazatel. Oprava lhůt: dny se počítají podle kalendáře v místním čase (včerejší lhůta už není „končí dnes“, ale „lhůta uplynula“), uložené výsledky s prošlou lhůtou se nezobrazují, nově „končí zítra“.
 - **1.33.0** – Návody k funkcím v Nastavení: 12 obrázkových videí krok za krokem (přiblížení, zvýraznění, automatické přehrávání, šipky a mezerník), jen pro správce – snímky v `guide/`, vydává je `/api/guide` jen vlastníkovi. Nové snímky: `node scripts/guide-shots.cjs` (popis v souboru).

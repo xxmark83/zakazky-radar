@@ -4231,6 +4231,7 @@ type DataStatusRes = {
   datasets: DataSet[];
   running: { name: string; started: string; url: string }[];
   mail: { to: string | null; from: string; testSender: boolean; ready: boolean; cron: boolean; last: { at: string; log: string[] } | null };
+  refresh: { ready: boolean; request: { id: string } | null; done: { id: string; at: string } | null } | null;
 };
 const when = (iso: string | null) => {
   if (!iso) return "–";
@@ -4322,6 +4323,8 @@ function DataStatus() {
         ))}
       </div>
 
+      {d.refresh && <RefreshAll r={d.refresh} running={d.running.length} reload={load} />}
+
       <h3 className="sec">E-mailová upozornění</h3>
       <div className="data-list">
         <div className="data-row">
@@ -4363,6 +4366,103 @@ function DataStatus() {
         {msg && <span className="note">{msg}</span>}
       </div>
     </>
+  );
+}
+
+// „Stáhnout všechno znovu“ – jen správce, dvojí potvrzení a nové ověření heslem
+function RefreshAll({ r, running, reload }: { r: NonNullable<DataStatusRes["refresh"]>; running: number; reload: () => void }) {
+  const ask = useContext(ReauthCtx);
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [agree, setAgree] = useState(false);
+  const [word, setWord] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ name: string; ok: boolean; error?: string }[] | null>(null);
+  const [error, setError] = useState("");
+  const macWaiting = r.request && r.request.id !== r.done?.id;
+  const reset = () => (setStep(0), setAgree(false), setWord(""), setError(""));
+  async function go() {
+    setBusy(true);
+    setError("");
+    const { ok, d } = await postSensitive("/api/refresh", { confirm: word.trim().toUpperCase() }, ask);
+    setBusy(false);
+    if (d.steps) setResult(d.steps);
+    if (!ok) return setError(d.error ?? "Nepodařilo se spustit");
+    reset();
+    setTimeout(reload, 4000);
+  }
+  return (
+    <div className="refresh-box">
+      <div className="data-head">
+        <b>Stáhnout všechno znovu</b>
+        {r.request && <span className="hint">naposledy spuštěno {when(r.request.id)}</span>}
+      </div>
+      {macWaiting && (
+        <span className="hint">
+          ⏳ Mac ještě nevyřídil poslední požadavek – vezme si ho při dalším běhu (každé 3 h, Mac musí být zapnutý a připojený).
+        </span>
+      )}
+      {r.done && !macWaiting && <span className="hint">✓ Mac poslední požadavek vyřídil {when(r.done.at)}.</span>}
+      {result && (
+        <ul className="mail-log">
+          {result.map((x) => (
+            <li key={x.name} className={x.ok ? "" : "err"}>
+              {x.ok ? "✓" : "✕"} {x.name}
+              {x.error ? ` – ${x.error}` : x.ok ? " – spuštěno" : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!r.ready ? (
+        <p className="note">
+          Ještě nejde: appka potřebuje ve Vercelu proměnnou <b>GH_DISPATCH_TOKEN</b> (GitHub → Settings → Developer settings →
+          Fine-grained tokens, jen repo zakazky-radar, Actions a Contents: Read and write). Token vkládáš jen do Vercelu, nikomu
+          ho neposílej.
+        </p>
+      ) : step === 0 ? (
+        <button className="danger-ghost" onClick={() => setStep(1)} disabled={running > 0}>
+          {running > 0 ? "Právě se stahuje – počkej na dokončení" : "Stáhnout všechno znovu…"}
+        </button>
+      ) : step === 1 ? (
+        <div className="refresh-confirm">
+          <b>1/2 – Co se stane</b>
+          <ul>
+            <li>GitHub projde znovu všech ~10 000 profilů zadavatelů za 120 dní – trvá to až 5 hodin.</li>
+            <li>GitHub obnoví Registr smluv za poslední 3 měsíce – do 2 hodin.</li>
+            <li>Mac při dalším běhu (do 3 h) projde celé Vhodné uveřejnění za 35 dní a ISVZ za 3 měsíce – asi 2,5 hodiny.</li>
+            <li>Appka mezitím jede dál se současnými daty, nic se nesmaže. Nová data se ukážou postupně, jak se nasadí.</li>
+            <li>Jde to jednou za 6 hodin. TED, NEN a Hlídač státu se stahovat nemusí – čtou se naživo při hledání.</li>
+          </ul>
+          <label className="check-line">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> Rozumím, trvá to hodiny
+          </label>
+          <div className="row-btns">
+            <button className="primary" style={{ marginTop: 0 }} disabled={!agree} onClick={() => setStep(2)}>
+              Pokračovat
+            </button>
+            <button className="ghost" onClick={reset}>
+              Zrušit
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="refresh-confirm">
+          <b>2/2 – Potvrď</b>
+          <label htmlFor="rf-word">
+            Napiš <b>STÁHNOUT</b>. Pak se ještě ověříš heslem.
+          </label>
+          <input id="rf-word" value={word} onChange={(e) => setWord(e.target.value)} autoComplete="off" placeholder="STÁHNOUT" />
+          {error && <div className="warn">{error}</div>}
+          <div className="row-btns">
+            <button className="primary" style={{ marginTop: 0 }} disabled={busy || word.trim().toUpperCase() !== "STÁHNOUT"} onClick={go}>
+              {busy ? "Spouštím…" : "Spustit celé stažení"}
+            </button>
+            <button className="ghost" onClick={reset}>
+              Zrušit
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

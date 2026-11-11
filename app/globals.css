@@ -793,6 +793,13 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .mail-log { margin: 2px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .mail-log li.err { color: var(--bad); }
 
+.refresh-box { display: grid; gap: 6px; margin-top: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 14px; }
+.refresh-confirm { display: grid; gap: 8px; }
+.refresh-confirm ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; display: grid; gap: 3px; }
+.check-line { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.check-line input { width: auto; margin: 0; }
+.danger-ghost { justify-self: start; border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); color: var(--bad); }
+
 /* obrázkové návody */
 .guide-all { margin: 4px 0 10px; display: inline-flex; align-items: center; gap: 8px; }
 .guide-grid { display: grid; gap: 8px; grid-template-columns: 1fr; }

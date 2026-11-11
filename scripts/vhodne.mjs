@@ -84,7 +84,9 @@ const byId = new Map(prev.tenders.map((t) => [t.id, t]));
 const done = new Map(prev.done ?? []);
 const cutoff = new Date(Date.now() - BACK_DAYS * 86400_000).toISOString().slice(0, 10);
 // poprvé projdeme 35 dní zpět, potom jen do posledního běhu (s dnem rezervy)
-const until = prev.updated ? new Date(new Date(prev.updated).getTime() - 86400_000).toISOString().slice(0, 10) : cutoff;
+// FULL=1 (tlačítko „Stáhnout všechno znovu“): znovu celých 35 dní, i kdyby to už bylo staženo
+const FULL = process.env.FULL === "1";
+const until = prev.updated && !FULL ? new Date(new Date(prev.updated).getTime() - 86400_000).toISOString().slice(0, 10) : cutoff;
 let blocked = "";
 let added = 0;
 let details = 0;
@@ -94,7 +96,7 @@ try {
     const items = parseRss(await get(`${BASE}/rss/zakazky${page > 1 ? `?page=${page}` : ""}`));
     if (!items.length) break;
     for (const t of items) {
-      if (t.published < cutoff || byId.has(t.id) || done.has(t.id)) continue;
+      if (t.published < cutoff || byId.has(t.id) || (done.has(t.id) && !FULL)) continue;
       byId.set(t.id, t);
       added++;
     }
