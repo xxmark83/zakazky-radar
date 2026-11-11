@@ -1,4 +1,5 @@
 import { allowedPresets, accessFor } from "./access";
+import { hlidacGet } from "./hlidac-api";
 import { terms } from "./buyer";
 import { PRESETS } from "./presets";
 import { redis } from "./store";
@@ -116,12 +117,9 @@ async function fetchFor(w: Watched): Promise<SignedContract[]> {
   const out: SignedContract[] = [];
   for (let strana = 1; strana <= 3; strana++) {
     const q = new URLSearchParams({ dotaz: `ico:${w.ico} AND podepsano:[${since} TO *]`, strana: String(strana), razeni: "1" });
-    const res = await fetch(`https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?${q}`, {
-      headers: { Authorization: `Token ${token}`, "User-Agent": UA },
-      cache: "no-store",
-    });
-    if (!res.ok) break;
-    const rows: any[] = (await res.json()).results ?? [];
+    const data = await hlidacGet(`https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?${q}`, 3 * 3600).catch(() => null);
+    if (!data) break;
+    const rows: any[] = data.results ?? [];
     for (const r of rows) {
       const payer = r.platce ?? {};
       const buyer = payer.ico === w.ico;

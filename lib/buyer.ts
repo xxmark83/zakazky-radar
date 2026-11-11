@@ -1,3 +1,4 @@
+import { hlidacGet } from "./hlidac-api";
 import { askJson, type ModelChoice } from "./ai";
 import { isvzBuyerIco, isvzByBuyer } from "./sources/isvz";
 import { smlouvyBuyerIco, smlouvyByBuyer } from "./sources/smlouvy";
@@ -78,9 +79,7 @@ async function hlidacPages(dotaz: string, token: string): Promise<Contract[]> {
   for (let strana = 1; strana <= PAGES; strana++) {
     // razeni=5: nově uzavřené první (dokumentace api.hlidacstatu.cz/swagger/v2/swagger.json)
     const url = `https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?dotaz=${encodeURIComponent(dotaz)}&strana=${strana}&razeni=5`;
-    const res = await fetch(url, { headers: { Authorization: `Token ${token}`, "User-Agent": UA }, cache: "no-store" });
-    if (!res.ok) throw new Error(`Hlídač státu ${res.status}`);
-    const data = await res.json();
+    const data = await hlidacGet(url, 12 * 3600); // historie se mění pomalu – 12 h z paměti
     const rows: any[] = data.results ?? data.Results ?? [];
     const total = Number(data.total ?? data.Total ?? 0);
     for (const r of rows) {
@@ -108,10 +107,12 @@ async function hlidacPages(dotaz: string, token: string): Promise<Contract[]> {
 }
 
 async function hlidacContracts(ico: string, since: string, token: string) {
+  // since jen na den, ať se dotaz během dne neměnil a šel brát z paměti
   const base = `icoPlatce:${ico} AND podepsano:[${since} TO *]`;
   // zvlášť dotaz na IT, aby se u velkých úřadů neztratily mezi stovkami jiných smluv
   const it = `${base} AND (software OR aplikace OR "informační systém" OR licence OR portál OR CRM OR cloud OR helpdesk OR kybernetická OR e-learning OR webové)`;
-  const [a, b] = await Promise.all([hlidacPages(it, token), hlidacPages(base, token)]);
+  const a = await hlidacPages(it, token);
+  const b = await hlidacPages(base, token);
   return [...a, ...b];
 }
 
@@ -127,7 +128,7 @@ export async function buyerHistory(tender: Tender, keywords: string): Promise<Bu
     try {
       contracts = await hlidacContracts(buyer.ico, since, token);
     } catch (e: any) {
-      warnings.push(`Hlídač státu nedostupný (${e.message}), ukazuji jen IT smlouvy z našich dat.`);
+      warnings.push(`${e.message}. Zatím ukazuji jen IT smlouvy z našich dat.`);
     }
   }
   // bez tokenu (nebo při chybě) aspoň IT smlouvy z Registru smluv, které sbíráme sami

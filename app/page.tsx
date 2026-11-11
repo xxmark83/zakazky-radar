@@ -3039,6 +3039,8 @@ function BuyerSection(props: {
             )}
             {hist.full
               ? `Všechny smlouvy z Registru smluv za ${hist.years} let (Hlídač státu) a zakázky z ISVZ.`
+              : hist.warnings.some((w) => w.includes("Hlídač"))
+              ? "Jen IT smlouvy, které sbíráme sami (24 měsíců), a zakázky z ISVZ – celou historii za 5 let doplní Hlídač státu, až zase odpoví."
               : "Jen IT smlouvy, které sbíráme sami (24 měsíců), a zakázky z ISVZ. Celou historii za 5 let ukáže Hlídač státu – stačí přidat HLIDAC_TOKEN ve Vercelu."}
           </p>
           {hist.warnings.map((w) => (

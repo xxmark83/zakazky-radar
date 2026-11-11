@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.36.2** – Hlídač státu (chyba 429 = příliš mnoho dotazů): všechny dotazy jdou přes jednu frontu (`lib/hlidac-api.ts`, ~3 za sekundu, při 429 čeká podle Retry-After a zkusí znovu), odpovědi se drží v Redisu (hledání 1 h, hlídání 3 h, historie zadavatele 12 h); srozumitelná hláška v historii zadavatele.
 - **1.36.1** – průběh hledání ukazuje u každého zdroje „naživo“ / „staženo“ a text chyby; Hlídač státu: pauza mezi dotazy, jeden opakovaný pokus při 429, poctivý User-Agent.
 - **1.36.0** – Nastavení → Stav dat → „Stáhnout všechno znovu“ (jen správce, dvojí potvrzení + nové ověření heslem, nejvýš jednou za 6 h): spustí na GitHubu plný sběr profilů (120 dní) a Registr smluv za 3 měsíce a zapíše `data/refresh-request.json` pro Mac, který při dalším běhu projde celé Vhodné uveřejnění (35 dní) a ISVZ za 3 měsíce (`data/refresh-done.json`). Potřebuje `GH_DISPATCH_TOKEN` ve Vercelu (fine-grained, jen toto repo, Actions + Contents: Read and write).
 - **1.35.0** – Nastavení → Stav dat: co je stažené (profily, Vhodné uveřejnění, ISVZ, DNS, Registr smluv), kdy se to doplnilo, co ještě zbývá, kdy příště a co se právě stahuje na GitHubu (živě). E-mailová upozornění: na jakou adresu chodí, odesílatel, záznam posledního ranního běhu a zkušební e-mail (`/api/datastatus`).

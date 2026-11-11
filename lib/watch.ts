@@ -1,3 +1,4 @@
+import { hlidacGet } from "./hlidac-api";
 import { isvzByWinner } from "./sources/isvz";
 import { profilyByBuyer } from "./sources/profily";
 import { smlouvyByWinner } from "./sources/smlouvy";
@@ -13,13 +14,10 @@ async function hlidacByIco(ico: string, since: string): Promise<Tender[]> {
   const token = process.env.HLIDAC_TOKEN;
   if (!token) return [];
   const q = new URLSearchParams({ ico, zverejnenoOd: since, strana: "1", razeni: "1" });
-  const res = await fetch(`https://api.hlidacstatu.cz/api/v2/vz/hledat?${q}`, {
-    headers: { Authorization: `Token ${token}` },
-    cache: "no-store",
-  });
-  if (!res.ok) return [];
+  const data = await hlidacGet(`https://api.hlidacstatu.cz/api/v2/vz/hledat?${q}`, 3 * 3600).catch(() => null);
+  if (!data) return [];
   const today = new Date().toISOString().slice(0, 10);
-  const rows: any[] = (await res.json()).results ?? [];
+  const rows: any[] = data.results ?? [];
   return rows
     .map((r): Tender => {
       const s = r.souhrn ?? {};

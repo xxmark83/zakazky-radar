@@ -1,4 +1,5 @@
 import type { Tender } from "../types";
+import { hlidacGet } from "../hlidac-api";
 
 // Hlídač státu – agreguje i podlimitní zakázky z profilů zadavatelů a Věstníku.
 // Token zdarma po registraci (nekomerční užití; komerční dle jejich podmínek).
@@ -25,22 +26,8 @@ export async function fetchHlidac(opts: {
   for (const kw of opts.keywords.slice(0, 8)) {
     const early = opts.kind === "upcoming" ? `"tržní konzultace" AND ` : "";
     const q = new URLSearchParams({ dotaz: `${early}${kw}`, zverejnenoOd: since, strana: "1", razeni: "1" });
-    // nejvýš 4 dotazy za sekundu (a otevřené i připravované běží souběžně) – mezi dotazy pauza,
-    // při 429 jednou počkat a zkusit znovu
-    const get = () =>
-      fetch(`${URL}?${q}`, {
-        headers: { Authorization: `Token ${token}`, "User-Agent": "zakazky-radar (verejne zakazky, kontakt pres GitHub xxmark83)" },
-        cache: "no-store",
-        signal: AbortSignal.timeout(20_000),
-      });
-    await new Promise((r) => setTimeout(r, 600));
-    let res = await get();
-    if (res.status === 429) {
-      await new Promise((r) => setTimeout(r, 2500));
-      res = await get();
-    }
-    if (!res.ok) throw new Error(`Hlídač státu ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const data = await res.json();
+    // fronta s limitem dotazů; stejný dotaz se hodinu bere z paměti
+    const data = await hlidacGet(`${URL}?${q}`, 3600);
     const rows: any[] = data.results ?? data.Results ?? [];
     for (const r of rows) {
       const id = String(first(r.id, r.Id) ?? "");
