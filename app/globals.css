@@ -323,6 +323,7 @@ button.mine-row:active { transform: none; }
 .tag.accent { background: var(--accent-soft); color: var(--accent); }
 .tag.fresh { background: var(--good); color: #fff; }
 .tag.soon { background: var(--soon-bg); color: var(--soon-text); }
+.tag.small { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
 .tender h3 { font-size: 17px; line-height: 1.35; margin: 2px 0 6px; letter-spacing: -0.015em; }
 .tender h3 a { color: inherit; text-decoration: none; }
 .tender h3 a:hover { color: var(--accent); }

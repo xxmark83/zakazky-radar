@@ -24,6 +24,14 @@ export const PRESETS: Profile[] = [
       "kybernetická bezpečnost, NIS2, GAP analýza, SIEM, SOC, endpoint, antivirus, EDR, XDR, kyberbezpečnost, firewall, penetrační testy, zranitelnost, ISO 27001",
     cpv: "48730000 48760000 72000000 79417000",
   },
+  {
+    name: "Zakázky na míru (živnost)",
+    profile:
+      "Jsem živnostník a vyvíjím software na míru pro zakázky malého rozsahu (do 2 mil. Kč bez DPH, ideálně 50 tis. – 1 mil. Kč): webové a mobilní aplikace (PWA), evidence a databáze (klienti, žádosti, smlouvy, majetek, vozidla, akce), jednoduché CRM a helpdesk, klientské a občanské portály s formuláři a elektronickými žádostmi, rezervační a objednávkové systémy, registrace na akce a kurzy, e-learning a testy, intranety, dashboardy a reporty z dat, mapové aplikace, weby obcí a organizací (i přístupnost WCAG), chatboty a AI asistenty nad dokumenty, napojení systémů přes API a převod dat. Dodávám rychle (týdny), s nízkou cenou a další podporou. Hodí se mi zakázky malého rozsahu, přímé výzvy a poptávky obcí, škol, příspěvkových organizací a menších úřadů. Nehodí se mi velké systémové integrace, atestované systémy (spisová služba, ekonomické systémy), dodávky hardwaru, nepřetržitý provoz 24/7 a zakázky s požadavkem na velký obrat, tým nebo firemní certifikace ISO.",
+    keywords:
+      "vývoj aplikace, aplikace na míru, software na míru, webová aplikace, mobilní aplikace, webové stránky, rezervační systém, objednávkový systém, evidenční systém, databáze, formulář, portál, intranet, dashboard, chatbot, digitalizace, CRM, helpdesk, e-learning",
+    cpv: "72200000 72212000 72262000 72413000 72230000 48000000",
+  },
 ];
 
 // více oblastí najednou: jeden společný popis pro AI, sjednocená klíčová slova a CPV
@@ -32,6 +40,7 @@ export const PRESET_SHORT: Record<string, string> = {
   "CRM a zákaznické portály": "CRM a portály",
   "Vzdělávací portál": "Vzdělávání",
   "Kybernetická bezpečnost": "Kyberbezpečnost",
+  "Zakázky na míru (živnost)": "Na míru",
 };
 export const selectedPresets = (name: string) => name.split(JOIN).filter((n) => PRESETS.some((p) => p.name === n));
 export function combine(names: string[]) {

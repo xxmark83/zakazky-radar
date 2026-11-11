@@ -66,6 +66,8 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.30** – nová oblast „Zakázky na míru (živnost)“: aplikace, evidence, portály, rezervace, weby, dashboardy a chatboty
+  do 2 mil. Kč (sama nastaví filtr hodnoty), štítek „malý rozsah“ u zakázek malého rozsahu a do 2 mil. Kč.
 - **1.29** – vlastník může vyžadovat 2FA (bez něj jen obrazovka nastavení), upozornění na nové přihlášení a zámek účtu
   (telefon a e-mail), zámek účtu po 5 chybách na 15 minut, nové ověření heslem pro citlivé kroky (10 minut),
   záznam událostí (Zabezpečení a Správa účtů), šifrování klíčů 2FA a podpis přihlášení přes AUTH_KEY;

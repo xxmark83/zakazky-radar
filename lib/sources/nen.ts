@@ -30,6 +30,7 @@ const isoDate = (s: string) => {
 const STOP = new Set([
   "pro", "správa", "systém", "zaměstnanců", "občany", "klientů", "kontaktů",
   "analýza", "testy", "bezpečnost", "soc", "iso", "edr", "xdr", "gap",
+  "tvorba", "stránky", "míru", "online", "žádosti", "elektronické",
 ]);
 const ALWAYS = ["informační systém", "aplikac", "software"];
 export const terms = (keywords: string[]) => {

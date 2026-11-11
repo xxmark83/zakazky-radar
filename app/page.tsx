@@ -43,6 +43,7 @@ const ICONS = {
   users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
   cap: "M22 10 12 5 2 10l10 5 10-5ZM6 12v5c3 2 9 2 12 0v-5",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3-10 2 2 4-4",
+  code: "m8 8-4 4 4 4m8-8 4 4-4 4M14 4l-4 16",
   arrow: "M5 12h14m-6-6 6 6-6 6",
   radar: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-4a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm0-6 7-7",
   home: "M3 11 12 3l9 8M5 10v10h5v-6h4v6h5V10",
@@ -875,12 +876,14 @@ const PRESET_ICON: Record<string, IconName> = {
   "CRM a zákaznické portály": "users",
   "Vzdělávací portál": "cap",
   "Kybernetická bezpečnost": "shield",
+  "Zakázky na míru (živnost)": "code",
 };
 
 const PRESET_HINT: Record<string, string> = {
   "CRM a zákaznické portály": "Malé CRM, klientské a občanské portály, helpdesk",
   "Vzdělávací portál": "E-learning, LMS, povinná školení zaměstnanců",
   "Kybernetická bezpečnost": "GAP analýza NIS2, SIEM a SOC, endpoint a antivirus",
+  "Zakázky na míru (živnost)": "Aplikace, evidence, portály a weby do 2 mil. Kč",
 };
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
@@ -1060,6 +1063,11 @@ function SearchTab(props: {
     setRegion(load("zr-region", "all"));
     setValue(load("zr-value", "all"));
   }, []);
+
+  // modul „na míru“: když je vybraný sám, ukázat rovnou zakázky do 2 mil. Kč (filtr jde změnit)
+  useEffect(() => {
+    if (form.name === "Zakázky na míru (živnost)") setValue((v) => (v === "all" ? "m" : v));
+  }, [form.name]);
 
   useEffect(() => {
     if (!loading) return;
@@ -1469,6 +1477,9 @@ function Deadline({ d, short, icon }: { d: string | null; short?: boolean; icon?
 }
 
 const SWIPE = 90; // px, od kolika se potažení počítá
+// zakázka malého rozsahu: režim z profilu zadavatele, nebo hodnota do 2 mil. Kč
+const isSmall = (t: ScoredTender) =>
+  /malého rozsahu/i.test(t.description) || Boolean(t.value && (t.currency ?? "CZK") === "CZK" && t.value <= 2_000_000);
 // klíčová slova aktuálního hledání – pro vysvětlení skóre na kartě
 const KeywordsCtx = createContext("");
 
@@ -1601,6 +1612,7 @@ function TenderCard(props: {
             <div className="tags">
               {fresh && <span className="tag fresh">nová</span>}
               {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
+              {isSmall(t) && <span className="tag small">malý rozsah</span>}
               {t.country === "SK" && <span className="tag sk">SK</span>}
               {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
               {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
