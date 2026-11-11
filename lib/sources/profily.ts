@@ -55,7 +55,7 @@ function load(): Data | null {
 
 export function profilyInfo() {
   const d = load();
-  return d ? { updated: d.updated, profiles: d.profiles, ok: d.ok, open: d.tenders.length } : null;
+  return d ? { updated: d.updated, profiles: d.profiles, ok: d.ok, open: d.tenders.length, mode: (d as { mode?: string }).mode ?? null } : null;
 }
 
 /** Aktuální podoba zakázek z profilů podle id – pro hlídání změn u sledovaných zakázek. */

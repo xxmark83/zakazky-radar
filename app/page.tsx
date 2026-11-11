@@ -796,6 +796,8 @@ function Settings(props: {
           </span>
         </label>
 
+        <DataStatus />
+
         <h3 className="sec">AI a útrata</h3>
         <div className="budget">
           <div className="budget-row">
@@ -4223,6 +4225,147 @@ function EventList({ events, who }: { events: { at: string; user?: string; event
 }
 
 // Správa účtů (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová slova
+// ---------- stav stažených dat a e-mailů ----------
+type DataSet = { id: string; name: string; what: string; count: string; updated: string | null; where: string; next: string | null; done?: number; pending?: string; late?: boolean };
+type DataStatusRes = {
+  datasets: DataSet[];
+  running: { name: string; started: string; url: string }[];
+  mail: { to: string | null; from: string; testSender: boolean; ready: boolean; cron: boolean; last: { at: string; log: string[] } | null };
+};
+const when = (iso: string | null) => {
+  if (!iso) return "–";
+  const d = new Date(iso);
+  const h = (Date.now() - d.getTime()) / 3600_000;
+  if (h >= 0 && h < 1) return `před ${Math.max(1, Math.round(h * 60))} min`;
+  if (h >= 0 && h < 24) return `před ${Math.round(h)} h`;
+  return d.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+const until = (iso: string) => {
+  const h = (Date.parse(iso) - Date.now()) / 3600_000;
+  if (h < 0) return "už by měl proběhnout";
+  if (h < 1) return `za ${Math.max(1, Math.round(h * 60))} min`;
+  if (h < 36) return `za ${Math.round(h)} h`;
+  return new Date(iso).toLocaleDateString("cs-CZ");
+};
+
+function DataStatus() {
+  const [d, setD] = useState<DataStatusRes | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () =>
+    fetch("/api/datastatus")
+      .then((r) => r.json())
+      .then((x) => x.datasets && setD(x))
+      .catch(() => {});
+  useEffect(() => {
+    load();
+  }, []);
+  // když se právě něco stahuje, obnovovat každých 30 s
+  useEffect(() => {
+    if (!d?.running.length) return;
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
+  }, [d?.running.length]);
+  async function test() {
+    setBusy(true);
+    const res = await post("/api/datastatus", {});
+    const x = await res.json().catch(() => ({}));
+    setBusy(false);
+    setMsg(res.ok ? `Odesláno na ${x.to}. Když nedorazí do pár minut, mrkni do spamu.` : (x.error ?? "Nepodařilo se"));
+  }
+  if (!d) return null;
+  const m = d.mail;
+  return (
+    <>
+      <h3 className="sec">Stav dat</h3>
+      <p className="note">
+        TED, NEN a Hlídač státu se čtou naživo při každém hledání. Tyhle zdroje se stahují dopředu, na pozadí – nic z toho
+        nejde do tvého počítače.
+      </p>
+      {d.running.length > 0 && (
+        <div className="data-running">
+          {d.running.map((r) => (
+            <div key={r.url}>
+              <span className="live" aria-hidden="true" />
+              <b>Právě se stahuje:</b> {r.name} <span className="hint">(běží {when(r.started).replace("před ", "")})</span>
+              <div className="meter indeterminate">
+                <span />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="data-list">
+        {d.datasets.map((x) => (
+          <div key={x.id} className={`data-row ${x.late ? "late" : ""}`}>
+            <div className="data-head">
+              <b>{x.name}</b>
+              <span className="hint">aktualizováno {when(x.updated)}</span>
+            </div>
+            <span>{x.count}</span>
+            {x.done !== undefined && x.done < 1 && (
+              <div className="meter" title={`${Math.round(x.done * 100)} %`}>
+                <span style={{ width: `${Math.round(x.done * 100)}%` }} />
+              </div>
+            )}
+            {x.pending && <span className="hint">⏳ {x.pending}</span>}
+            <span className="hint">
+              {x.where}
+              {x.next ? `, příště ${until(x.next)}` : ""}
+            </span>
+            {x.late && (
+              <span className="warn-text">
+                {x.id === "vhodne" || x.id === "isvz" ? "Dlouho se nedoplnilo – je Mac zapnutý a připojený?" : "Poslední noční běh se asi nepovedl."}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <h3 className="sec">E-mailová upozornění</h3>
+      <div className="data-list">
+        <div className="data-row">
+          <div className="data-head">
+            <b>Chodí na</b>
+          </div>
+          <span>{m.to ?? "žádná adresa – doplň ji ve Vercelu za dvojtečku: OWNER_JMENO=otisk:e-mail"}</span>
+          <span className="hint">
+            Odesílatel {m.from}, každé ráno kolem 6:00 (v létě 7:00), jen když je něco nového. V pondělí navíc týdenní přehled.
+          </span>
+          {m.testSender && (
+            <span className="hint">
+              Posílá se přes zkušební adresu Resendu – ta doručí jen na e-mail, se kterým je založený účet v Resendu. Pro další
+              účty (Michal) je potřeba ověřit vlastní doménu a nastavit ALERT_FROM.
+            </span>
+          )}
+          {!m.ready && <span className="warn-text">E-maily nejsou zapnuté (chybí RESEND_API_KEY nebo adresa).</span>}
+        </div>
+        <div className="data-row">
+          <div className="data-head">
+            <b>Poslední ranní běh</b>
+            <span className="hint">{m.last ? when(m.last.at) : "zatím žádný záznam"}</span>
+          </div>
+          {m.last && (
+            <ul className="mail-log">
+              {m.last.log.map((l, i) => (
+                <li key={i} className={/selhal|chyba/i.test(l) ? "err" : ""}>
+                  {l}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      <div className="row-btns">
+        <button onClick={test} disabled={busy || !m.ready}>
+          {busy ? "Posílám…" : "Poslat zkušební e-mail"}
+        </button>
+        {msg && <span className="note">{msg}</span>}
+      </div>
+    </>
+  );
+}
+
 // ---------- obrázkové návody (jen správce) ----------
 const stepMs = (text: string) => 4500 + text.length * 45;
 

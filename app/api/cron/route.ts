@@ -9,7 +9,7 @@ import { runSearch } from "@/lib/search";
 import { addSpend, filterUnseen, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
 import { changesFromProfily } from "@/lib/track";
 import type { Award, Change, Outcome, ScoredTender, Status, WatchedProfile } from "@/lib/types";
-import { currentUser, users, withUser } from "@/lib/users";
+import { currentUser, userKey, users, withUser } from "@/lib/users";
 
 export const maxDuration = 300;
 
@@ -245,6 +245,8 @@ async function runFor(req: Request): Promise<string[]> {
     } catch (e: any) {
       log.push(`e-mail selhal: ${e.message}`);
     }
-  }
+  } else log.push("nic nového – e-mail se neposílal");
+  // co se ráno stalo, ať to appka ukáže v Nastavení
+  if (redis) await redis.set(await userKey("mailLog"), { at: new Date().toISOString(), log: log.slice(-12) }).catch(() => {});
   return log;
 }

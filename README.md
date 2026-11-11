@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.35.0** – Nastavení → Stav dat: co je stažené (profily, Vhodné uveřejnění, ISVZ, DNS, Registr smluv), kdy se to doplnilo, co ještě zbývá, kdy příště a co se právě stahuje na GitHubu (živě). E-mailová upozornění: na jakou adresu chodí, odesílatel, záznam posledního ranního běhu a zkušební e-mail (`/api/datastatus`).
 - **1.34.0** – průběh hledání naživo (`/api/search?stream=1`): který zdroj je hotový a s kolika zakázkami, AI dávky, procenta a plovoucí ukazatel. Oprava lhůt: dny se počítají podle kalendáře v místním čase (včerejší lhůta už není „končí dnes“, ale „lhůta uplynula“), uložené výsledky s prošlou lhůtou se nezobrazují, nově „končí zítra“.
 - **1.33.0** – Návody k funkcím v Nastavení: 12 obrázkových videí krok za krokem (přiblížení, zvýraznění, automatické přehrávání, šipky a mezerník), jen pro správce – snímky v `guide/`, vydává je `/api/guide` jen vlastníkovi. Nové snímky: `node scripts/guide-shots.cjs` (popis v souboru).
 - **1.32.0** – Firma a reference (IČO → ARES, knihovna referencí), krycí list, čestné prohlášení (§ 74) a seznam referencí do Wordu jedním klikem, AI vybírá reference do návrhu nabídky, „Zeptej se dokumentace“ s odkazem na stranu, lhůta na dotazy v detailu, kalendáři a push 2 dny předem, ranní AI rozbor nejlepších zakázek s verdiktem v e-mailu, odhad šance na výhru, průzkum trhu podle kraje s průměrnou cenou vítěze.

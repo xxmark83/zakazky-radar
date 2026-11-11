@@ -21,7 +21,7 @@ function load(): Data | null {
 
 export function isvzInfo() {
   const d = load();
-  return d ? { months: d.months, count: d.awards.length, cpv: d.cpv } : null;
+  return d ? { months: d.months, count: d.awards.length, cpv: d.cpv, updated: (d as { updated?: string }).updated ?? null } : null;
 }
 
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();

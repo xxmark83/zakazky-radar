@@ -778,6 +778,21 @@ a.hist-row.contract { text-decoration: none; color: inherit; }
 a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .hist-title { line-height: 1.4; }
 
+/* stav dat */
+.data-list { display: grid; gap: 8px; }
+.data-row { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 14px; }
+.data-row.late { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.data-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.data-row .meter { margin: 2px 0; }
+.data-row .meter span { background: var(--accent); }
+.warn-text { color: var(--bad); font-size: 13px; }
+.data-running { display: grid; gap: 8px; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 12%, var(--card)); font-size: 14px; }
+.meter.indeterminate { margin-top: 6px; overflow: hidden; }
+.meter.indeterminate span { width: 35%; background: var(--accent); animation: indet 1.4s ease-in-out infinite; }
+@keyframes indet { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.mail-log { margin: 2px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.mail-log li.err { color: var(--bad); }
+
 /* obrázkové návody */
 .guide-all { margin: 4px 0 10px; display: inline-flex; align-items: center; gap: 8px; }
 .guide-grid { display: grid; gap: 8px; grid-template-columns: 1fr; }
