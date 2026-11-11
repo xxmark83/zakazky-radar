@@ -898,8 +898,9 @@ function Settings(props: {
           <option value={3}>3 zakázky denně</option>
         </select>
         <p className="note">
-          Ráno AI přečte dokumentaci nejlepších nových zakázek (skóre 75+) a verdikt „podat / zvážit / nechat“ pošle rovnou
-          v e-mailu. Počítá se do měsíčního limitu.
+          Ráno AI přečte dokumentaci nejlepších nových zakázek (skóre 75+), verdikt „podat / zvážit / nechat“ pošle rovnou
+          v e-mailu a udělá i rychlé „Zvládneme to?“ – na kartě pak hned vidíš, jestli tě nezastaví obrat nebo reference.
+          Počítá se do měsíčního limitu (asi dvojnásobek uvedené ceny).
         </p>
 
         <h3 className="sec">Zdroje zakázek</h3>
@@ -1167,6 +1168,7 @@ function SearchTab(props: {
   const [sort, setSort] = useState<Sort>("score");
   // hustý seznam (řádky) pro rychlé projití stovek zakázek na počítači; na telefonu jsou karty kompaktní vždy
   const [dense, setDense] = useState(false);
+  const [maybeOpen, setMaybeOpen] = useState(false);
   // jednorázová nápověda k potažení karty (jen telefon)
   const [swipeHint, setSwipeHint] = useState(false);
   const [region, setRegion] = useState("all");
@@ -1178,6 +1180,7 @@ function SearchTab(props: {
     setFresh(new Set(load<string[]>("zr-fresh", [])));
     setSort(load("zr-sort", "score"));
     setDense(load("zr-dense", false));
+    setMaybeOpen(load("zr-maybe", false));
     setSwipeHint(!load("zr-swipe-hint", 0));
     setRegion(load("zr-region", "all"));
     setValue(load("zr-value", "all"));
@@ -1288,9 +1291,30 @@ function SearchTab(props: {
   const count = (s: Status) => Object.values(statuses).filter((x) => x === s).length;
   // nové od poslední návštěvy nahoru (jen ve „Vše“), uvnitř skupin platí zvolené řazení
   const isNew = (t: ScoredTender) => filter === "all" && isNewSince(t, since, fresh);
-  const newer = shown.filter(isNew);
-  const older = shown.filter((t) => !isNew(t));
-  const ordered = [...newer, ...older];
+  // „Sedí“ (75+) nahoře, „Možná“ (pod 75) sbalené pod nimi – jen při řazení podle skóre ve „Vše“.
+  // Nehodnocené (bez AI) zůstávají nahoře, ať nezapadnou.
+  const isMaybe = (t: ScoredTender) => t.score >= 0 && t.score < 75;
+  const split = sort === "score" && filter === "all" && shown.some(isMaybe) && shown.some((t) => !isMaybe(t));
+  const strong = split ? shown.filter((t) => !isMaybe(t)) : shown;
+  const maybe = split ? shown.filter(isMaybe) : [];
+  const newer = strong.filter(isNew);
+  const older = strong.filter((t) => !isNew(t));
+  const ordered = [...newer, ...older, ...(maybeOpen ? maybe : [])];
+
+  const card = (t: ScoredTender) => (
+    <TenderCard
+      key={t.id}
+      t={t}
+      fresh={fresh.has(t.id)}
+      status={statuses[t.id] ?? "new"}
+      setStatus={setStatus}
+      openDetail={(x) => {
+        setSel(x.id);
+        openDetail(x);
+      }}
+      selected={sel === t.id}
+    />
+  );
 
   // klávesy: ↑↓ nebo J/K výběr, Enter detail, Z/P/N stav, / hledání, ? nápověda
   const [sel, setSel] = useState<string | null>(null);
@@ -1571,6 +1595,7 @@ function SearchTab(props: {
         </button>
       )}
       <div className={`list ${dense ? "dense" : ""}`}>
+        {!loading && split && <div className="since-line fit">Sedí ({strong.length})</div>}
         {loading && [0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}
         {!loading &&
           [newer, older].map((group, i) =>
@@ -1581,23 +1606,28 @@ function SearchTab(props: {
                     {i ? "Dříve" : `Nové od poslední návštěvy (${newer.length})`}
                   </div>
                 )}
-                {group.map((t) => (
-                  <TenderCard
-                    key={t.id}
-                    t={t}
-                    fresh={fresh.has(t.id)}
-                    status={statuses[t.id] ?? "new"}
-                    setStatus={setStatus}
-                    openDetail={(x) => {
-                      setSel(x.id);
-                      openDetail(x);
-                    }}
-                    selected={sel === t.id}
-                  />
-                ))}
+                {group.map(card)}
               </Fragment>
             ) : null,
           )}
+        {!loading && maybe.length > 0 && (
+          <>
+            <button
+              className={`maybe-toggle ${maybeOpen ? "open" : ""}`}
+              onClick={() => {
+                setMaybeOpen(!maybeOpen);
+                save("zr-maybe", !maybeOpen);
+              }}
+              aria-expanded={maybeOpen}
+            >
+              <span>
+                <b>Možná sedí ({maybe.length})</b> skóre pod 75 – část plnění, nebo jen okrajově
+              </span>
+              <span>{maybeOpen ? "Sbalit" : "Zobrazit"}</span>
+            </button>
+            {maybeOpen && maybe.map(card)}
+          </>
+        )}
         {help && (
           <div className="drawer-bg" onClick={() => setHelp(false)}>
             <div className="card keys-help" role="dialog" aria-label="Klávesové zkratky" onClick={(e) => e.stopPropagation()}>
@@ -1750,9 +1780,16 @@ function NextLine({ t, status }: { t: ScoredTender; status: Status }) {
   const q = ACTIVE.includes(status) && status !== "sent" ? questionsDeadline(t.deadline, kept.analysis[t.id]?.questionsDeadline) : null;
   const qSoon = q && q.date >= today() && q.date <= new Date(Date.now() + 14 * 86400_000).toLocaleDateString("sv-SE");
   if (!nk && !a && !qSoon) return null;
+  const stops = a?.qualification.filter((x) => x.status === "nesplněno").length ?? 0;
   return (
     <p className="next-line">
-      {a && <span className={`pre-${VERDICT_CLS[a.verdict] ?? "mid"}`}>Posouzeno: {a.verdict}</span>}
+      {a && (
+        <span className={`pre-${VERDICT_CLS[a.verdict] ?? "mid"}`}>
+          Posouzeno: {a.verdict}
+          {stops > 0 && ` · ${stops}× nesplněno`}
+          {a.price?.level === "ztráta" && " · cenově nevychází"}
+        </span>
+      )}
       {nk && (
         <span>
           <Icon n="arrow" size={13} /> {NEXT_TEXT[nk]}
@@ -2007,6 +2044,26 @@ function Detail(props: {
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
   const assessed = kept.assess?.[t.id] ?? null;
+  // souhrn pro telefon: nejspolehlivější verdikt, který máme (posouzení > rozbor > jen skóre)
+  const left = daysLeft(t.deadline);
+  const decided = Object.values(kept.results);
+  const chance = winChance({ score: t.score, offersAvg: null, small: isSmall(t), ownWins: decided.filter((r) => r.winner === "my").length, ownDecided: decided.length });
+  const short = (v: number, cur: string | null) =>
+    (cur ?? "CZK") === "CZK" && v >= 1_000_000 ? `${(Math.round(v / 100_000) / 10).toLocaleString("cs-CZ")} mil. Kč` : money(v, cur);
+  const ana = kept.analysis[t.id];
+  const decide = assessed
+    ? {
+        cls: VERDICT_CLS[assessed.verdict] ?? "mid",
+        label: assessed.verdict === "podat" ? "Podat" : assessed.verdict === "podat s partnerem" ? "Podat s partnerem" : assessed.verdict === "nepodávat" ? "Nepodávat" : "Nejasné",
+        from: `Zvládneme to?${assessed.qualification.filter((q) => q.status === "nesplněno").length ? ` · ${assessed.qualification.filter((q) => q.status === "nesplněno").length}× nesplněno` : ""}`,
+      }
+    : ana
+      ? { cls: VERDICT[ana.verdict]?.cls ?? "mid", label: VERDICT[ana.verdict]?.label ?? "Zvážit", from: "AI rozbor · kvalifikace neposouzena" }
+      : {
+          cls: t.score >= 75 ? "good" : t.score >= 50 ? "mid" : "bad",
+          label: t.score < 0 ? "Nehodnoceno" : t.score >= 75 ? "Sedí na tvoji nabídku" : t.score >= 50 ? "Sedí zčásti" : "Spíš nesedí",
+          from: "jen AI skóre – spusť Rychlé posouzení",
+        };
   const changes = kept.changes[t.id] ?? [];
   const [busy, setBusy] = useState<"analysis" | "draft" | null>(null);
   // zadávací podklady nahrané jednou pro celou zakázku: text se vytáhne v prohlížeči (i velké soubory)
@@ -2235,6 +2292,29 @@ function Detail(props: {
           )}
         </nav>
 
+        {/* telefon: rozhodnutí na první pohled – verdikt a tři čísla */}
+        <div className={`decide ${decide.cls}`}>
+          <div className="decide-verdict">
+            <b>{decide.label}</b>
+            <span>{decide.from}</span>
+          </div>
+          <div className="decide-nums">
+            <div>
+              <small>Lhůta</small>
+              <b className={left !== null && left <= 3 ? "bad" : left !== null && left <= 7 ? "mid" : ""}>
+                {left === null ? "neuvedena" : left < 0 ? "uplynula" : left === 0 ? "dnes" : left === 1 ? "zítra" : `${left} dní`}
+              </b>
+            </div>
+            <div>
+              <small>Hodnota</small>
+              <b>{t.value ? short(t.value, t.currency) : "neuvedena"}</b>
+            </div>
+            <div>
+              <small>Šance</small>
+              <b>asi {chance.pct} %</b>
+            </div>
+          </div>
+        </div>
         <dl className="facts">
           <div>
             <dt>Lhůta</dt>
@@ -2354,7 +2434,22 @@ function Detail(props: {
           )}
         </div>
 
-        <Assess t={t} profile={profile} ai={ai} texts={texts} saved={kept.assess?.[t.id] ?? null} keep={(v) => keep("assess", t.id, v)} />
+        <Assess
+          t={t}
+          profile={profile}
+          ai={ai}
+          texts={texts}
+          saved={kept.assess?.[t.id] ?? null}
+          keep={(v) => keep("assess", t.id, v)}
+          changes={changes}
+          openCompetitor={openCompetitor}
+          addChecks={(items) => {
+            // co je potřeba doložit, jde rovnou do seznamu „Co připravit do nabídky“
+            const cur = kept.checks[t.id] ?? { done: {}, extra: [] };
+            const extra = [...new Set([...cur.extra, ...items])].slice(0, 60);
+            if (extra.length !== cur.extra.length) keep("checks", t.id, { ...cur, extra });
+          }}
+        />
 
         <AskDocs t={t} ai={ai} texts={texts} />
 
@@ -2412,9 +2507,9 @@ function Detail(props: {
           </div>
         )}
 
-        {analysis?.checklist?.length ? (
+        {analysis?.checklist?.length || kept.checks[t.id]?.extra.length ? (
           <Checklist
-            items={analysis.checklist}
+            items={analysis?.checklist ?? []}
             value={kept.checks[t.id] ?? { done: {}, extra: [] }}
             save={(v) => keep("checks", t.id, v)}
           />
@@ -2741,6 +2836,9 @@ function Assess({
   texts,
   saved,
   keep,
+  changes,
+  openCompetitor,
+  addChecks,
 }: {
   t: ScoredTender;
   profile: string;
@@ -2748,6 +2846,9 @@ function Assess({
   texts: { name: string; text: string }[] | null;
   saved: Assessment | null;
   keep: (v: Assessment | null) => void;
+  changes: Change[];
+  openCompetitor: (name: string) => void;
+  addChecks: (items: string[]) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -2770,6 +2871,7 @@ function Assess({
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
       keep(d.data);
+      addChecks((d.data as Assessment).qualification.filter((q) => q.status === "doložit").map((q) => `Doložit: ${q.requirement}`));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -2778,6 +2880,8 @@ function Assess({
   }
 
   const a = saved;
+  // zakázka se od posouzení změnila (lhůta, popis, hodnota) – posouzení už nemusí platit
+  const stale = a?.at ? changes.filter((c) => c.at > a.at!) : [];
   return (
     <>
       <h3 className="sec" id="d-assess">
@@ -2829,6 +2933,12 @@ function Assess({
           <span className={`assess-kind ${a.model === "opus" ? "deep" : ""}`}>
             {a.model === "opus" ? "Důkladná kontrola před podáním" : "Rychlé posouzení"}
           </span>
+          {stale.length > 0 && (
+            <div className="warn stale">
+              Zakázka se od posouzení změnila ({[...new Set(stale.map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}) – spusť
+              posouzení znovu, ať sedí na aktuální zadání.
+            </div>
+          )}
           <div className={`verdict ${VERDICT_CLS[a.verdict] ?? "mid"}`}>
             <b>{a.verdict === "podat" ? "Podat" : a.verdict === "podat s partnerem" ? "Podat s partnerem / poddodavatelem" : a.verdict === "nepodávat" ? "Nepodávat" : "Nejasné – doplň podklady nebo profil"}</b>
             <span>{a.verdictReason}</span>
@@ -2897,6 +3007,56 @@ function Assess({
             <p>
               <b>Termín:</b> {a.delivery.timeline}
             </p>
+          )}
+          {a.price ? (
+            <p className={`price-check ${a.price.level === "ztráta" ? "bad" : a.price.level === "těsné" ? "mid" : a.price.level === "ok" ? "good" : ""}`}>
+              <b>Vyjde to cenově? {a.price.level === "ztráta" ? "Ne" : a.price.level === "těsné" ? "Natěsno" : a.price.level === "ok" ? "Ano" : "Nelze porovnat"}</b>{" "}
+              {a.price.text}
+            </p>
+          ) : (
+            a.delivery.totalMd > 0 && (
+              <p className="hint">Doplň v Nastavení → Firma denní sazbu a příští posouzení ukáže, jestli zakázka cenově vyjde.</p>
+            )
+          )}
+          {a.contract && a.contract.length > 0 && (
+            <>
+              <h4>
+                Smluvní rizika{" "}
+                <span className="hint">
+                  {a.contract.filter((x) => x.severity === "vysoké").length ? `${a.contract.filter((x) => x.severity === "vysoké").length}× vysoké` : "žádné vysoké"}
+                </span>
+              </h4>
+              <div className="qual-list">
+                {a.contract.map((x, i) => (
+                  <div key={i} className={`qual ${x.severity === "vysoké" ? "no" : x.severity === "střední" ? "q" : "ok"}`}>
+                    <span className="qual-st">{x.severity}</span>
+                    <div>
+                      <b>{x.risk}</b> {x.where && <span className="hint">{x.where}</span>}
+                      {x.note && <p>{x.note}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {a.partners && a.partners.length > 0 && (
+            <>
+              <h4>
+                Možní partneři <span className="hint">kdo podobné zakázky za poslední 3 roky vyhrává</span>
+              </h4>
+              <div className="partner-list">
+                {a.partners.map((p) => (
+                  <button key={p.name} className="partner" onClick={() => openCompetitor(p.name)}>
+                    <b>{p.name}</b>
+                    <span>
+                      {p.wins}× vyhrál{p.total ? `, celkem ${money(p.total)}` : ""}
+                    </span>
+                    <small>{p.example}</small>
+                  </button>
+                ))}
+              </div>
+              <p className="hint">Ťuknutím uvidíš jejich zakázky. Společnou nabídku nebo poddodávku umožňuje § 82 a § 83 ZZVZ.</p>
+            </>
           )}
           <AnalysisList title="Co chybí a jak to vyřešit" items={a.gaps} />
           <AnalysisList title="Doplň do firemního profilu" items={a.missingInfo} />
@@ -3075,6 +3235,10 @@ function CompanyPanel() {
         <div>
           <label>Pojištění odpovědnosti – limit (Kč)</label>
           <input inputMode="numeric" value={shown(c.insurance)} placeholder="např. 5 000 000" onChange={(e) => setC({ ...c, insurance: amount(e.target.value) })} />
+        </div>
+        <div>
+          <label>Denní sazba (Kč bez DPH za člověkoden)</label>
+          <input inputMode="numeric" value={shown(c.dayRate)} placeholder="např. 8 000" onChange={(e) => setC({ ...c, dayRate: amount(e.target.value) })} />
         </div>
       </div>
       <label>Certifikace a oprávnění</label>

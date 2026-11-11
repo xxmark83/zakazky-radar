@@ -1,5 +1,7 @@
 import { sendAlert, sendWeekly } from "@/lib/email";
 import { analyzeTender } from "@/lib/analyze";
+import { assessTender } from "@/lib/assess";
+import { getCompany, getReferences } from "@/lib/company";
 import { questionsDeadline } from "@/lib/bidmath";
 import { checkContracts, type SignedContract } from "@/lib/contracts";
 import { sendPush } from "@/lib/push";
@@ -22,14 +24,15 @@ export async function GET(req: Request) {
   // každý uživatel má svá hlídání, sledované, upozornění i e-mail – projdeme je po jednom
   const list = users().length ? users() : [await currentUser()];
   const log: string[] = [];
+  const started = Date.now();
   for (const u of list) {
-    const lines = await withUser(u, () => runFor(req));
+    const lines = await withUser(u, () => runFor(req, started));
     log.push(...lines.map((l) => (list.length > 1 ? `${u.name}: ${l}` : l)));
   }
   return Response.json({ ok: true, log });
 }
 
-async function runFor(req: Request): Promise<string[]> {
+async function runFor(req: Request, started: number): Promise<string[]> {
   const defaultMin = Number(process.env.WATCH_MIN_SCORE) || 75;
   const saved = (await getProfiles()).filter((p) => p.watch);
   // bez vlastních hlídání dostane výchozí profil jen vlastník (ostatním by AI zbytečně pálila kredit)
@@ -149,6 +152,26 @@ async function runFor(req: Request): Promise<string[]> {
         }
       }
       log.push(`ranní rozbor: ${morning.length}`);
+      // u stejných zakázek rovnou rychlé „Zvládneme to?“ – na kartě je pak vidět stopka (nesplněný obrat, reference…)
+      // dřív, než ji otevřeš. Jen když na to ranní běh ještě má čas (limit 300 s na všechno).
+      if (best.length && Date.now() - started < 170_000) {
+        const [company, references] = await Promise.all([getCompany(), getReferences()]);
+        const done = await Promise.all(
+          best.map(({ t, profile }) =>
+            assessTender({ tender: t, profile, company, references, texts: [], model: "haiku" })
+              .then(async (r) => {
+                await addSpend(r.cost);
+                await setKept("assess", t.id, r.data);
+                const m = morning.find((x) => x.tender.id === t.id);
+                const stop = r.data.qualification.filter((q) => q.status === "nesplněno").length;
+                if (m && (stop || r.data.verdict !== "podat")) m.reason = `${m.reason} Zvládneme to?: ${r.data.verdict}${stop ? `, ${stop}× nesplněno` : ""}.`;
+                return true;
+              })
+              .catch((e) => (log.push(`ranní posouzení selhalo: ${e.message}`), false)),
+          ),
+        );
+        log.push(`ranní posouzení: ${done.filter(Boolean).length}`);
+      }
     }
   }
 
