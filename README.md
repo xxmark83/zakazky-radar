@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.41.2** – návody: nové snímky Zadávací podklady, Zvládneme to? (3 kroky), AI rozbor a Cena, šance a konkurence.
 - **1.41.1** – návody vynechají kroky, ke kterým ještě není snímek.
 - **1.41.0** – Nastavení → Vzhled: „Vesmír tmavý“ a „Vesmír světlý“ (černá noc s hvězdami / světlá obrácená verze, bílý akcent, Big Shoulders verzálky v nadpisech a Public Sans v textu – písma uložená v appce přes @fontsource, tlačítka jako pilulky, plochy oddělené čárou, bez stínů a gradientů, barva jen pro význam). Návody: nová kapitola Zvládneme to?, texty podle úklidu 1.40.
 - **1.40.0** – úklid duplicit: (1) jedna sekce „Cena, šance a konkurence“ místo dvou cenových; (2+4) „Zadávací podklady“ se nahrají jednou pro celou zakázku a použijí je AI rozbor, Zvládneme to? i Zeptej se dokumentace (staré nahrávání do 4 MB zrušeno), stažená dokumentace z portálu se 30 min drží v paměti serveru, citace z nahraného textu ukazují stranu; (3) AI rozbor bez vlastního verdiktu, podmínek a dotazů – rozhodnutí je jen ve Zvládneme to? (rozbor ukáže předběžný dojem), Word bere kvalifikaci ze Zvládneme to?; (5) stav e-mailu jen v Nastavení → E-mailová upozornění, oprava: e-mail se počítá i z OWNER_/USER_ …:e-mail; (6) v Nastavení už není duplicitní přehled dat (je na Dnes), zůstává Stáhnout všechno znovu; (7) odstraněno staré přidávání subjektů bez vyhledání.

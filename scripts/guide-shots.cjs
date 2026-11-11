@@ -27,13 +27,19 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
   const p = await ctx.newPage();
 
   // AI odpovědi jen pro ukázku v návodu (lokálně není klíč)
-  await p.route('**/api/search', async (route) => {
+  await p.route(/\/api\/search/, async (route) => {
     const r = await route.fetch({ timeout: 300000 });
-    const d = await r.json();
-    d.warnings = [];
-    d.results = (d.results || []).map((t) => ({ ...t, ...fakeScore(t) })).filter((t) => t.score >= 50).sort((a, b) => b.score - a.score);
-    d.scored = d.results.length;
-    await route.fulfill({ json: d });
+    const fix = (d) => {
+      d.warnings = [];
+      d.results = (d.results || []).map((t) => ({ ...t, ...fakeScore(t) })).filter((t) => t.score >= 50).sort((a, b) => b.score - a.score);
+      d.scored = d.results.length;
+      return d;
+    };
+    const body = await r.text();
+    if (route.request().url().includes('stream=1')) {
+      const lines = body.split('\n').filter(Boolean).map((l) => JSON.parse(l)).map((m) => (m.result ? { result: fix(m.result) } : m));
+      await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' });
+    } else await route.fulfill({ json: fix(JSON.parse(body)) });
   });
   await p.route('**/api/analyze', async (route) => {
     const body = route.request().postDataJSON();
@@ -64,6 +70,16 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
       questionsDeadline: q,
     } } });
   });
+  await p.route('**/api/assess', (route) => route.fulfill({ json: { cost: 0.03, data: {
+    verdict: 'podat s partnerem', verdictReason: 'Dílo zvládnete, chybí ale obrat 5 mil. Kč – řešit společnou nabídkou.',
+    qualification: [
+      { area: 'ekonomická', requirement: 'Obrat min. 5 mil. Kč za poslední 3 roky', where: 'čl. 6.3, str. 4', status: 'nesplněno', how: 'Společná nabídka s partnerem (§ 82 ZZVZ).' },
+      { area: 'technická', requirement: '2 reference na obdobné plnění nad 500 tis. Kč', where: 'čl. 7.1, str. 5', status: 'splněno', how: 'Reference: Vzdělávací portál pro zaměstnance kraje.' },
+      { area: 'profesní', requirement: 'Výpis z obchodního rejstříku', where: 'čl. 5.2', status: 'doložit', how: 'Stáhnout výpis z justice.cz.' },
+      { area: 'technická', requirement: 'Certifikace ISO 27001', where: 'čl. 7.4', status: 'nejasné', how: 'V profilu neuvedeno.' }],
+    delivery: { feasible: 'ano', summary: 'Pokryje vlastní řešení s úpravami integrace a reportů.', totalMd: 64, stack: 'React, Node.js, PostgreSQL', timeline: 'Vejde se do 4 měsíců při 2 vývojářích.',
+      parts: [{ item: 'Nasazení a konfigurace', how: 'vlastní produkt', effortMd: 12, risk: 'nízké' }, { item: 'Integrace AD/SSO', how: 'nový vývoj', effortMd: 18, risk: 'střední' }, { item: 'Migrace dat', how: 'import', effortMd: 22, risk: 'vysoké' }] },
+    gaps: ['Partner s obratem nad 5 mil. Kč'], missingInfo: ['Obrat za poslední 3 roky'], questions: ['Lze obrat prokázat společně s partnerem?'], sources: ['Zadávací dokumentace.pdf'], model: 'haiku', at: new Date().toISOString() } } }));
   await p.route('**/api/ask', (route) => route.fulfill({ json: {
     text: 'Požadují 2 reference na dodávku podobného systému za poslední 3 roky, každou v hodnotě alespoň 300 000 Kč bez DPH. K referenci stačí čestné prohlášení s kontaktem na objednatele.',
     cites: [{ doc: 'Zadávací dokumentace.pdf', where: 'str. 7' }], cost: 0.01, docs: 2 } }));
@@ -106,11 +122,11 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
     }, [scope, text, off]);
 
   // přihlášení
-  await p.goto(B + '/login');
+  await p.goto(B + '/login'); await p.waitForLoadState('networkidle');
   await p.fill('input[name=password]', process.env.GUIDE_PASSWORD);
   const u = p.locator('input[name=username]:visible'); if (await u.count()) await u.fill('marek');
   await p.keyboard.press('Enter');
-  await p.waitForURL(B + '/');
+  await p.waitForURL(B + '/', { timeout: 90000 });
   await p.waitForTimeout(1500);
   const tab = (n) => p.locator('nav.tabs button', { hasText: n }).first().click();
   const gear = () => p.locator('button.gear').click();
@@ -124,7 +140,7 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
   const find = p.locator('.content button.primary', { hasText: 'Najít zakázky' }).first();
   await shot('hledani-2', find);
   await find.click();
-  await p.locator('article').first().waitFor({ timeout: 240000 });
+  await p.locator('article').first().waitFor({ timeout: 540000 });
   await p.waitForTimeout(1500);
   await shot('hledani-3', p.locator('article').first());
   const card = p.locator('article').first();
@@ -138,9 +154,9 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
   await toTop('.drawer', 'AI rozbor');
   await shot('detail-3', p.locator('.drawer button', { hasText: 'Udělat rozbor' }));
   await p.locator('.drawer button', { hasText: 'Udělat rozbor' }).click();
-  await p.locator('.drawer .analysis .verdict').waitFor();
+  await p.locator('.drawer .analysis').first().waitFor();
   await toTop('.drawer', 'AI rozbor');
-  await shot('detail-4', p.locator('.drawer .analysis .verdict'), p.locator('.drawer .analysis > p').first());
+  await shot('detail-4', p.locator('.drawer .analysis').first());
   await toTop('.drawer', 'Co připravit');
   await shot('detail-5', section('.drawer', 'Co připravit'));
   await toTop('.drawer', 'Návrh nabídky');
@@ -148,6 +164,17 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
   await p.waitForTimeout(800);
   await toTop('.drawer', 'Návrh nabídky');
   await shot('detail-6', section('.drawer', 'Návrh nabídky'));
+  await toTop('.drawer', 'Zadávací podklady');
+  await shot('podklady-1', section('.drawer', 'Zadávací podklady'));
+  await toTop('.drawer', 'Zvládneme to?');
+  await shot('zvladneme-1', p.locator('.drawer .assess-modes'));
+  await p.locator('.drawer .assess-mode').first().click();
+  await p.locator('.drawer .assess .verdict').waitFor();
+  await toTop('.drawer', 'Zvládneme to?');
+  await shot('zvladneme-2', p.locator('.drawer .assess .verdict'), p.locator('.drawer .qual-list'));
+  await p.evaluate(() => [...document.querySelectorAll('.drawer h4')].find((e) => e.textContent.startsWith('Realizace'))?.scrollIntoView({ block: 'start' }));
+  await p.evaluate(() => (document.querySelector('.drawer').scrollTop -= 60));
+  await shot('zvladneme-3', p.locator('.drawer h4', { hasText: 'Realizace' }), p.locator('.drawer .md-table'));
   await p.locator('.drawer #d-top').scrollIntoViewIfNeeded();
   await p.evaluate(() => (document.querySelector('.drawer').scrollTop = 0));
   await p.waitForTimeout(400);
@@ -163,12 +190,12 @@ const addDays = (d, n) => new Date(new Date(d).getTime() + n * 86400000).toISOSt
   await toTop('.drawer', 'Zeptej se dokumentace');
   await shot('ask-2', p.locator('.drawer .qa').first());
   // cena a šance
-  await toTop('.drawer', 'Doporučená cena');
-  await shot('cena-1', p.locator('.drawer button', { hasText: 'Porovnat s cenami' }));
-  await p.locator('.drawer button', { hasText: 'Porovnat s cenami' }).click();
+  await toTop('.drawer', 'Cena, šance');
+  await shot('cena-1', p.locator('.drawer button', { hasText: 'Porovnat s podobnými' }).first());
+  await p.locator('.drawer button', { hasText: 'Porovnat s podobnými' }).first().click();
   await p.locator('.drawer .chance').waitFor({ timeout: 120000 }).catch(() => console.log('no chance'));
-  await toTop('.drawer', 'Doporučená cena');
-  await shot('cena-2', section('.drawer', 'Doporučená cena'));
+  await toTop('.drawer', 'Cena, šance');
+  await shot('cena-2', section('.drawer', 'Cena, šance'));
   await toTop('.drawer', 'Dokumenty nabídky');
   await shot('firma-0', section('.drawer', 'Dokumenty nabídky'));
   await closeDrawer();
