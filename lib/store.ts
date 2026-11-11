@@ -109,6 +109,19 @@ export async function getProfiles(): Promise<WatchedProfile[]> {
   return redis ? ((await redis.get<WatchedProfile[]>(await K.profiles())) ?? []) : [];
 }
 
+// Zakázky, na které šlo upozornění (e-mail, telefon): aby je odkaz z upozornění otevřel i na zařízení,
+// které je ještě nevidělo ve výsledcích hledání. Drží se 30 dní od posledního ranního běhu.
+export async function keepAlerted(tenders: ScoredTender[]) {
+  if (!redis || !tenders.length) return;
+  const key = await userKey("alerted");
+  await redis.hset(key, Object.fromEntries(tenders.map((t) => [t.id, { ...t, description: t.description?.slice(0, 1500) ?? "" }])));
+  await redis.expire(key, 30 * 86400);
+}
+export async function getAlerted(id: string): Promise<ScoredTender | null> {
+  if (!redis) return null;
+  return (await redis.hget<ScoredTender>(await userKey("alerted"), id)) ?? (await redis.hget<ScoredTender>(await K.tenders(), id)) ?? null;
+}
+
 // sledovaní zadavatelé: upozornit na cokoli nového od nich, i mimo klíčová slova
 export type WatchedBuyer = { name: string; ico: string | null; added: string };
 export async function getBuyers(): Promise<WatchedBuyer[]> {
