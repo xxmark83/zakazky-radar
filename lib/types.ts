@@ -70,12 +70,13 @@ export type Analysis = {
   checklist?: string[]; // co připravit do nabídky (doklady, přílohy, kroky)
   criteria?: string[]; // hodnoticí kritéria a jejich váhy
   sources?: string[]; // přečtené dokumenty (doplní server)
+  questionsDeadline?: string; // poslední den na dotazy, je-li v dokumentaci
 };
 
 export type Checks = { done: Record<string, boolean>; extra: string[] };
 export type Outcome = { winner: string; price: number | null; ourPrice: number | null; note: string; date: string };
 
-export type Draft = { outline: { heading: string; points: string[] }[]; coverLetter: string };
+export type Draft = { outline: { heading: string; points: string[] }[]; coverLetter: string; references?: string[] };
 
 export type Change = { field: "deadline" | "title" | "value" | "description"; from: string; to: string; at: string };
 

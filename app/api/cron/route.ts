@@ -1,10 +1,12 @@
 import { sendAlert, sendWeekly } from "@/lib/email";
+import { analyzeTender } from "@/lib/analyze";
+import { questionsDeadline } from "@/lib/bidmath";
 import { checkContracts, type SignedContract } from "@/lib/contracts";
 import { sendPush } from "@/lib/push";
 import { buyerTenders, competitorWins } from "@/lib/watch";
 import { PRESETS } from "@/lib/presets";
 import { runSearch } from "@/lib/search";
-import { filterUnseen, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
+import { addSpend, filterUnseen, getBuyers, getCompetitors, getKept, getSpend, getMarkedTenders, getProfiles, getState, markSeen, redis, setKept, setStatus } from "@/lib/store";
 import { changesFromProfily } from "@/lib/track";
 import type { Award, Change, Outcome, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 import { currentUser, users, withUser } from "@/lib/users";
@@ -65,6 +67,7 @@ async function runFor(req: Request): Promise<string[]> {
 
   // sledované zakázky: změny podle dnešních dat z profilů a blížící se lhůty (jen s databází)
   const changed: { tender: ScoredTender; changes: Change[] }[] = [];
+  const questionSoon: { t: ScoredTender; estimated: boolean }[] = [];
   const deadlines: ScoredTender[] = [];
   if (redis) {
     const state = await getState();
@@ -84,6 +87,12 @@ async function runFor(req: Request): Promise<string[]> {
         .sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
     );
     log.push(`sledované: ${active.length}, změny: ${changed.length}, blížící se lhůty: ${deadlines.length}`);
+    // poslední den na dotazy za 2 dny (z rozboru, jinak odhad)
+    const analyses = (kept?.analysis ?? {}) as Record<string, { questionsDeadline?: string }>;
+    for (const t of active.filter((x) => ["maybe", "bid"].includes(statuses[x.id]))) {
+      const q = questionsDeadline(t.deadline, analyses[t.id]?.questionsDeadline);
+      if (q && q.date === day(2)) questionSoon.push({ t, estimated: q.estimated });
+    }
   }
 
   // sledovaní zadavatelé: cokoli nového od nich, i mimo klíčová slova
@@ -112,6 +121,33 @@ async function runFor(req: Request): Promise<string[]> {
     log.push(`konkurenti: ${competitorNews.reduce((n, c) => n + c.awards.length, 0)} nových výher`);
   }
 
+  // ranní AI rozbor nejlepších nových zakázek (zapíná se v Nastavení, počítá se do měsíčního limitu)
+  const morning: { tender: ScoredTender; verdict: string; reason: string }[] = [];
+  if (redis && process.env.ANTHROPIC_API_KEY) {
+    const ui = ((await getState()) as { ui?: Record<string, any> }).ui ?? {};
+    const prefs = ui["zr-prefs"] ?? {};
+    const howMany = Math.min(3, Number(prefs.morning) || 0);
+    const budget = Number(prefs.budget) || Number(process.env.AI_BUDGET_USD) || 5;
+    if (howMany && ((await getSpend()) ?? 0) < budget) {
+      const best = groups
+        .flatMap((g) => g.tenders.map((t) => ({ t, profile: profiles.find((p) => p.name === g.profile)?.profile ?? "" })))
+        .filter((x) => x.t.score >= 75)
+        .sort((a, b) => b.t.score - a.t.score)
+        .slice(0, howMany);
+      for (const { t, profile } of best) {
+        try {
+          const r = await analyzeTender(profile, t, prefs.model === "opus" ? "opus" : "haiku");
+          await addSpend(r.cost);
+          await setKept("analysis", t.id, r.data);
+          morning.push({ tender: t, verdict: r.data.verdict, reason: r.data.verdictReason });
+        } catch (e: any) {
+          log.push(`ranní rozbor selhal: ${e.message}`);
+        }
+      }
+      log.push(`ranní rozbor: ${morning.length}`);
+    }
+  }
+
   // smlouvy sledovaných subjektů v Registru smluv
   const contractNews: SignedContract[] = redis ? await checkContracts().catch(() => []) : [];
   if (redis) log.push(`smlouvy sledovaných subjektů: ${contractNews.length} nových`);
@@ -138,6 +174,13 @@ async function runFor(req: Request): Promise<string[]> {
         body: `${list![0].title}${list![0].value ? `, ${Math.round(list![0].value).toLocaleString("cs-CZ")} Kč` : ""}`,
         url: "/",
         tag: `smlouvy-${subject}`,
+      });
+    for (const { t, estimated } of questionSoon)
+      pushed += await sendPush({
+        title: "Za 2 dny končí lhůta na dotazy",
+        body: `${t.title}${estimated ? " (odhad – ověř v dokumentaci)" : ""}`,
+        url: "/",
+        tag: `dotazy-${t.id}`,
       });
     for (const c of competitorNews)
       pushed += await sendPush({ title: `Konkurent: ${c.name}`, body: `Vyhrál: ${c.awards[0].title}`, url: "/", tag: `konkurent-${c.name}` });
@@ -186,7 +229,14 @@ async function runFor(req: Request): Promise<string[]> {
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : new URL(req.url).origin;
     try {
-      await sendAlert(groups, appUrl, { changed, deadlines, buyers: buyerNews, competitors: competitorNews, contracts: contractNews });
+      await sendAlert(groups, appUrl, {
+        changed,
+        deadlines,
+        buyers: buyerNews,
+        competitors: competitorNews,
+        contracts: contractNews,
+        morning,
+      });
       await markSeen([
         ...[...groups, ...buyerNews].flatMap((g) => g.tenders.map((t) => t.id)),
         ...competitorNews.flatMap((c) => c.awards.map((a) => `c:${a.id}`)),

@@ -17,8 +17,9 @@ const SCHEMA = {
     questions: list,
     checklist: list,
     criteria: list,
+    questionsDeadline: { type: "string" },
   },
-  required: ["summary", "requirements", "risks", "verdict", "verdictReason", "offer", "questions", "checklist", "criteria"],
+  required: ["summary", "requirements", "risks", "verdict", "verdictReason", "offer", "questions", "checklist", "criteria", "questionsDeadline"],
   additionalProperties: false,
 } as const;
 
@@ -33,7 +34,9 @@ Dokumentace má přednost – odkazuj na konkrétní požadavky z ní (čísla �
 - questions: dotazy na zadavatele (vysvětlení zadávací dokumentace), které by stálo za to položit. Max 4.
 - checklist: co konkrétně připravit a přiložit k nabídce (doklady o kvalifikaci, čestná prohlášení, reference, formuláře,
   vyplněné přílohy, podpis, způsob a místo podání). Krátké položky ve tvaru „udělat co“, max 12. Jen z podkladů.
-- criteria: hodnoticí kritéria s vahami (např. „Cena 70 %“), nebo prázdné, když v podkladech nejsou.`;
+- criteria: hodnoticí kritéria s vahami (např. „Cena 70 %“), nebo prázdné, když v podkladech nejsou.
+- questionsDeadline: poslední den, kdy lze žádat o vysvětlení zadávací dokumentace, ve tvaru RRRR-MM-DD, jen pokud je
+  v podkladech uveden nebo z nich jednoznačně plyne; jinak prázdný řetězec.`;
 
 // text stránky zakázky (detail na NEN, profilu zadavatele, TED) – bez skriptů a značek
 export async function pageText(url: string): Promise<string> {
@@ -116,17 +119,27 @@ const DRAFT_SCHEMA = {
       },
     },
     coverLetter: { type: "string" },
+    references: { type: "array", items: { type: "string" } },
   },
-  required: ["outline", "coverLetter"],
+  required: ["outline", "coverLetter", "references"],
   additionalProperties: false,
 } as const;
 
 const DRAFT_SYSTEM = `Jsi zkušený autor nabídek do českých veřejných zakázek. Pro malou firmu se SaaS aplikacemi připrav podklad nabídky.
 - outline: osnova nabídky (5–8 kapitol, např. Porozumění potřebám zadavatele, Navrhované řešení, Harmonogram implementace, Podpora a SLA, Reference a tým, Cena). Ke každé 2–5 konkrétních bodů šitých na tuto zakázku a produkty dodavatele.
 - coverLetter: krátký průvodní dopis (do 200 slov), věcný, bez frází, s oslovením zadavatele a místy k doplnění v hranatých závorkách, např. [jméno jednatele].
-Piš česky. Nevymýšlej si reference, čísla ani certifikace – kde chybí, nech místo k doplnění v hranatých závorkách.`;
+- references: id nejvýš tří referencí z knihovny dodavatele, které se k zakázce nejvíc hodí (prázdné, když žádná).
+  V osnově je zmiň konkrétně (název, objednatel, rok).
+Piš česky. Nevymýšlej si reference, čísla ani certifikace – používej jen reference z knihovny; kde chybí, nech místo
+k doplnění v hranatých závorkách.`;
 
-export async function draftOffer(profile: string, t: Tender, analysis: Analysis | null, model: ModelChoice) {
+export async function draftOffer(
+  profile: string,
+  t: Tender,
+  analysis: Analysis | null,
+  model: ModelChoice,
+  references: { id: string; title: string; client: string; year: string; value: number | null; description: string }[] = [],
+) {
   return askJson<Draft>({
     model,
     system: DRAFT_SYSTEM,
@@ -134,6 +147,10 @@ export async function draftOffer(profile: string, t: Tender, analysis: Analysis 
     effort: "medium",
     content: `MOJE NABÍDKA:\n${profile}\n\nZAKÁZKA:\n${JSON.stringify(tenderInfo(t))}${
       analysis ? `\n\nROZBOR ZAKÁZKY:\n${JSON.stringify(analysis)}` : ""
+    }\n\nKNIHOVNA REFERENCÍ DODAVATELE:\n${
+      references.length
+        ? JSON.stringify(references.map(({ id, title, client, year, value, description }) => ({ id, title, client, year, value, description })))
+        : "(zatím prázdná)"
     }`,
   });
 }

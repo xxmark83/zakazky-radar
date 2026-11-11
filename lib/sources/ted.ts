@@ -25,6 +25,7 @@ const NUTS: Record<string, Region> = {
   CZ072: "Zlínský",
   CZ080: "Moravskoslezský",
 };
+export const nutsRegion = (code: string | null | undefined): Region | undefined => (code ? NUTS[code.slice(0, 5)] : undefined);
 function region(n: any, country: "CZ" | "SK"): Region | undefined {
   if (country === "SK") return "Slovensko";
   const codes: string[] = [...(n["organisation-country-sub-buyer"] ?? []), ...(n["place-of-performance-subdiv-lot"] ?? [])];

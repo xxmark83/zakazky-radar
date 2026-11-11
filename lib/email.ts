@@ -14,6 +14,7 @@ export async function sendAlert(
     buyers?: { buyer: string; tenders: ScoredTender[] }[];
     competitors?: { name: string; awards: Award[] }[];
     contracts?: SignedContract[];
+    morning?: { tender: ScoredTender; verdict: string; reason: string }[];
   } = { changed: [], deadlines: [] },
 ) {
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -60,6 +61,9 @@ ${c.changes.map((ch) => `<div style="font-size:14px">${FIELD[ch.field]}: <s>${es
         )
         .join("")}`
     : "";
+  // ranní AI rozbor nejlepších: verdikt hned u zakázky
+  const verdicts = new Map((extra.morning ?? []).map((m) => [m.tender.id, m]));
+  const VERDICT: Record<string, string> = { go: "✅ Podat", consider: "🤔 Zvážit", skip: "⛔ Nechat být" };
   const contracts = extra.contracts ?? [];
   const contractsHtml = contracts.length
     ? `<h3 style="margin:20px 0 8px">Nové smlouvy sledovaných subjektů</h3>${contracts
@@ -92,7 +96,11 @@ ${g.tenders
 ${t.kind === "upcoming" ? '<span style="color:#1f5eff"> připravovaná</span>' : ""}
 <a href="${esc(t.url)}" style="font-weight:600;color:#16181d"> ${esc(t.title)}</a>
 <div style="color:#666;font-size:13px">${esc(t.buyer)} · ${money(t)} · lhůta ${t.deadline ?? "?"}</div>
-<div style="font-size:14px;margin-top:4px">${esc(t.reason)}</div></div>`,
+<div style="font-size:14px;margin-top:4px">${esc(t.reason)}</div>${
+      verdicts.has(t.id)
+        ? `<div style="font-size:14px;margin-top:6px;padding:6px 8px;background:#f1f5ff;border-radius:6px"><b>AI rozbor: ${VERDICT[verdicts.get(t.id)!.verdict] ?? ""}</b> – ${esc(verdicts.get(t.id)!.reason)}</div>`
+        : ""
+    }</div>`,
   )
   .join("")}`,
   )

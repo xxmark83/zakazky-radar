@@ -2,6 +2,9 @@
 
 import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
 import { makeDocx, type Block } from "@/lib/docx";
+import { questionsDeadline, winChance } from "@/lib/bidmath";
+import { coverSheet, eligibility, referenceList } from "@/lib/templates";
+import type { Company, Reference } from "@/lib/company";
 import qrcode from "qrcode-generator";
 import { MB_LOGO } from "@/lib/logo";
 import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets } from "@/lib/presets";
@@ -108,7 +111,7 @@ const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {}, his
 type Keep = <K extends KeptKind>(kind: K, id: string, value: Kept[K][string] | null) => void;
 
 type Model = "opus" | "haiku";
-type Prefs = { model: Model; budget: number; slovakia: boolean };
+type Prefs = { model: Model; budget: number; slovakia: boolean; morning?: number }; // morning = ranní AI rozbor top tipů
 const MODEL_LABEL: Record<Model, string> = { opus: "Opus – přesnější", haiku: "Haiku – asi 40× levnější" };
 // co AI potřebuje vědět od komponent: model, jestli je limit vyčerpaný, a kam hlásit útratu
 type Ai = { model: Model; noAi: boolean; slovakia: boolean; onCost: (usd: number) => void };
@@ -813,6 +816,19 @@ function Settings(props: {
         <p className="note">
           Limit hlídá appka. Pevný strop nastav i v console.anthropic.com → Settings → Limits, ten platí vždy.
         </p>
+        <label>Ranní AI rozbor nejlepších zakázek</label>
+        <select value={prefs.morning ?? 0} onChange={(e) => setPrefs({ ...prefs, morning: Number(e.target.value) })}>
+          <option value={0}>vypnuto</option>
+          <option value={1}>1 zakázka denně (asi 1–5 centů)</option>
+          <option value={2}>2 zakázky denně</option>
+          <option value={3}>3 zakázky denně</option>
+        </select>
+        <p className="note">
+          Ráno AI přečte dokumentaci nejlepších nových zakázek (skóre 75+) a verdikt „podat / zvážit / nechat“ pošle rovnou
+          v e-mailu. Počítá se do měsíčního limitu.
+        </p>
+
+        {server.db && <CompanyPanel />}
 
         <PushSettings db={server.db} />
 
@@ -1714,6 +1730,15 @@ function Detail(props: {
   close: () => void;
 }) {
   const { t, profile, keywords, status, setStatus, kept, keep, ai, openCompetitor, watching, toggleBuyer, split, marked, close } = props;
+  // firemní profil a reference pro vyplněné dokumenty nabídky
+  const [company, setCompany] = useState<{ company: Company; references: Reference[] } | null>(null);
+  useEffect(() => {
+    fetch("/api/company")
+      .then((r) => r.json())
+      .then((d) => d.company && setCompany(d))
+      .catch(() => {});
+  }, []);
+  const qd = questionsDeadline(t.deadline, kept.analysis[t.id]?.questionsDeadline);
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
@@ -1762,6 +1787,27 @@ function Detail(props: {
     }
   }
   const analyze = () => runAi("analysis");
+
+  function saveDocx(name: string, blocks: Block[]) {
+    const url = URL.createObjectURL(makeDocx(blocks));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}-${(t.title || "zakazka").slice(0, 30).replace(/[^\p{L}\p{N}]+/gu, "-")}.docx`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  // reference: ty, které vybrala AI v návrhu nabídky, jinak nejvíc podobné podle slov z názvu
+  function chosenRefs(): Reference[] {
+    const refs = company?.references ?? [];
+    const picked = (draft?.references ?? []).map((id) => refs.find((r) => r.id === id)).filter(Boolean) as Reference[];
+    if (picked.length) return picked;
+    const words = norm(`${t.title} ${t.description}`).split(/\W+/).filter((w) => w.length > 4);
+    return refs
+      .map((r) => ({ r, hits: words.filter((w) => norm(`${r.title} ${r.description}`).includes(w.slice(0, 6))).length }))
+      .sort((a, b) => b.hits - a.hits)
+      .slice(0, 3)
+      .map((x) => x.r);
+  }
 
   // všechny podklady k nabídce v jednom Wordu
   function exportWord() {
@@ -1911,6 +1957,15 @@ function Detail(props: {
               {t.score < 0 ? "–" : `${t.score} – ${scoreLabel(t.score)}`}
             </dd>
           </div>
+          {qd && qd.date >= today() && (
+            <div>
+              <dt>Dotazy na zadavatele do</dt>
+              <dd>
+                {new Date(qd.date).toLocaleDateString("cs-CZ")}
+                {qd.estimated && <small className="hint"> odhad</small>}
+              </dd>
+            </div>
+          )}
         </dl>
         {t.reason && <p className="reason">{t.reason}</p>}
 
@@ -2027,6 +2082,8 @@ function Detail(props: {
           />
         ) : null}
 
+        <AskDocs t={t} ai={ai} />
+
         <PriceHelper t={t} results={kept.results} marked={marked} />
 
         <div className="export">
@@ -2035,6 +2092,25 @@ function Detail(props: {
           </button>
           <span className="hint">rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
         </div>
+        <h3 className="sec">Dokumenty nabídky</h3>
+        {company?.company.name ? (
+          <>
+            <p className="note">Vyplněné z firemního profilu. Když zadavatel přiložil vlastní formuláře, použij jeho.</p>
+            <div className="row-btns">
+              <button onClick={() => saveDocx("kryci-list", coverSheet(t, company.company, null))}>
+                <Icon n="download" size={15} /> Krycí list
+              </button>
+              <button onClick={() => saveDocx("cestne-prohlaseni", eligibility(t, company.company))}>
+                <Icon n="download" size={15} /> Čestné prohlášení (§ 74)
+              </button>
+              <button onClick={() => saveDocx("reference", referenceList(t, company.company, chosenRefs()))}>
+                <Icon n="download" size={15} /> Seznam referencí
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="note">Vyplň v Nastavení → Firma a reference IČO firmy a radar ti připraví krycí list, čestné prohlášení a seznam referencí.</p>
+        )}
 
         <h3 className="sec">Návrh nabídky</h3>
         {!draft && busy !== "draft" && (
@@ -2065,6 +2141,18 @@ function Detail(props: {
                 </li>
               ))}
             </ol>
+            {draft.references?.length ? (
+              <>
+                <h4>Vybrané reference</h4>
+                <ul>
+                  {chosenRefs().map((r) => (
+                    <li key={r.id}>
+                      {r.title} – {r.client} ({r.year})
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             <h4>Průvodní dopis</h4>
             <p className="letter">{draft.coverLetter}</p>
             <div className="drawer-links">
@@ -2182,7 +2270,15 @@ function Checklist({ items, value, save }: { items: string[]; value: Checks; sav
 }
 
 // doporučená cena bez AI: předpokládaná hodnota, ceny podobných zakázek (ISVZ, TED, Registr smluv) a tvoje výsledky
-function PriceHelper({ t, results, marked }: { t: ScoredTender; results: Record<string, Outcome>; marked: Record<string, ScoredTender> }) {
+function PriceHelper({
+  t,
+  results,
+  marked,
+}: {
+  t: ScoredTender;
+  results: Record<string, Outcome>;
+  marked: Record<string, ScoredTender>;
+}) {
   const [m, setM] = useState<Market | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => setM(null), [t.id]);
@@ -2221,7 +2317,7 @@ function PriceHelper({ t, results, marked }: { t: ScoredTender; results: Record<
 
   return (
     <>
-      <h3 className="sec">Doporučená cena</h3>
+      <h3 className="sec">Doporučená cena a šance</h3>
       {!m && !est ? (
         <button onClick={load} disabled={busy}>
           {busy ? "Počítám…" : "Spočítat z cen podobných zakázek (zdarma)"}
@@ -2256,12 +2352,231 @@ function PriceHelper({ t, results, marked }: { t: ScoredTender; results: Record<
             ) : null}
             {m?.offers ? <li>Průměrně {m.offers.avg.toFixed(1).replace(".", ",")} nabídky na zakázku.</li> : null}
           </ul>
+          {m && <Chance t={t} offersAvg={m.offers?.avg ?? null} results={results} />}
           {!m && (
             <button className="link" onClick={load} disabled={busy}>
-              {busy ? "Načítám…" : "Porovnat s cenami podobných zakázek"}
+              {busy ? "Načítám…" : "Porovnat s cenami podobných zakázek a spočítat šanci"}
             </button>
           )}
         </div>
+      )}
+    </>
+  );
+}
+
+// hrubý odhad šance na výhru (lib/bidmath.ts)
+function Chance({ t, offersAvg, results }: { t: ScoredTender; offersAvg: number | null; results: Record<string, Outcome> }) {
+  const decided = Object.values(results);
+  const c = winChance({
+    score: t.score,
+    offersAvg,
+    small: isSmall(t),
+    ownWins: decided.filter((r) => r.winner === "my").length,
+    ownDecided: decided.length,
+  });
+  return (
+    <div className={`chance ${c.level === "vysoká" ? "hi" : c.level === "střední" ? "mid" : "lo"}`}>
+      <b>
+        Šance na výhru: {c.level}, asi {c.pct} %
+      </b>
+      <ul className="price-why">
+        {c.why.map((w) => (
+          <li key={w}>{w}</li>
+        ))}
+      </ul>
+      <span className="hint">Hrubý odhad – zpřesní se, když budeš zapisovat výsledky nabídek.</span>
+    </div>
+  );
+}
+
+// otázky nad zadávací dokumentací, odpověď s odkazem na stranu
+function AskDocs({ t, ai }: { t: ScoredTender; ai: Ai }) {
+  const [q, setQ] = useState("");
+  const [list, setList] = useState<{ q: string; a: string; cites: { doc: string; where: string }[] }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setList([]);
+    setError("");
+  }, [t.id]);
+  async function ask(question: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await post("/api/ask", { tender: t, question, model: ai.model });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
+      ai.onCost(d.cost ?? 0);
+      setList((cur) => [{ q: question, a: d.text, cites: d.cites ?? [] }, ...cur]);
+      setQ("");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const examples = ["Jaké reference požadují?", "Jaké jsou sankce a pokuty?", "Do kdy a jak se podává nabídka?"];
+  return (
+    <>
+      <h3 className="sec">Zeptej se dokumentace</h3>
+      <form
+        className="add-item"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (q.trim()) ask(q.trim());
+        }}
+      >
+        <input placeholder="Např. Jaké certifikace požadují?" value={q} onChange={(e) => setQ(e.target.value)} disabled={ai.noAi} />
+        <button className="primary" style={{ marginTop: 0 }} disabled={busy || !q.trim() || ai.noAi}>
+          {busy ? "Čtu…" : "Zeptat se"}
+        </button>
+      </form>
+      {!list.length && !busy && (
+        <div className="chips" style={{ marginTop: 8 }}>
+          {examples.map((x) => (
+            <button key={x} onClick={() => ask(x)} disabled={ai.noAi}>
+              {x}
+            </button>
+          ))}
+        </div>
+      )}
+      {busy && <p className="note">Čtu dokumentaci, první otázka trvá do minuty, další jsou rychlejší…</p>}
+      {error && <div className="warn">{error}</div>}
+      {list.map((x, i) => (
+        <div key={i} className="qa">
+          <b>{x.q}</b>
+          <p>{x.a}</p>
+          {x.cites.length > 0 && <span className="hint">Zdroj: {x.cites.map((c) => `${c.doc} (${c.where})`).join("; ")}</span>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+// firemní profil (z ARES podle IČO) a knihovna referencí pro dokumenty a návrh nabídky
+function CompanyPanel() {
+  const [c, setC] = useState<Company | null>(null);
+  const [refs, setRefs] = useState<Reference[]>([]);
+  const [msg, setMsg] = useState("");
+  const [edit, setEdit] = useState<Reference | null>(null);
+  useEffect(() => {
+    fetch("/api/company")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.company) setC(d.company);
+        setRefs(d.references ?? []);
+      })
+      .catch(() => {});
+  }, []);
+  if (!c) return null;
+  const field = (k: keyof Company, label: string, ph = "") => (
+    <div>
+      <label>{label}</label>
+      <input value={c[k]} placeholder={ph} onChange={(e) => setC({ ...c, [k]: e.target.value })} />
+    </div>
+  );
+  async function save(body: object, done: string) {
+    const res = await post("/api/company", body);
+    const d = await res.json();
+    if (!res.ok) return setMsg(d.error ?? "Nepodařilo se");
+    if (d.company) setC(d.company);
+    if (d.references) setRefs(d.references);
+    setMsg(done);
+    setTimeout(() => setMsg(""), 2500);
+  }
+  const blank: Reference = { id: "", title: "", client: "", year: String(new Date().getFullYear()), value: null, description: "", contact: "" };
+  return (
+    <>
+      <h3 className="sec">Firma a reference</h3>
+      <p className="note">Z toho radar vyplní krycí list, čestné prohlášení a seznam referencí a AI vybere reference do návrhu nabídky.</p>
+      <div className="add-item">
+        <input value={c.ico} placeholder="IČO" inputMode="numeric" onChange={(e) => setC({ ...c, ico: e.target.value })} />
+        <button onClick={() => save({ ares: c.ico }, "Načteno z ARES – zkontroluj a ulož.")} disabled={!c.ico.trim()}>
+          Načíst z ARES
+        </button>
+      </div>
+      <div className="row">
+        {field("name", "Obchodní firma / jméno")}
+        {field("address", "Sídlo")}
+        {field("dic", "DIČ")}
+        {field("person", "Kdo podepisuje")}
+        {field("role", "Funkce", "jednatel / podnikatel (OSVČ)")}
+        {field("email", "E-mail")}
+        {field("phone", "Telefon")}
+        {field("bank", "Bankovní spojení")}
+      </div>
+      <div className="row-btns">
+        <button className="primary" onClick={() => save({ company: c }, "Firma uložena.")}>
+          Uložit firmu
+        </button>
+        {msg && <span className="saved">{msg}</span>}
+      </div>
+
+      <h4 className="sub-h">Reference ({refs.length})</h4>
+      {refs.map((r) => (
+        <div key={r.id} className="check ok">
+          <span>
+            <b>{r.title}</b>
+            <br />
+            <span className="hint">
+              {r.client}, {r.year}
+              {r.value ? `, ${money(r.value)}` : ""}
+            </span>
+          </span>
+          <span className="state">
+            <button className="link" onClick={() => setEdit(r)}>
+              upravit
+            </button>{" "}
+            <button className="link" onClick={() => save({ removeReference: r.id }, "Smazáno.")}>
+              smazat
+            </button>
+          </span>
+        </div>
+      ))}
+      {edit ? (
+        <div className="card ref-edit">
+          <label>Název projektu</label>
+          <input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} placeholder="např. Vzdělávací portál pro zaměstnance" />
+          <div className="row">
+            <div>
+              <label>Objednatel</label>
+              <input value={edit.client} onChange={(e) => setEdit({ ...edit, client: e.target.value })} />
+            </div>
+            <div>
+              <label>Rok</label>
+              <input value={edit.year} onChange={(e) => setEdit({ ...edit, year: e.target.value })} />
+            </div>
+            <div>
+              <label>Cena bez DPH (Kč)</label>
+              <input
+                inputMode="decimal"
+                value={edit.value ?? ""}
+                onChange={(e) => setEdit({ ...edit, value: Number(e.target.value.replace(/\s/g, "")) || null })}
+              />
+            </div>
+          </div>
+          <label>Co jsi dodal</label>
+          <textarea value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} />
+          <label>Kontakt pro ověření (volitelně)</label>
+          <input value={edit.contact} onChange={(e) => setEdit({ ...edit, contact: e.target.value })} />
+          <div className="row-btns">
+            <button
+              className="primary"
+              disabled={!edit.title.trim()}
+              onClick={() => {
+                save({ reference: edit }, "Reference uložena.");
+                setEdit(null);
+              }}
+            >
+              Uložit referenci
+            </button>
+            <button className="ghost" onClick={() => setEdit(null)}>
+              Zrušit
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setEdit(blank)}>+ Přidat referenci</button>
       )}
     </>
   );
@@ -2910,7 +3225,7 @@ type Market = {
   smlouvy: { count: number } | null;
   offers: { avg: number; single: number; count: number } | null;
   prices: { count: number; p25: number | null; median: number | null; p75: number | null; min: number | null; max: number | null };
-  topWinners: { name: string; wins: number; total: number }[];
+  topWinners: { name: string; wins: number; total: number; avg?: number | null }[];
   awards: Award[];
 };
 
@@ -2918,6 +3233,7 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
   const { form, slovakia, openCompetitor } = props;
   const [days, setDays] = useState(730);
   const [useKeywords, setUseKeywords] = useState(true);
+  const [region, setRegion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<Market | null>(null);
@@ -2926,7 +3242,7 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
     setLoading(true);
     setError("");
     try {
-      const res = await post("/api/market", { cpv: form.cpv, keywords: useKeywords ? form.keywords : "", days, slovakia });
+      const res = await post("/api/market", { cpv: form.cpv, keywords: useKeywords ? form.keywords : "", days, slovakia, region });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       setData(d);
@@ -2950,6 +3266,17 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
             {[365, 730, 1095, 1825].map((d) => (
               <option key={d} value={d}>
                 posledních {d / 365} {d === 365 ? "rok" : d < 1825 ? "roky" : "let"}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Kraj</label>
+          <select value={region} onChange={(e) => setRegion(e.target.value)}>
+            <option value="">Celá ČR</option>
+            {REGIONS.filter((r) => !["celostátní", "Slovensko", "neznámý"].includes(r)).map((r) => (
+              <option key={r} value={r}>
+                {regionLabel(r)}
               </option>
             ))}
           </select>
@@ -3008,6 +3335,7 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
                 <tr>
                   <th>Firma</th>
                   <th>Výher</th>
+                  <th>Průměr (Kč)</th>
                   <th>Objem (Kč)</th>
                 </tr>
               </thead>
@@ -3021,6 +3349,7 @@ function MarketTab(props: { form: Form; slovakia: boolean; openCompetitor: (name
                       <div className="bar" style={{ width: `${(w.wins / data.topWinners[0].wins) * 100}%` }} />
                     </td>
                     <td>{w.wins}</td>
+                    <td>{w.avg ? Math.round(w.avg).toLocaleString("cs-CZ") : "–"}</td>
                     <td>{w.total ? Math.round(w.total).toLocaleString("cs-CZ") : "–"}</td>
                   </tr>
                 ))}

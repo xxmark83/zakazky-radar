@@ -13,21 +13,26 @@ export async function POST(req: Request) {
     const cpv = parseCpv(body.cpv ?? "");
     const keywords = splitList(body.keywords ?? "");
     // české výsledky z ISVZ (i podlimitní), TED doplní nadlimitní a slovenské
-    const ted = await fetchTedAwards({ cpv, keywords, days, countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"] });
+    // s krajem jen ISVZ (TED ani Registr smluv kraj spolehlivě neuvádějí)
+    const region = typeof body.region === "string" && body.region ? body.region : undefined;
+    const ted = region ? [] : await fetchTedAwards({ cpv, keywords, days, countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"] });
     // Registr smluv nemá CPV – bere se jen při hledání podle klíčových slov
-    const awards = mergeAwards(isvzAwards({ cpv, keywords, days }), ted, smlouvyAwards({ keywords, days }));
+    const awards = mergeAwards(isvzAwards({ cpv, keywords, days, region }), ted, region ? [] : smlouvyAwards({ keywords, days }));
     const withOffers = awards.filter((a) => typeof a.offers === "number" && a.offers > 0);
 
     const czk = awards.filter((a) => a.value && a.currency === "CZK").map((a) => a.value!).sort((a, b) => a - b);
     const q = (p: number) => (czk.length ? czk[Math.min(czk.length - 1, Math.floor(p * czk.length))] : null);
 
-    const winners = new Map<string, { name: string; wins: number; total: number }>();
+    const winners = new Map<string, { name: string; wins: number; total: number; priced: number }>();
     for (const a of awards) {
       for (const w of a.winners) {
         const key = w.toLowerCase().replace(/[\s,.]+/g, " ").trim();
-        const cur = winners.get(key) ?? { name: w, wins: 0, total: 0 };
+        const cur = winners.get(key) ?? { name: w, wins: 0, total: 0, priced: 0 };
         cur.wins++;
-        if (a.currency === "CZK" && a.value) cur.total += a.value / a.winners.length;
+        if (a.currency === "CZK" && a.value) {
+          cur.total += a.value / a.winners.length;
+          cur.priced++;
+        }
         winners.set(key, cur);
       }
     }
@@ -44,7 +49,11 @@ export async function POST(req: Request) {
           }
         : null,
       prices: { count: czk.length, p25: q(0.25), median: q(0.5), p75: q(0.75), min: czk[0] ?? null, max: czk.at(-1) ?? null },
-      topWinners: [...winners.values()].sort((a, b) => b.wins - a.wins || b.total - a.total).slice(0, 15),
+      topWinners: [...winners.values()]
+        .sort((a, b) => b.wins - a.wins || b.total - a.total)
+        .slice(0, 15)
+        .map(({ priced, ...w }) => ({ ...w, avg: priced ? w.total / priced : null })),
+      region: region ?? null,
       awards: awards.sort((a, b) => (b.published ?? "").localeCompare(a.published ?? "")).slice(0, 100),
     });
   } catch (e: any) {

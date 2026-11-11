@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Award } from "../types";
+import { nutsRegion } from "./ted";
 
 // Výsledky řízení z otevřených dat ISVZ (i podlimitní zakázky, cena smlouvy, počet nabídek).
 // Soubor jednou měsíčně obnovuje GitHub Actions (scripts/isvz.mjs), tady ho jen filtrujeme.
@@ -28,7 +29,7 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 const hit = (title: string, w: string) => ` ${norm(title)} `.includes(w.length <= 4 ? ` ${w} ` : w);
 const toAward = ({ buyerIco, winnerIco, nuts, ...a }: Row): Award => ({ ...a, source: "ISVZ" });
 
-export function isvzAwards(opts: { cpv: string[]; keywords: string[]; days: number }): Award[] {
+export function isvzAwards(opts: { cpv: string[]; keywords: string[]; days: number; region?: string }): Award[] {
   const d = load();
   if (!d) return [];
   const since = new Date(Date.now() - opts.days * 86400_000).toISOString().slice(0, 10);
@@ -39,7 +40,9 @@ export function isvzAwards(opts: { cpv: string[]; keywords: string[]; days: numb
     .filter((a) => {
       const cpvOk = !prefixes.length || a.cpv.some((c) => prefixes.some((p) => c.startsWith(p)));
       const kwOk = !words.length || words.some((w) => hit(a.title, w));
-      return cpvOk && kwOk;
+      // kraj podle NUTS zadavatele nebo místa plnění
+      const regionOk = !opts.region || nutsRegion(a.nuts) === opts.region;
+      return cpvOk && kwOk && regionOk;
     })
     .map(toAward);
 }

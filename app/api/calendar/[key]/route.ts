@@ -1,5 +1,6 @@
 import { calendarKey, sameText } from "@/lib/session";
-import { getMarkedTenders, getState } from "@/lib/store";
+import { questionsDeadline } from "@/lib/bidmath";
+import { getKept, getMarkedTenders, getState } from "@/lib/store";
 import { currentUser, users, withUser, type User } from "@/lib/users";
 import type { Status } from "@/lib/types";
 
@@ -38,8 +39,28 @@ async function ics() {
   const statuses = (state.db ? state.statuses : {}) as Record<string, Status>;
   const tenders = (await getMarkedTenders()).filter((t) => LABEL[statuses[t.id]] && t.deadline);
   const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const analysis = ((await getKept())?.analysis ?? {}) as Record<string, { questionsDeadline?: string }>;
 
   const events = tenders.flatMap((t) => {
+    // poslední den na dotazy k zadávací dokumentaci (z AI rozboru, jinak odhad) – jen dokud se nabídka chystá
+    const q = statuses[t.id] !== "sent" ? questionsDeadline(t.deadline, analysis[t.id]?.questionsDeadline) : null;
+    const qEvent = q
+      ? [
+          "BEGIN:VEVENT",
+          `UID:q-${t.id.replace(/[^a-zA-Z0-9-]/g, "")}@zakazky-radar`,
+          `DTSTAMP:${stamp}`,
+          `DTSTART;VALUE=DATE:${ymd(q.date)}`,
+          `DTEND;VALUE=DATE:${ymd(new Date(new Date(q.date).getTime() + 86400_000).toISOString())}`,
+          `SUMMARY:${esc(`Dotazy do${q.estimated ? " (odhad)" : ""}: ${t.title}`)}`,
+          `DESCRIPTION:${esc(`Poslední den na žádost o vysvětlení zadávací dokumentace${q.estimated ? " – odhad, přesnou lhůtu najdeš v dokumentaci" : ""}.\n${t.url}`)}`,
+          "BEGIN:VALARM",
+          "ACTION:DISPLAY",
+          `DESCRIPTION:${esc(`Zítra končí lhůta na dotazy: ${t.title}`)}`,
+          "TRIGGER:-P1D",
+          "END:VALARM",
+          "END:VEVENT",
+        ]
+      : [];
     const next = new Date(new Date(t.deadline!).getTime() + 86400_000).toISOString();
     return [
       "BEGIN:VEVENT",
@@ -56,6 +77,7 @@ async function ics() {
       "TRIGGER:-P3D",
       "END:VALARM",
       "END:VEVENT",
+      ...qEvent,
     ];
   });
   const ics = [

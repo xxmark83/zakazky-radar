@@ -1,5 +1,6 @@
 import { pickModel } from "@/lib/ai";
 import { analyzeTender, draftOffer } from "@/lib/analyze";
+import { getReferences } from "@/lib/company";
 import { toDocs } from "@/lib/docs";
 import { addSpend, setKept } from "@/lib/store";
 import type { Analysis, Tender } from "@/lib/types";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
   try {
     const r =
       body.kind === "draft"
-        ? await draftOffer(body.profile, body.tender, body.analysis ?? null, model)
+        ? await draftOffer(body.profile, body.tender, body.analysis ?? null, model, await getReferences())
         : await analyzeTender(
             body.profile,
             body.tender,
