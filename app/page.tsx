@@ -588,6 +588,7 @@ export default function Home() {
           </div>
         </div>
       </header>
+    <KeptCtx.Provider value={kept}>
     <KeywordsCtx.Provider value={form.keywords}>
     <main className={`${tab === "search" && hasResults ? "compact" : ""} ${split ? "split" : ""}`}>
       {offline && <div className="warn offline">Jsi offline – vidíš poslední uložená data. Hledání a AI počkají na připojení.</div>}
@@ -627,13 +628,13 @@ export default function Home() {
           </aside>
         )}
         <div className="content">
-          {tab === "today" && <DataStrip open={() => setSettings(true)} />}
           {tab === "today" && (
             <TodayTab
               key={synced}
               since={since}
               statuses={statuses}
               marked={marked}
+              kept={kept}
               changes={kept.changes}
               buyers={buyers}
               setStatus={setStatus}
@@ -642,6 +643,7 @@ export default function Home() {
               goBoard={() => setTab("board")}
             />
           )}
+          {tab === "today" && <DataStrip open={() => setSettings(true)} />}
           {tab === "search" && (
             <SearchTab
               since={since}
@@ -681,6 +683,7 @@ export default function Home() {
       </footer>
     </main>
     </KeywordsCtx.Provider>
+    </KeptCtx.Provider>
       {settings && (
         <Settings
           close={() => setSettings(false)}
@@ -745,6 +748,14 @@ const VERSION = process.env.APP_VERSION;
 type Theme = "auto" | "light" | "dark" | "space-dark" | "space-light";
 const THEMES: Record<Theme, string> = { auto: "Podle systému", light: "Světlý", dark: "Tmavý", "space-dark": "Vesmír tmavý", "space-light": "Vesmír světlý" };
 
+type SettingsGroup = "firma" | "alerts" | "ai" | "account";
+const SETTINGS_GROUPS: [SettingsGroup, string][] = [
+  ["firma", "Firma"],
+  ["alerts", "Upozornění"],
+  ["ai", "AI a data"],
+  ["account", "Účet"],
+];
+
 function Settings(props: {
   close: () => void;
   prefs: Prefs;
@@ -753,6 +764,22 @@ function Settings(props: {
   server: ServerState;
 }) {
   const { close, prefs, setPrefs, spent, server } = props;
+  // nastavení ve 4 skupinách, poslední otevřená se pamatuje
+  const [group, setGroup] = useState<SettingsGroup>(() => {
+    try {
+      const g = localStorage.getItem("zr-settings-tab") as SettingsGroup | null;
+      return g && SETTINGS_GROUPS.some(([k]) => k === g) ? g : "firma";
+    } catch {
+      return "firma";
+    }
+  });
+  const pickGroup = (g: SettingsGroup) => {
+    setGroup(g);
+    try {
+      localStorage.setItem("zr-settings-tab", g);
+    } catch {}
+    document.querySelector(".drawer.settings")?.scrollTo({ top: 0 });
+  };
   const [theme, setTheme] = useState<Theme>("auto");
   useEffect(() => {
     setTheme((document.documentElement.dataset.theme as Theme) ?? "auto");
@@ -777,36 +804,37 @@ function Settings(props: {
             ×
           </button>
         </div>
-        {server.owner && <GuideList />}
-
-        <h3 className="sec">Vzhled</h3>
-        <div className="flow">
-          {(Object.keys(THEMES) as Theme[]).map((t) => (
-            <button key={t} className={theme === t ? "on" : ""} onClick={() => choose(t)}>
-              {THEMES[t]}
+        <nav className="settings-tabs" aria-label="Části nastavení">
+          {SETTINGS_GROUPS.map(([k, label]) => (
+            <button key={k} className={group === k ? "on" : ""} onClick={() => pickGroup(k)}>
+              {label}
             </button>
           ))}
-        </div>
+        </nav>
 
-        <h3 className="sec">Zdroje zakázek</h3>
-        <div className="src-group">
-          <b>Česká republika</b>
-          <span>Vždy zapnuto: TED, NEN, profily zadavatelů (E-ZAK, Tender arena, eGORDION, PROEBIZ, Vhodné uveřejnění a další)</span>
-        </div>
-        <label className="src-group toggle">
-          <input
-            type="checkbox"
-            checked={prefs.slovakia}
-            onChange={(e) => setPrefs({ ...prefs, slovakia: e.target.checked })}
-          />
-          <span>
-            <b>Slovenská republika</b>
-            <span>Volitelně: TED (zakázky nad evropským limitem). Platí pro hledání, průzkum trhu i profil konkurenta.</span>
-          </span>
-        </label>
+        {group === "firma" && (
+          <>
+        {server.db && <CompanyPanel />}
 
-        <DataStatus />
+        {!server.db && <p className="note">Firemní profil a reference potřebují databázi (Upstash).</p>}
+          </>
+        )}
+        {group === "alerts" && (
+          <>
+        <DataStatus part="mail" />
+        <PushSettings db={server.db} />
 
+        <h3 className="sec">Kalendář lhůt</h3>
+        {server.calendar ? (
+          <CalendarLink k={server.calendar} />
+        ) : (
+          <p className="note">Kalendář potřebuje databázi (Upstash).</p>
+        )}
+
+          </>
+        )}
+        {group === "ai" && (
+          <>
         <h3 className="sec">AI a útrata</h3>
         <div className="budget">
           <div className="budget-row">
@@ -853,20 +881,42 @@ function Settings(props: {
           v e-mailu. Počítá se do měsíčního limitu.
         </p>
 
-        {server.db && <CompanyPanel />}
+        <h3 className="sec">Zdroje zakázek</h3>
+        <div className="src-group">
+          <b>Česká republika</b>
+          <span>Vždy zapnuto: TED, NEN, profily zadavatelů (E-ZAK, Tender arena, eGORDION, PROEBIZ, Vhodné uveřejnění a další)</span>
+        </div>
+        <label className="src-group toggle">
+          <input
+            type="checkbox"
+            checked={prefs.slovakia}
+            onChange={(e) => setPrefs({ ...prefs, slovakia: e.target.checked })}
+          />
+          <span>
+            <b>Slovenská republika</b>
+            <span>Volitelně: TED (zakázky nad evropským limitem). Platí pro hledání, průzkum trhu i profil konkurenta.</span>
+          </span>
+        </label>
 
-        <PushSettings db={server.db} />
-
-        <h3 className="sec">Kalendář lhůt</h3>
-        {server.calendar ? (
-          <CalendarLink k={server.calendar} />
-        ) : (
-          <p className="note">Kalendář potřebuje databázi (Upstash).</p>
-        )}
-
+        <DataStatus part="data" />
         <h3 className="sec">Připojení</h3>
         <Check ok={server.ai} label="AI hodnocení (ANTHROPIC_API_KEY)" />
         <Check ok={server.db} label="Databáze – stejná data na všech zařízeních (Upstash)" />
+
+          </>
+        )}
+        {group === "account" && (
+          <>
+        <h3 className="sec">Vzhled</h3>
+        <div className="flow">
+          {(Object.keys(THEMES) as Theme[]).map((t) => (
+            <button key={t} className={theme === t ? "on" : ""} onClick={() => choose(t)}>
+              {THEMES[t]}
+            </button>
+          ))}
+        </div>
+
+        {server.owner && <GuideList />}
 
         {server.db && <SecurityPanel />}
 
@@ -899,6 +949,8 @@ function Settings(props: {
         >
           Odhlásit toto zařízení
         </button>
+          </>
+        )}
       </aside>
     </div>
   );
@@ -1632,6 +1684,30 @@ const isSmall = (t: ScoredTender) =>
   /malého rozsahu/i.test(t.description) || Boolean(t.value && (t.currency ?? "CZK") === "CZK" && t.value <= 2_000_000);
 // klíčová slova aktuálního hledání – pro vysvětlení skóre na kartě
 const KeywordsCtx = createContext("");
+// rozbory, posouzení a návrhy – karta z nich ukáže „další krok“
+const KeptCtx = createContext<Kept>(EMPTY_KEPT);
+
+// řádek „další krok“ na kartě: jen u zakázek, se kterými pracuješ, nebo které už AI posoudila
+function NextLine({ t, status }: { t: ScoredTender; status: Status }) {
+  const kept = useContext(KeptCtx);
+  const a = kept.assess?.[t.id];
+  if (!ACTIVE.includes(status) && !a) return null;
+  const nk = nextKind(status, a, kept.analysis[t.id], kept.drafts[t.id]);
+  const q = ACTIVE.includes(status) && status !== "sent" ? questionsDeadline(t.deadline, kept.analysis[t.id]?.questionsDeadline) : null;
+  const qSoon = q && q.date >= today() && q.date <= new Date(Date.now() + 14 * 86400_000).toLocaleDateString("sv-SE");
+  if (!nk && !a && !qSoon) return null;
+  return (
+    <p className="next-line">
+      {a && <span className={`pre-${VERDICT_CLS[a.verdict] ?? "mid"}`}>Posouzeno: {a.verdict}</span>}
+      {nk && (
+        <span>
+          <Icon n="arrow" size={13} /> {NEXT_TEXT[nk]}
+        </span>
+      )}
+      {qSoon && <span>Dotazy do {new Date(q!.date).toLocaleDateString("cs-CZ")}{q!.estimated ? " (odhad)" : ""}</span>}
+    </p>
+  );
+}
 
 // „Proč 92?“: oblast, shoda slov s tím, co hledáš, a zdůvodnění AI
 function ScoreWhy({ t, close }: { t: ScoredTender; close: () => void }) {
@@ -1806,6 +1882,7 @@ function TenderCard(props: {
               <span>{t.reason}</span>
             </p>
           )}
+          <NextLine t={t} status={status} />
           <div className="tender-foot" onClick={(e) => e.stopPropagation()}>
             <button className="link more-link" onClick={() => openDetail(t)}>
               Detail a AI rozbor <Icon n="arrow" size={14} />
@@ -1875,6 +1952,7 @@ function Detail(props: {
   const qd = questionsDeadline(t.deadline, kept.analysis[t.id]?.questionsDeadline);
   const analysis = kept.analysis[t.id] ?? null;
   const draft = kept.drafts[t.id] ?? null;
+  const assessed = kept.assess?.[t.id] ?? null;
   const changes = kept.changes[t.id] ?? [];
   const [busy, setBusy] = useState<"analysis" | "draft" | null>(null);
   // zadávací podklady nahrané jednou pro celou zakázku: text se vytáhne v prohlížeči (i velké soubory)
@@ -1945,6 +2023,19 @@ function Detail(props: {
     }
   }
   const analyze = () => runAi("analysis");
+  const nk = nextKind(status, assessed, analysis, draft);
+  const next: { label: string; run: () => void; ai?: boolean } | null =
+    nk === "assess"
+      ? { label: NEXT_TEXT.assess, run: () => goTo("d-assess") }
+      : nk === "analysis"
+        ? { label: NEXT_TEXT.analysis, run: () => (goTo("d-ai"), analyze()), ai: true }
+        : nk === "draft"
+          ? { label: NEXT_TEXT.draft, run: () => (goTo("d-draft"), runAi("draft")), ai: true }
+          : nk === "word"
+            ? { label: NEXT_TEXT.word, run: () => exportWord() }
+            : nk === "sent"
+              ? { label: NEXT_TEXT.sent, run: () => goTo("d-top") }
+              : null;
 
   function saveDocx(name: string, blocks: Block[]) {
     const url = URL.createObjectURL(makeDocx(blocks));
@@ -2067,10 +2158,15 @@ function Detail(props: {
         </div>
         <nav className="jump" aria-label="Části detailu">
           {JUMPS.map(([id, label]) => (
-            <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            <button key={id} onClick={() => goTo(id)}>
               {label}
             </button>
           ))}
+          {next && (
+            <button className="primary next-step" onClick={next.run} disabled={busy !== null || (next.ai && ai.noAi)} title="Další krok u této zakázky">
+              {next.label} →
+            </button>
+          )}
         </nav>
 
         <dl className="facts">
@@ -2093,6 +2189,10 @@ function Detail(props: {
             <dd style={{ color: scoreColor(t.score) }}>
               {t.score < 0 ? "–" : `${t.score} – ${scoreLabel(t.score)}`}
             </dd>
+          </div>
+          <div>
+            <dt>Zvládneme to?</dt>
+            <dd className={assessed ? `pre-${VERDICT_CLS[assessed.verdict] ?? "mid"}` : "hint"}>{assessed ? assessed.verdict : "neposouzeno"}</dd>
           </div>
           {qd && qd.date >= today() && (
             <div>
@@ -2126,14 +2226,13 @@ function Detail(props: {
         )}
 
         <div className="drawer-links">
-          <a className="btn" href={t.url} target="_blank" rel="noreferrer">
+          <a className="btn secondary" href={t.url} target="_blank" rel="noreferrer">
             Otevřít zakázku ↗
           </a>
           {t.deadline && <button onClick={() => exportIcs(t)}>Lhůta do kalendáře</button>}
         </div>
 
-        <h3 className="sec">Stav</h3>
-        <div className="flow">
+        <div className="flow status-row" aria-label="Stav zakázky">
           {FLOW.map((s) => (
             <button key={s} className={`${s} ${status === s ? "on" : ""}`} onClick={() => setStatus(t, status === s ? "new" : s)}>
               {STATUS_LABEL[s]}
@@ -2150,17 +2249,9 @@ function Detail(props: {
           />
         )}
 
-        <BuyerSection
-          key={t.id}
-          t={t}
-          profile={profile}
-          keywords={keywords}
-          ai={ai}
-          saved={kept.history[t.id] ?? null}
-          keep={keep}
-          openCompetitor={openCompetitor}
-        />
-
+        <h2 className="phase" id="d-decide">
+          <span>1</span> Rozhodnout
+        </h2>
         <h3 className="sec" id="d-docs">
           Zadávací podklady
         </h3>
@@ -2197,6 +2288,16 @@ function Detail(props: {
           )}
         </div>
 
+        <Assess t={t} profile={profile} ai={ai} texts={texts} saved={kept.assess?.[t.id] ?? null} keep={(v) => keep("assess", t.id, v)} />
+
+        <AskDocs t={t} ai={ai} texts={texts} />
+
+        <PriceHelper t={t} results={kept.results} marked={marked} openCompetitor={openCompetitor} />
+
+
+        <h2 className="phase" id="d-prepare">
+          <span>2</span> Připravit nabídku
+        </h2>
         <h3 className="sec" id="d-ai">
           AI rozbor <span className="hint">co chtějí, rizika, co přiložit</span>
         </h3>
@@ -2209,7 +2310,7 @@ function Detail(props: {
                   ? "Přečte nahrané podklady a řekne, co chtějí, rizika, co nabídnout, hodnoticí kritéria a co přiložit."
                   : "Najde a přečte zadávací dokumentaci a řekne, co chtějí, rizika, co nabídnout, hodnoticí kritéria a co přiložit."}
             </span>
-            <button className="primary" onClick={analyze} disabled={ai.noAi || busy !== null}>
+            <button className={nk === "analysis" ? "primary" : ""} onClick={analyze} disabled={ai.noAi || busy !== null}>
               Udělat rozbor
             </button>
           </div>
@@ -2253,18 +2354,6 @@ function Detail(props: {
           />
         ) : null}
 
-        <Assess t={t} profile={profile} ai={ai} texts={texts} saved={kept.assess?.[t.id] ?? null} keep={(v) => keep("assess", t.id, v)} />
-
-        <AskDocs t={t} ai={ai} texts={texts} />
-
-        <PriceHelper t={t} results={kept.results} marked={marked} openCompetitor={openCompetitor} />
-
-        <div className="export">
-          <button onClick={exportWord}>
-            <Icon n="download" size={16} /> Stáhnout podklady do Wordu
-          </button>
-          <span className="hint">Zvládneme to?, rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
-        </div>
         <h3 className="sec">Dokumenty nabídky</h3>
         {company?.company.name ? (
           <>
@@ -2285,11 +2374,13 @@ function Detail(props: {
           <p className="note">Vyplň v Nastavení → Firma a reference IČO firmy a radar ti připraví krycí list, čestné prohlášení a seznam referencí.</p>
         )}
 
-        <h3 className="sec">Návrh nabídky</h3>
+        <h3 className="sec" id="d-draft">
+          Návrh nabídky
+        </h3>
         {!draft && busy !== "draft" && (
           <div className="ai-cta">
             <span>Osnova nabídky na míru této zakázce a průvodní dopis. Použije i rozbor, pokud je hotový.</span>
-            <button className="primary" onClick={() => runAi("draft")} disabled={ai.noAi || busy !== null}>
+            <button className={nk === "draft" ? "primary" : ""} onClick={() => runAi("draft")} disabled={ai.noAi || busy !== null}>
               Navrhnout
             </button>
           </div>
@@ -2347,6 +2438,27 @@ function Detail(props: {
             </div>
           </div>
         )}
+
+        <div className="export">
+          <button onClick={exportWord}>
+            <Icon n="download" size={16} /> Stáhnout podklady do Wordu
+          </button>
+          <span className="hint">Zvládneme to?, rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
+        </div>
+
+        <h2 className="phase" id="d-context">
+          <span>3</span> Souvislosti
+        </h2>
+        <BuyerSection
+          key={t.id}
+          t={t}
+          profile={profile}
+          keywords={keywords}
+          ai={ai}
+          saved={kept.history[t.id] ?? null}
+          keep={keep}
+          openCompetitor={openCompetitor}
+        />
 
         {t.description && (
           <>
@@ -2766,7 +2878,7 @@ function AskDocs({ t, ai, texts }: { t: ScoredTender; ai: Ai; texts: { name: str
         }}
       >
         <input placeholder="Např. Jaké certifikace požadují?" value={q} onChange={(e) => setQ(e.target.value)} disabled={ai.noAi} />
-        <button className="primary" style={{ marginTop: 0 }} disabled={busy || !q.trim() || ai.noAi}>
+        <button style={{ marginTop: 0 }} disabled={busy || !q.trim() || ai.noAi}>
           {busy ? "Čtu…" : "Zeptat se"}
         </button>
       </form>
@@ -2976,12 +3088,30 @@ function OutcomeForm({ won, value, save }: { won: boolean; value: Outcome | null
 // rychlé skoky v detailu zakázky (hlavně na mobilu, kde je detail dlouhý)
 const JUMPS: [string, string][] = [
   ["d-top", "Přehled"],
-  ["d-history", "Historie"],
-  ["d-docs", "Podklady"],
-  ["d-ai", "AI rozbor"],
-  ["d-assess", "Zvládneme to?"],
-  ["d-notes", "Poznámky"],
+  ["d-decide", "1 Rozhodnout"],
+  ["d-prepare", "2 Připravit"],
+  ["d-context", "3 Souvislosti"],
 ];
+const goTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+// co je u zakázky další krok (jedno hlavní tlačítko v detailu, řádek na kartě)
+type NextKind = "assess" | "analysis" | "draft" | "word" | "sent" | null;
+function nextKind(status: Status, assess: Assessment | null | undefined, analysis: Analysis | null | undefined, draft: Draft | null | undefined): NextKind {
+  if (status === "no" || status === "won" || status === "lost") return null;
+  if (status === "sent") return "sent";
+  if (!assess) return "assess";
+  if (assess.verdict === "nepodávat") return null;
+  if (!analysis) return "analysis";
+  if (!draft) return "draft";
+  return "word";
+}
+const NEXT_TEXT: Record<Exclude<NextKind, null>, string> = {
+  assess: "Posoudit, jestli to zvládneme",
+  analysis: "Udělat AI rozbor",
+  draft: "Navrhnout nabídku",
+  word: "Stáhnout podklady a podat",
+  sent: "Podáno – zapsat výsledek",
+};
 
 // appka z plochy nemá obnovení stažením stránky dolů jako prohlížeč – doplníme ho
 function PullToRefresh({ disabled }: { disabled: boolean }) {
@@ -3034,6 +3164,7 @@ function TodayTab(props: {
   since: string | null;
   statuses: Record<string, Status>;
   marked: Record<string, ScoredTender>;
+  kept: Kept;
   changes: Record<string, Change[]>;
   buyers: Buyers;
   setStatus: (t: ScoredTender, s: Status) => void;
@@ -3041,7 +3172,7 @@ function TodayTab(props: {
   goSearch: () => void;
   goBoard: () => void;
 }) {
-  const { since, statuses, marked, changes, buyers, setStatus, openDetail, goSearch, goBoard } = props;
+  const { since, statuses, marked, kept, changes, buyers, setStatus, openDetail, goSearch, goBoard } = props;
   const [results, setResults] = useState<ScoredTender[]>([]);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -3063,23 +3194,63 @@ function TodayTab(props: {
   const fromBuyers = buyers.tenders.filter((t) => !statuses[t.id]).slice(0, 5);
   const lastSearch = results.length ? null : "Ještě jsi nehledal.";
 
-  const tiles: { v: number; l: string; cls?: string; go?: () => void }[] = [
-    { v: newOnes.length, l: "nových od minula", cls: newOnes.length ? "new" : "", go: goSearch },
-    { v: deadlines.length, l: "lhůt tento týden", cls: deadlines.length ? "warn" : "", go: goBoard },
-    { v: changed.length, l: "změn u sledovaných", cls: changed.length ? "warn" : "", go: goBoard },
+  // co dnes udělat: lhůty a dotazy na zadavatele do týdne, změny u rozpracovaných – seřazeno podle data
+  type Todo = { t: ScoredTender; what: string; date: string | null; cls: string };
+  const todo: Todo[] = [
+    ...deadlines.map((t) => ({ t, what: "Lhůta pro nabídku", date: t.deadline, cls: "urgent" })),
+    ...Object.values(marked)
+      .filter((t) => ["maybe", "bid"].includes(statuses[t.id]))
+      .map((t) => ({ t, q: questionsDeadline(t.deadline, kept.analysis[t.id]?.questionsDeadline) }))
+      .filter(({ q }) => q && q.date >= today() && q.date <= week)
+      .map(({ t, q }) => ({ t, what: q!.estimated ? "Dotazy na zadavatele (odhad)" : "Dotazy na zadavatele", date: q!.date, cls: "soon" })),
+    ...changed.map((t) => ({
+      t,
+      what: `Změna: ${[...new Set(changes[t.id].map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}`,
+      date: null,
+      cls: "changed",
+    })),
+  ].sort((a, b) => (a.date ?? "0").localeCompare(b.date ?? "0"));
+
+  const chips: { v: number; l: string; go?: () => void }[] = [
+    { v: newOnes.length, l: "nových od minula", go: goSearch },
+    { v: deadlines.length, l: deadlines.length === 1 ? "lhůta tento týden" : "lhůt tento týden", go: goBoard },
+    { v: changed.length, l: "změn u sledovaných", go: goBoard },
     { v: fromBuyers.length, l: "od sledovaných zadavatelů" },
   ];
 
   return (
     <>
-      <div className="summary today-tiles">
-        {tiles.map((x) => (
-          <button key={x.l} className={x.cls} onClick={x.go} disabled={!x.go}>
-            <b>{x.v}</b>
-            <span>{x.l}</span>
+      <div className="today-chips">
+        {chips.map((x) => (
+          <button key={x.l} className={x.v ? "has" : ""} onClick={x.go} disabled={!x.go}>
+            <b>{x.v}</b> {x.l}
           </button>
         ))}
       </div>
+
+      <section className="todo">
+        <h2>
+          <Icon n="clock" size={16} /> Co dnes udělat
+        </h2>
+        {todo.length ? (
+          <div className="card mine">
+            {todo.map((x, i) => (
+              <button key={i} className={`mine-row todo-row ${x.cls}`} onClick={() => openDetail(x.t)}>
+                <span>
+                  <small className="todo-what">{x.what}</small>
+                  {x.t.title}
+                </span>
+                {x.date ? <Deadline d={x.date} short /> : <span className="tag changed">změna</span>}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="card calm">
+            <b>Klid</b>
+            <span>Tento týden nehoří žádná lhůta, dotaz na zadavatele ani změna u rozpracovaných zakázek.</span>
+          </div>
+        )}
+      </section>
 
       <div className="today-grid">
         <div className="today-main">
@@ -3114,37 +3285,6 @@ function TodayTab(props: {
           </button>
         </div>
         <div className="today-side">
-          {deadlines.length > 0 && (
-            <div className="card mine urgent-box">
-              <div className="mine-head">
-                <b>
-                  <Icon n="clock" size={15} /> Lhůty tento týden
-                </b>
-              </div>
-              {deadlines.map((t) => (
-                <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
-                  <span>{t.title}</span>
-                  <Deadline d={t.deadline} short />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {changed.length > 0 && (
-            <div className="card mine">
-              <div className="mine-head">
-                <b>Změny u sledovaných zakázek</b>
-              </div>
-              {changed.map((t) => (
-                <button key={t.id} className="mine-row" onClick={() => openDetail(t)}>
-                  <span>{t.title}</span>
-                  <span className="tag changed">
-                    {[...new Set(changes[t.id].map((c) => CHANGE_LABEL[c.field].toLowerCase()))].join(", ")}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
           <RecentContracts />
           {fromBuyers.length > 0 && (
             <>
@@ -3163,12 +3303,6 @@ function TodayTab(props: {
                 ))}
               </div>
             </>
-          )}
-          {!deadlines.length && !changed.length && !fromBuyers.length && (
-            <div className="card calm">
-              <b>Klid</b>
-              <span>Tento týden žádná lhůta, změna ani novinka od sledovaných zadavatelů.</span>
-            </div>
           )}
         </div>
       </div>
@@ -3239,7 +3373,7 @@ function BuyerSection(props: {
                 Co všechno <b>{t.buyer}</b> za posledních 5 let podepsal a s kým. Nahoře IT a to, co souvisí s touto
                 zakázkou. Zdarma.
               </span>
-              <button className="primary" onClick={() => load("list")}>
+              <button onClick={() => load("list")}>
                 Zobrazit historii
               </button>
             </>
@@ -3295,7 +3429,7 @@ function BuyerSection(props: {
                 ) : (
                   <>
                     <span>AI určí současného dodavatele, cenovou hladinu a ke každé související smlouvě napíše proč.</span>
-                    <button className="primary" onClick={() => load("ai")} disabled={ai.noAi || busy !== null}>
+                    <button onClick={() => load("ai")} disabled={ai.noAi || busy !== null}>
                       AI zhodnocení
                     </button>
                   </>
@@ -3458,6 +3592,7 @@ function BoardTab(props: {
                     {t.title || "(bez názvu)"}
                   </button>
                   <span className="bcard-buyer">{t.buyer}</span>
+                  <NextLine t={t} status={c.s === "top" ? "new" : (c.s as Status)} />
                   <div className="bcard-foot">
                     <Deadline d={t.deadline} short />
                     <select
@@ -3870,6 +4005,14 @@ function Competitor(props: { name: string; slovakia: boolean; watching: boolean;
   );
 }
 
+type WatchSub = "profiles" | "buyers" | "competitors" | "contracts";
+const WATCH_TABS: [WatchSub, string][] = [
+  ["profiles", "Profily"],
+  ["buyers", "Zadavatelé"],
+  ["competitors", "Konkurenti"],
+  ["contracts", "Smlouvy"],
+];
+
 function WatchTab(props: {
   form: Form;
   server: ServerState;
@@ -3883,6 +4026,32 @@ function WatchTab(props: {
   const { form, server, setServer, buyers, toggleBuyer, competitors, toggleCompetitor, openCompetitor } = props;
   const profiles = server.profiles ?? [];
   const [msg, setMsg] = useState("");
+  const [sub, setSub] = useState<WatchSub>(() => {
+    try {
+      return (localStorage.getItem("zr-watch-tab") as WatchSub) || "profiles";
+    } catch {
+      return "profiles";
+    }
+  });
+  const pickSub = (k: WatchSub) => {
+    setSub(k);
+    try {
+      localStorage.setItem("zr-watch-tab", k);
+    } catch {}
+  };
+  const [contractCount, setContractCount] = useState<number | null>(null);
+  useEffect(() => {
+    fetch("/api/contracts")
+      .then((r) => r.json())
+      .then((d) => setContractCount(d.watched?.length ?? 0))
+      .catch(() => {});
+  }, [sub]);
+  const counts: Record<WatchSub, string> = {
+    profiles: String(profiles.filter((p) => p.watch).length),
+    buyers: String(buyers.buyers.length),
+    competitors: String(competitors.length),
+    contracts: contractCount === null ? "" : String(contractCount),
+  };
 
   const store = async (next: WatchedProfile[]) => {
     setServer({ ...server, profiles: next });
@@ -3911,15 +4080,49 @@ function WatchTab(props: {
 
       {server.db && (
         <>
+          <nav className="settings-tabs watch-tabs" aria-label="Co hlídám">
+            {WATCH_TABS.map(([k, label]) => (
+              <button key={k} className={sub === k ? "on" : ""} onClick={() => pickSub(k)}>
+                {label}
+                <small>{counts[k]}</small>
+              </button>
+            ))}
+          </nav>
+          {sub === "profiles" && (
+            <>
+          <p className="note">Každé ráno projdu nové zakázky podle uložených profilů a pošlu jen ty nad zvoleným skóre.</p>
+          <div className="list" style={{ marginTop: 12 }}>
+            {profiles.map((p) => (
+              <div key={p.name} className="card watch">
+                <b>{p.name}</b>
+                <span className="note">{p.keywords}</span>
+                <select
+                  value={p.minScore}
+                  onChange={(e) => store(profiles.map((x) => (x.name === p.name ? { ...x, minScore: Number(e.target.value) } : x)))}
+                >
+                  {[50, 60, 70, 75, 80, 90].map((s) => (
+                    <option key={s} value={s}>
+                      skóre {s}+
+                    </option>
+                  ))}
+                </select>
+                <button onClick={() => store(profiles.map((x) => (x.name === p.name ? { ...x, watch: !x.watch } : x)))}>
+                  {p.watch ? "Pozastavit" : "Zapnout"}
+                </button>
+                <button onClick={() => store(profiles.filter((x) => x.name !== p.name))}>Smazat</button>
+              </div>
+            ))}
+          </div>
           <div className="watch-add">
             <button className="primary" onClick={addCurrent}>
               Hlídat aktuální profil „{form.name}“
             </button>
             {msg && <span className="note"> {msg}</span>}
           </div>
-          <ContractWatch />
-
-          <h2>Sledovaní zadavatelé</h2>
+            </>
+          )}
+          {sub === "buyers" && (
+            <>
           <p className="note">
             Upozorním na každou novou zakázku od nich, i když nesedí na klíčová slova. Přidáš je v detailu zakázky tlačítkem
             „Sledovat zadavatele“.
@@ -3943,7 +4146,10 @@ function WatchTab(props: {
               <p className="note">Zatím nikoho nesleduješ.</p>
             )}
           </div>
-          <h2>Sledovaní konkurenti</h2>
+            </>
+          )}
+          {sub === "competitors" && (
+            <>
           <p className="note">
             Ráno dám vědět, když vyhrají zakázku nebo podepíšou smlouvu (TED, Registr smluv, ISVZ). Přidáš je v profilu
             konkurenta – klikni na jméno dodavatele v Průzkumu trhu nebo v historii zadavatele.
@@ -3965,29 +4171,14 @@ function WatchTab(props: {
               <p className="note">Zatím nikoho nesleduješ.</p>
             )}
           </div>
-          <h2>Hlídané profily</h2>
-          <div className="list" style={{ marginTop: 12 }}>
-            {profiles.map((p) => (
-              <div key={p.name} className="card watch">
-                <b>{p.name}</b>
-                <span className="note">{p.keywords}</span>
-                <select
-                  value={p.minScore}
-                  onChange={(e) => store(profiles.map((x) => (x.name === p.name ? { ...x, minScore: Number(e.target.value) } : x)))}
-                >
-                  {[50, 60, 70, 75, 80, 90].map((s) => (
-                    <option key={s} value={s}>
-                      skóre {s}+
-                    </option>
-                  ))}
-                </select>
-                <button onClick={() => store(profiles.map((x) => (x.name === p.name ? { ...x, watch: !x.watch } : x)))}>
-                  {p.watch ? "Pozastavit" : "Zapnout"}
-                </button>
-                <button onClick={() => store(profiles.filter((x) => x.name !== p.name))}>Smazat</button>
-              </div>
-            ))}
-          </div>
+            </>
+          )}
+          {sub === "contracts" && (
+            <>
+          <ContractWatch />
+
+            </>
+          )}
         </>
       )}
     </>
@@ -4515,7 +4706,7 @@ const until = (iso: string) => {
   return new Date(iso).toLocaleDateString("cs-CZ");
 };
 
-function DataStatus() {
+function DataStatus({ part }: { part: "data" | "mail" }) {
   const [d, setD] = useState<DataStatusRes | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -4542,17 +4733,16 @@ function DataStatus() {
   }
   if (!d) return null;
   const m = d.mail;
+  if (part === "data")
+    return d.refresh ? (
+      <>
+        <h3 className="sec">Stažená data</h3>
+        <p className="note">Co je stažené, co se právě stahuje a kdy příště, vidíš na obrazovce Dnes.</p>
+        <RefreshAll r={d.refresh} running={d.running.length} reload={load} />
+      </>
+    ) : null;
   return (
     <>
-      {d.refresh && (
-        <>
-          <h3 className="sec">Stažená data</h3>
-          <p className="note">Co je stažené, co se právě stahuje a kdy příště, vidíš na obrazovce Dnes.</p>
-        </>
-      )}
-
-      {d.refresh && <RefreshAll r={d.refresh} running={d.running.length} reload={load} />}
-
       <h3 className="sec">E-mailová upozornění</h3>
       <div className="data-list">
         <div className="data-row">
@@ -4673,19 +4863,31 @@ function DataStrip({ open }: { open: () => void }) {
     const id = setInterval(load, 60_000);
     return () => clearInterval(id);
   }, [busy]);
+  const [show, setShow] = useState(false);
   if (!d) return null;
+  const late = d.datasets.some((x) => x.late);
+  const expanded = show || busy || late;
+  const newest = d.datasets.map((x) => x.updated).filter(Boolean).sort().pop() ?? null;
   return (
     <section className="data-today">
       <div className="mine-head">
         <h2 className="data-today-h">
-          <span className={`live ${busy ? "" : d.datasets.some((x) => x.late) ? "bad" : "idle"}`} aria-hidden="true" />
+          <span className={`live ${busy ? "" : late ? "bad" : "idle"}`} aria-hidden="true" />
           Stav dat
+          {!expanded && <small className="hint data-ok"> v pořádku, poslední doplnění {when(newest)}</small>}
         </h2>
-        <button className="link" onClick={open}>
-          Nastavení a stáhnout znovu
-        </button>
+        <span className="row-btns" style={{ margin: 0 }}>
+          {!busy && !late && (
+            <button className="link" onClick={() => setShow((v) => !v)}>
+              {show ? "Sbalit" : "Podrobnosti"}
+            </button>
+          )}
+          <button className="link" onClick={open}>
+            Stáhnout znovu
+          </button>
+        </span>
       </div>
-      <DataDetails d={d} grid />
+      {expanded && <DataDetails d={d} grid />}
     </section>
   );
 }

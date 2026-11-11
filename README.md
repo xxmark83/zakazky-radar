@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.42.0** – přestavba pro rychlou orientaci: detail zakázky ve třech fázích (1 Rozhodnout: podklady, Zvládneme to?, dotazy, cena a šance; 2 Připravit nabídku: rozbor, checklist, dokumenty, návrh, Word; 3 Souvislosti: historie zadavatele, popis, poznámky), verdikt Zvládneme to? v přehledu nahoře, stav hned pod ním, v liště jedno hlavní tlačítko „další krok“ (posoudit → rozbor → návrh → podklady); Dnes začíná „Co dnes udělat“ (lhůty, dotazy na zadavatele a změny do týdne, podle data), počty jako čipy, stav dat dole a sbalený, když je vše v pořádku; Nastavení ve 4 záložkách (Firma, Upozornění, AI a data, Účet); Hlídání ve 4 záložkách (Profily, Zadavatelé, Konkurenti, Smlouvy) s počty; na kartách ve výsledcích i na nástěnce řádek „Posouzeno … → další krok“ a blížící se dotazy.
 - **1.41.2** – návody: nové snímky Zadávací podklady, Zvládneme to? (3 kroky), AI rozbor a Cena, šance a konkurence.
 - **1.41.1** – návody vynechají kroky, ke kterým ještě není snímek.
 - **1.41.0** – Nastavení → Vzhled: „Vesmír tmavý“ a „Vesmír světlý“ (černá noc s hvězdami / světlá obrácená verze, bílý akcent, Big Shoulders verzálky v nadpisech a Public Sans v textu – písma uložená v appce přes @fontsource, tlačítka jako pilulky, plochy oddělené čárou, bez stínů a gradientů, barva jen pro význam). Návody: nová kapitola Zvládneme to?, texty podle úklidu 1.40.

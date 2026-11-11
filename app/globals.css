@@ -1172,3 +1172,50 @@ main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   :root[data-theme^="space"] * { transition: none !important; animation: none !important; }
 }
 :root[data-theme^="space"] a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* ---------- detail podle práce: 1 Rozhodnout, 2 Připravit, 3 Souvislosti ---------- */
+h2.phase { display: flex; align-items: center; gap: 10px; margin: 34px 0 2px; padding-top: 18px; border-top: 2px solid var(--line); font-size: 20px; scroll-margin-top: 64px; }
+h2.phase span { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; background: var(--accent); color: var(--on-accent); }
+.jump .next-step { margin: 0 0 0 auto; padding: 6px 14px; color: var(--on-accent); white-space: nowrap; }
+.status-row { margin: 12px 0 4px; }
+a.btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+a.btn.secondary:hover { background: var(--soft); }
+:root[data-theme^="space"] a.btn.secondary { background: transparent; color: var(--text); border-color: var(--hair); font-weight: 600; }
+:root[data-theme^="space"] a.btn.secondary:hover { border-color: var(--text); background: var(--soft); }
+:root[data-theme^="space"] .jump { background: var(--bar); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-theme^="space"] .jump .next-step { color: var(--bg); }
+:root[data-theme^="space"] h2.phase { border-top-width: 1px; }
+:root[data-theme^="space"] h2.phase span { font-family: var(--display); }
+
+/* ---------- Dnes: nejdřív co udělat ---------- */
+.today-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.today-chips button { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 13.5px; color: var(--muted); }
+.today-chips button b { color: var(--text); font-size: 15px; }
+.today-chips button.has b { color: var(--accent); }
+.today-chips button:disabled { cursor: default; opacity: 1; }
+.todo { margin-bottom: 8px; }
+.todo h2 { margin-top: 0; }
+.todo-row > span:first-child { display: grid; gap: 1px; white-space: normal; }
+.todo-what { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.todo-row.urgent .todo-what { color: var(--bad); }
+.todo-row.soon .todo-what { color: var(--mid); }
+.data-today { margin: 26px 0 8px; }
+.data-today .data-ok { font-family: var(--body, inherit); text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; margin-left: 6px; }
+:root[data-theme^="space"] .today-chips button.has b { color: var(--text); }
+
+/* ---------- Nastavení ve 4 skupinách ---------- */
+.settings-tabs { position: sticky; top: -18px; z-index: 2; display: flex; gap: 2px; padding: 3px; margin: 4px 0 6px; background: var(--soft); border-radius: 12px; }
+.settings-tabs button { flex: 1; border: 0; background: transparent; color: var(--muted); padding: 7px 6px; border-radius: 9px; font-weight: 600; font-size: 13.5px; }
+.settings-tabs button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+:root[data-theme^="space"] .settings-tabs { background: var(--bg); border: 1px solid var(--hair); border-radius: 24px; }
+:root[data-theme^="space"] .settings-tabs button { border: 0; border-radius: 999px; min-height: 34px; }
+:root[data-theme^="space"] .settings-tabs button.on { background: var(--accent); color: var(--bg); box-shadow: none; }
+.watch-tabs { position: static; margin: 8px 0 14px; }
+.watch-tabs button small { margin-left: 5px; font-weight: 400; opacity: .7; }
+
+/* „další krok“ na kartě */
+.next-line { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.next-line span { display: inline-flex; align-items: center; gap: 4px; }
+.next-line span:nth-child(2), .next-line span:only-child { color: var(--text); }
+.todo .card.mine { padding-top: 6px; padding-bottom: 6px; }
+.todo .mine-row:first-child { border-top: 0; }
