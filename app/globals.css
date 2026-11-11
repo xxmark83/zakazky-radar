@@ -791,6 +791,31 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .cw-option .saved { flex: none; display: inline-flex; align-items: center; gap: 4px; }
 .cw-found .link { justify-self: start; }
 
+/* zvládneme to? */
+.assess-up { display: grid; gap: 8px; }
+.assess-drop { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 2px dashed var(--line); border-radius: 12px; cursor: pointer; font-size: 14px; }
+.assess-drop:hover { border-color: var(--accent); }
+.assess-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.assess-drop svg { flex: none; color: var(--accent); margin-top: 2px; }
+.assess-files { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 2px; }
+.assess-files small { color: var(--muted); }
+.assess-files li.err { color: var(--bad); }
+.model-pick { margin: 0; }
+.qual-list { display: grid; gap: 6px; }
+.qual { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); font-size: 14px; }
+.qual p { margin: 4px 0 0; color: var(--muted); }
+.qual-st { flex: none; min-width: 74px; text-align: center; font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 6px; }
+.qual.ok .qual-st { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
+.qual.doc .qual-st { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.qual.no .qual-st { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+.qual.q .qual-st { background: color-mix(in srgb, var(--mid) 22%, transparent); color: var(--mid); }
+.md-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.md-table th, .md-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.md-table td:nth-child(3) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.md-table .risk.hi { color: var(--bad); }
+.md-table .risk.mid { color: var(--mid); }
+.capabilities { min-height: 150px; }
+
 /* stav dat */
 .data-today { margin: 0 0 18px; }
 .data-today .mine-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -1014,3 +1039,4 @@ main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 
   .jump { margin: 10px -16px 0; padding: 8px 16px; top: -14px; }
 }
+.table-wrap { overflow-x: auto; }

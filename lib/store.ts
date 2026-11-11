@@ -22,7 +22,7 @@ const K = {
 };
 
 // poznámky, AI rozbory a návrhy nabídek: hash id -> hodnota
-export type Kept = "notes" | "analysis" | "drafts" | "changes" | "history" | "checks" | "results";
+export type Kept = "notes" | "analysis" | "drafts" | "changes" | "history" | "checks" | "results" | "assess";
 const KEPT: Kept[] = ["notes", "analysis", "drafts", "changes", "history", "checks", "results"];
 
 export async function getKept() {

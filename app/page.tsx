@@ -13,7 +13,7 @@ import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets } from "@/lib/pre
 import { diff } from "@/lib/diff";
 import { profileKey } from "@/lib/profile-key";
 import { REGIONS } from "@/lib/regions";
-import type { Analysis, Award, BuyerAi, BuyerHistory, Change, Checks, Contract, Draft, Outcome, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
+import type { Analysis, Assessment, Award, BuyerAi, BuyerHistory, Change, Checks, Contract, Draft, Outcome, Score, ScoredTender, Status, WatchedProfile } from "@/lib/types";
 
 const STATUS_LABEL: Record<Status, string> = {
   new: "Nové",
@@ -114,9 +114,10 @@ type Kept = {
   history: Record<string, BuyerAi>;
   checks: Record<string, Checks>;
   results: Record<string, Outcome>;
+  assess: Record<string, Assessment>;
 };
 type KeptKind = keyof Kept;
-const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {}, history: {}, checks: {}, results: {} };
+const EMPTY_KEPT: Kept = { notes: {}, analysis: {}, drafts: {}, changes: {}, history: {}, checks: {}, results: {}, assess: {} };
 type Keep = <K extends KeptKind>(kind: K, id: string, value: Kept[K][string] | null) => void;
 
 type Model = "opus" | "haiku";
@@ -2209,6 +2210,8 @@ function Detail(props: {
           />
         ) : null}
 
+        <Assess t={t} profile={profile} ai={ai} saved={kept.assess?.[t.id] ?? null} keep={(v) => keep("assess", t.id, v)} />
+
         <AskDocs t={t} ai={ai} />
 
         <PriceHelper t={t} results={kept.results} marked={marked} />
@@ -2516,6 +2519,211 @@ function Chance({ t, offersAvg, results }: { t: ScoredTender; offersAvg: number 
   );
 }
 
+// „Zvládneme to?“ – nahrané podklady (text se vytáhne v prohlížeči) → kvalifikace vs. firma a reference + odhad realizace
+const mb = (b: number) => (b < 100_000 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${(b / 1_000_000).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} MB`);
+const Q_STATUS: Record<string, string> = { splněno: "ok", doložit: "doc", nesplněno: "no", nejasné: "q" };
+const VERDICT_CLS: Record<string, string> = { podat: "good", "podat s partnerem": "mid", nepodávat: "bad", nejasné: "mid" };
+function Assess({ t, profile, ai, saved, keep }: { t: ScoredTender; profile: string; ai: Ai; saved: Assessment | null; keep: (v: Assessment | null) => void }) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [docs, setDocs] = useState<{ name: string; chars: number; pages?: number; note?: string }[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [model, setModel] = useState<Model>(ai.model);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/company")
+      .then((r) => r.json())
+      .then((d) => setHasProfile(Boolean(d.company?.capabilities?.trim())))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    setFiles([]);
+    setDocs(null);
+    setError("");
+  }, [t.id]);
+  const size = files.reduce((n, f) => n + f.size, 0);
+
+  async function run() {
+    setError("");
+    try {
+      let texts: { name: string; text: string }[] = [];
+      if (files.length) {
+        setBusy("Čtu podklady v prohlížeči…");
+        const { extractFiles } = await import("@/lib/extract");
+        const out = await extractFiles(files, (name, i, all) => setBusy(`Čtu ${i + 1}/${all}: ${name}`));
+        setDocs(out.map((d) => ({ name: d.name, chars: d.text.length, pages: d.pages, note: d.note })));
+        texts = out.filter((d) => d.text.trim()).map((d) => ({ name: d.name, text: d.text }));
+        if (!texts.length) throw new Error("Z nahraných souborů jsem nevytáhl žádný text (naskenované PDF nebo nepodporovaný formát).");
+      }
+      setBusy(`AI posuzuje kvalifikaci a realizaci (${model === "opus" ? "Opus" : "Haiku"}), obvykle 1–3 minuty…`);
+      const res = await post("/api/assess", { tender: t, profile, model, texts });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
+      ai.onCost(d.cost ?? 0);
+      keep(d.data);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const a = saved;
+  return (
+    <>
+      <h3 className="sec" id="d-assess">
+        Zvládneme to? <span className="hint">kvalifikace a realizace</span>
+      </h3>
+      {hasProfile === false && (
+        <div className="warn">
+          Vyplň v Nastavení → Firma a reference pole „Co umíš a čím disponuješ“ (tým, obrat, pojištění, certifikace) a reference –
+          bez nich AI většinu požadavků označí jako nejasné.
+        </div>
+      )}
+      <div className="assess-up">
+        <label className="assess-drop">
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.docx,.xlsx,.odt,.ods,.zip,.txt,.csv"
+            onChange={(e) => (setFiles([...(e.target.files ?? [])]), setDocs(null))}
+          />
+          <Icon n="file" size={20} />
+          <span>
+            <b>{files.length ? `${files.length} ${files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"}, ${mb(size)}` : "Nahraj všechny zadávací podklady"}</b>
+            <br />
+            <span className="hint">
+              PDF, Word, Excel, ZIP – i velké. Text se vytáhne přímo v prohlížeči, soubory se nikam neukládají. Bez nahrání AI vezme
+              dokumentaci, kterou najde sama.
+            </span>
+          </span>
+        </label>
+        {files.length > 0 && !docs && (
+          <ul className="assess-files">
+            {files.map((f) => (
+              <li key={f.name + f.size}>
+                {f.name} <small>{mb(f.size)}</small>
+              </li>
+            ))}
+          </ul>
+        )}
+        {docs && (
+          <ul className="assess-files">
+            {docs.map((d, i) => (
+              <li key={i} className={d.note && !d.chars ? "err" : ""}>
+                {d.chars ? "✓" : "✕"} {d.name}{" "}
+                <small>
+                  {d.pages ? `${d.pages} str., ` : ""}
+                  {Math.round(d.chars / 1000)} tis. znaků{d.note ? ` – ${d.note}` : ""}
+                </small>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="row-btns">
+          <div className="flow model-pick">
+            <button className={model === "haiku" ? "on" : ""} onClick={() => setModel("haiku")}>
+              Haiku – levný
+            </button>
+            <button className={model === "opus" ? "on" : ""} onClick={() => setModel("opus")}>
+              Opus – přesnější
+            </button>
+          </div>
+          <button className="primary" style={{ marginTop: 0 }} disabled={busy !== null || ai.noAi} onClick={run}>
+            {a ? "Posoudit znovu" : "Posoudit"}
+          </button>
+        </div>
+        <span className="hint">
+          Odhad ceny: Haiku asi 1–10 centů, Opus asi 30 centů až 1,5 $ podle velikosti podkladů. Na rozhodnutí o podání doporučuji
+          Opus.
+        </span>
+      </div>
+      {busy && (
+        <div className="ai-cta">
+          <div className="radar" aria-hidden="true" />
+          <span>{busy}</span>
+        </div>
+      )}
+      {error && <div className="warn">{error}</div>}
+      {a && !busy && (
+        <div className="analysis assess">
+          <div className={`verdict ${VERDICT_CLS[a.verdict] ?? "mid"}`}>
+            <b>{a.verdict === "podat" ? "Podat" : a.verdict === "podat s partnerem" ? "Podat s partnerem / poddodavatelem" : a.verdict === "nepodávat" ? "Nepodávat" : "Nejasné – doplň podklady nebo profil"}</b>
+            <span>{a.verdictReason}</span>
+          </div>
+          <h4>
+            Kvalifikace{" "}
+            <span className="hint">
+              {(["splněno", "doložit", "nesplněno", "nejasné"] as const)
+                .map((st) => [st, a.qualification.filter((q) => q.status === st).length] as const)
+                .filter(([, n]) => n)
+                .map(([st, n]) => `${n}× ${st}`)
+                .join(", ")}
+            </span>
+          </h4>
+          <div className="qual-list">
+            {a.qualification.map((q, i) => (
+              <div key={i} className={`qual ${Q_STATUS[q.status]}`}>
+                <span className="qual-st">{q.status}</span>
+                <div>
+                  <b>{q.requirement}</b> <span className="hint">{q.area}{q.where ? `, ${q.where}` : ""}</span>
+                  {q.how && <p>{q.how}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <h4>
+            Realizace: {a.delivery.feasible === "ano" ? "zvládneme" : a.delivery.feasible === "částečně" ? "zčásti" : "nezvládneme"}
+            {a.delivery.totalMd ? <span className="hint"> – odhad {Math.round(a.delivery.totalMd)} člověkodní</span> : null}
+          </h4>
+          <p>{a.delivery.summary}</p>
+          {a.delivery.parts.length > 0 && (
+            <div className="table-wrap">
+              <table className="md-table">
+                <thead>
+                  <tr>
+                    <th>Část</th>
+                    <th>Jak</th>
+                    <th>MD</th>
+                    <th>Riziko</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.delivery.parts.map((p, i) => (
+                    <tr key={i}>
+                      <td>{p.item}</td>
+                      <td>{p.how}</td>
+                      <td>{Math.round(p.effortMd * 10) / 10}</td>
+                      <td className={`risk ${p.risk === "vysoké" ? "hi" : p.risk === "střední" ? "mid" : ""}`}>{p.risk}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {a.delivery.stack && (
+            <p>
+              <b>Technologie:</b> {a.delivery.stack}
+            </p>
+          )}
+          {a.delivery.timeline && (
+            <p>
+              <b>Termín:</b> {a.delivery.timeline}
+            </p>
+          )}
+          <AnalysisList title="Co chybí a jak to vyřešit" items={a.gaps} />
+          <AnalysisList title="Doplň do firemního profilu" items={a.missingInfo} />
+          <AnalysisList title="Dotazy na zadavatele" items={a.questions} />
+          <p className="note sources">
+            {a.model === "opus" ? "Opus" : "Haiku"}, {a.at ? new Date(a.at).toLocaleString("cs-CZ") : ""}. Podklady: {a.sources?.join(", ") || "jen stránka zakázky"}.
+            Je to odhad AI – před podáním ověř v dokumentaci.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
 // otázky nad zadávací dokumentací, odpověď s odkazem na stranu
 function AskDocs({ t, ai }: { t: ScoredTender; ai: Ai }) {
   const [q, setQ] = useState("");
@@ -2632,6 +2840,13 @@ function CompanyPanel() {
         {field("phone", "Telefon")}
         {field("bank", "Bankovní spojení")}
       </div>
+      <label>Co umíš a čím disponuješ (pro posouzení „Zvládneme to?“)</label>
+      <textarea
+        className="capabilities"
+        value={c.capabilities ?? ""}
+        onChange={(e) => setC({ ...c, capabilities: e.target.value })}
+        placeholder={"Tým: já (PM, analýza) + 2 vývojáři na smlouvu, 10 let praxe\nTechnologie: React, Node.js, PostgreSQL, Azure, vlastní CRM Kotva a LMS\nObrat: 2023 1,8 mil., 2024 2,4 mil., 2025 3,1 mil. Kč\nPojištění odpovědnosti: 5 mil. Kč\nCertifikace: zatím žádné ISO\nPartneři: kyberbezpečnost – firma XY (ISO 27001)"}
+      />
       <div className="row-btns">
         <button className="primary" onClick={() => save({ company: c }, "Firma uložena.")}>
           Uložit firmu
@@ -2759,6 +2974,7 @@ const JUMPS: [string, string][] = [
   ["d-top", "Přehled"],
   ["d-history", "Historie"],
   ["d-ai", "AI rozbor"],
+  ["d-assess", "Zvládneme to?"],
   ["d-notes", "Poznámky"],
 ];
 

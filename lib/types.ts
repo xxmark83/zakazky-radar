@@ -109,3 +109,25 @@ export type BuyerAi = {
   prices: string;
   items: { id: string; relevance: number; note: string }[];
 };
+
+// Posouzení „Zvládneme to?“: kvalifikace proti firemnímu profilu a referencím a odhad realizace
+export type QualItem = {
+  area: "základní" | "profesní" | "ekonomická" | "technická" | "jiné";
+  requirement: string;
+  where: string; // článek / strana / příloha
+  status: "splněno" | "doložit" | "nesplněno" | "nejasné";
+  how: string; // čím doložit, nebo jak vyřešit (subdodavatel, partner, certifikace…)
+};
+export type DeliveryPart = { item: string; how: string; effortMd: number; risk: "nízké" | "střední" | "vysoké" };
+export type Assessment = {
+  verdict: "podat" | "podat s partnerem" | "nepodávat" | "nejasné";
+  verdictReason: string;
+  qualification: QualItem[];
+  delivery: { feasible: "ano" | "částečně" | "ne"; summary: string; parts: DeliveryPart[]; totalMd: number; stack: string; timeline: string };
+  gaps: string[];
+  missingInfo: string[];
+  questions: string[];
+  sources?: string[];
+  model?: string;
+  at?: string;
+};

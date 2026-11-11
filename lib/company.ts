@@ -14,6 +14,7 @@ export type Company = {
   phone: string;
   web: string;
   bank: string;
+  capabilities?: string; // co firma umí a čím disponuje: tým, technologie, certifikace, obrat, pojištění, partneři
 };
 export type Reference = {
   id: string;
@@ -25,7 +26,7 @@ export type Reference = {
   contact: string; // kontakt u objednatele pro ověření reference (jen pokud ho chceš uvádět)
 };
 
-export const EMPTY_COMPANY: Company = { ico: "", name: "", address: "", dic: "", person: "", role: "", email: "", phone: "", web: "", bank: "" };
+export const EMPTY_COMPANY: Company = { ico: "", name: "", address: "", dic: "", person: "", role: "", email: "", phone: "", web: "", bank: "", capabilities: "" };
 
 export async function getCompany(): Promise<Company | null> {
   return redis ? await redis.get<Company>(await userKey("company")) : null;

@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.39.0** – „Zvládneme to?“ v detailu zakázky: nahrání všech zadávacích podkladů (PDF, Word, Excel, OpenDocument, ZIP, i velké – text se vytáhne v prohlížeči přes pdf.js, soubory se nikam neukládají), AI (Haiku/Opus) vypíše všechny kvalifikační předpoklady se stavem splněno / doložit / nesplněno / nejasné proti firemnímu profilu a referencím, odhad realizace po částech v člověkodnech, technologie, termín, co chybí, co doplnit do profilu, dotazy na zadavatele (`/api/assess`, `lib/assess.ts`, `lib/extract.ts`). Firemní profil má nové pole „Co umíš a čím disponuješ“. pdfjs-dist 6.5 (opravená zranitelnost).
 - **1.38.1** – Dnes: místo krátkého pruhu plný Stav dat (stejné karty jako v Nastavení: počty, ukazatel doplnění, co zbývá, kdy příště, právě běžící stahování na GitHubu i Macu s ukazatelem).
 - **1.38.0** – na obrazovce Dnes stálý pruh „Data“: co se právě stahuje (GitHub, Mac), kdy se který zdroj naposledy doplnil, zpožděné zdroje červeně; klik otevře Nastavení se Stavem dat.
 - **1.37.0** – Smlouvy sledovaných subjektů ve dvou krocích: „Vyhledat“ (ARES, u názvu až 6 kandidátů s IČO a adresou, nic se neukládá) → „Sledovat“ u vybraného subjektu. Oprava rozložení tlačítka „Hlídat aktuální profil“.

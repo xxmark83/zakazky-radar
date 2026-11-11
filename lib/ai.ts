@@ -20,7 +20,7 @@ export async function askJson<T>(opts: {
   system: string;
   content: string | object[]; // text, nebo bloky (text + PDF dokumenty)
   schema: object;
-  effort?: "low" | "medium";
+  effort?: "low" | "medium" | "high";
   maxTokens?: number;
 }): Promise<AiResult<T>> {
   const m = MODELS[opts.model];
