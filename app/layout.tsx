@@ -36,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* vzhled z Nastavení nastavit ještě před vykreslením, ať stránka neblikne */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("zr-theme");if(t==="light"||t==="dark"||t==="space-dark"||t==="space-light"){document.documentElement.dataset.theme=t;if(t.indexOf("space")===0)document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.content=t==="space-dark"?"#050608":"#F1F2EF"})}}catch(e){}if("serviceWorker"in navigator&&location.hostname!=="localhost")addEventListener("load",function(){navigator.serviceWorker.register("/sw.js")})`,
+            __html: `try{var t=localStorage.getItem("zr-theme")||"space-dark";if(t==="light"||t==="dark"||t==="space-dark"||t==="space-light"){document.documentElement.dataset.theme=t;if(t.indexOf("space")===0)document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.content=t==="space-dark"?"#050608":"#F1F2EF"})}}catch(e){}if("serviceWorker"in navigator&&location.hostname!=="localhost")addEventListener("load",function(){navigator.serviceWorker.register("/sw.js")})`,
           }}
         />
       </head>

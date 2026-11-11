@@ -157,11 +157,12 @@ function save(key: string, v: unknown) {
   syncUi(key, v);
 }
 
-// vzhled je v prohlížeči jako holý text, protože ho čte skript v layout.tsx ještě před vykreslením
+// vzhled je v prohlížeči jako holý text, protože ho čte skript v layout.tsx ještě před vykreslením.
+// Kdo si vzhled nikdy nevybral, má Vesmír tmavý (výchozí hodnota ve skriptu v layout.tsx);
+// „Podle systému“ se proto ukládá výslovně jako „auto“.
 function applyTheme(t: Theme) {
   try {
-    if (t === "auto") localStorage.removeItem("zr-theme");
-    else localStorage.setItem("zr-theme", t);
+    localStorage.setItem("zr-theme", t);
   } catch {}
   if (t === "auto") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
