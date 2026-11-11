@@ -52,6 +52,7 @@ export type SearchRequest = Profile & {
   model?: "opus" | "haiku";
   noAi?: boolean; // měsíční limit vyčerpán – jen nové zakázky bez hodnocení
   slovakia?: boolean; // přidat slovenské zakázky (zatím TED)
+  nenBudgetMs?: number; // kolik času smí zabrat hledání na NEN naživo (ranní běh ho zkracuje)
 };
 
 export type WatchedProfile = Profile & { minScore: number; watch: boolean };

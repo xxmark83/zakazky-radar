@@ -92,12 +92,18 @@ function ftAny(keywords: string[]) {
 async function search(query: string, fields: string[], max: number): Promise<any[]> {
   const out: any[] = [];
   for (let page = 1; out.length < max; page++) {
-    const res = await fetch(TED_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, fields, limit: 100, page, scope: "ALL" }),
-      cache: "no-store",
-    });
+    // TED při více dotazech krátce po sobě vrací 429 – počkat a zkusit znovu (dvakrát)
+    let res!: Response;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetch(TED_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, fields, limit: 100, page, scope: "ALL" }),
+        cache: "no-store",
+      });
+      if (res.status !== 429) break;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+    }
     if (!res.ok) throw new Error(`TED ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data = await res.json();
     const notices: any[] = data.notices ?? [];
@@ -136,20 +142,34 @@ const base = (days: number, countries: Country[] = ["CZE"]) => [
 ];
 const cpvPart = (cpv: string[]) => (cpv.length ? [`classification-cpv IN (${cpv.join(" ")})`] : []);
 
+// Zadavatelé často zvolí jiné CPV, než čekáme (kyberbezpečnost pod „poradenství“ apod.), proto se vedle CPV
+// hledá i podle hesel v textu oznámení. Jen víceslovná hesla a delší slova: krátké zkratky (SOC, ISO, EDR)
+// a obecná slova (formulář, databáze) jsou v plném textu skoro každého oznámení.
+const FT_SKIP = new Set(["formulář", "databáze", "digitalizace", "zranitelnost", "portál"]);
+export const tedPhrases = (keywords: string[]) =>
+  [...new Set(keywords.map((k) => k.trim().replace(/["()\\]/g, "")))]
+    .filter((k) => (k.includes(" ") || k.length >= 7) && !FT_SKIP.has(k.toLowerCase()))
+    .slice(0, 40);
+function cpvOrText(cpv: string[], keywords: string[] = []) {
+  const ft = tedPhrases(keywords).map((k) => `FT~("${k}")`);
+  if (!cpv.length) return ft.length ? [`(${ft.join(" OR ")})`] : [];
+  return [`(${[`classification-cpv IN (${cpv.join(" ")})`, ...ft].join(" OR ")})`];
+}
+
 /** Otevřené výzvy k podání nabídek. */
-export async function fetchTedOpen(opts: { cpv: string[]; days: number; countries?: Country[] }): Promise<Tender[]> {
+export async function fetchTedOpen(opts: { cpv: string[]; keywords?: string[]; days: number; countries?: Country[] }): Promise<Tender[]> {
   const query = [
     ...base(opts.days, opts.countries),
     "notice-type IN (cn-standard cn-social cn-desg pin-cfc-standard pin-cfc-social)",
-    ...cpvPart(opts.cpv),
+    ...cpvOrText(opts.cpv, opts.keywords),
   ].join(" AND ");
   return (await search(query, TENDER_FIELDS, 500)).map((n) => toTender(n, "open"));
 }
 
 /** Připravované zakázky: předběžná oznámení (PIN) a předběžné tržní konzultace. */
-export async function fetchTedUpcoming(opts: { cpv: string[]; days: number; countries?: Country[] }): Promise<Tender[]> {
+export async function fetchTedUpcoming(opts: { cpv: string[]; keywords?: string[]; days: number; countries?: Country[] }): Promise<Tender[]> {
   const early = `(notice-type IN (pin-only pin-buyer) OR FT~("tržní konzultace") OR FT~("tržních konzultací") OR FT~("prípravné trhové konzultácie"))`;
-  const query = [...base(opts.days, opts.countries), early, ...cpvPart(opts.cpv)].join(" AND ");
+  const query = [...base(opts.days, opts.countries), early, ...cpvOrText(opts.cpv, opts.keywords)].join(" AND ");
   return (await search(query, TENDER_FIELDS, 300)).map((n) => toTender(n, "upcoming"));
 }
 

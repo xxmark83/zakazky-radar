@@ -6,7 +6,8 @@ import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { pickModel } from "./ai";
 import { profileKey } from "./profile-key";
 import { scoreTenders } from "./score";
-import { addSpend, getScores, saveScores } from "./store";
+import { assignIds, canonFields, cluster } from "./dedupe";
+import { addSpend, getCanon, getScores, saveCanon, saveScores } from "./store";
 import type { Score, ScoredTender, SearchRequest, Tender } from "./types";
 
 export const splitList = (s: string) =>
@@ -43,8 +44,8 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
 
   // NEN nemá předběžná oznámení, hledá se jen u otevřených zakázek
   const sources: [string, Promise<Tender[]>][] = [
-    ["TED", (kind === "upcoming" ? fetchTedUpcoming : fetchTedOpen)({ cpv, days, countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"] })],
-    ["NEN", kind === "open" ? fetchNen({ keywords }) : Promise.resolve([])],
+    ["TED", (kind === "upcoming" ? fetchTedUpcoming : fetchTedOpen)({ cpv, keywords, days, countries: body.slovakia ? ["CZE", "SVK"] : ["CZE"] })],
+    ["NEN", kind === "open" ? fetchNen({ keywords, budgetMs: body.nenBudgetMs }) : Promise.resolve([])],
     ["Hlídač státu", fetchHlidac({ keywords, days, kind })],
     ["Profily zadavatelů", Promise.resolve(kind === "open" ? fetchProfily({ keywords, cpv, days }) : [])],
     // DNS běží roky, takže se nefiltrují podle data zveřejnění
@@ -68,17 +69,13 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
   });
 
   // u otevřených zahodit prošlou lhůtu; připravované lhůtu obvykle nemají.
-  // Stejná zakázka bývá ve více zdrojích (TED, NEN i profil zadavatele) – necháme první výskyt.
+  // Stejná zakázka bývá ve více zdrojích (TED, NEN i profil zadavatele): záznamy se spojí do jednoho
+  // a zakázka si drží id, pod kterým se ukázala poprvé (lib/dedupe.ts).
   const today = new Date().toISOString().slice(0, 10);
-  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  const seen = new Set<string>();
-  const open = tenders.filter((t) => {
-    if (t.deadline && t.deadline < today) return false;
-    const key = `${norm(t.title)}|${norm(t.buyer).slice(0, 12)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const clusters = cluster(tenders.filter((t) => !t.deadline || t.deadline >= today));
+  const canon = await getCanon([...new Set(clusters.flat().flatMap(canonFields))]).catch(() => ({}));
+  const { tenders: open, save } = assignIds(clusters, canon);
+  await saveCanon(save).catch(() => {});
 
   // co už AI s tímto profilem hodnotila (v prohlížeči nebo v databázi), se znovu neposílá
   const key = profileKey(body.profile);
@@ -97,6 +94,8 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
     const r = await scoreTenders(body.profile, fresh, pickModel(body.model), (done, all) => onProgress?.({ step: "batch", done, all }));
     scored = new Map(r.tenders.map((t) => [t.id, t]));
     cost = r.cost;
+    if (r.failed) warnings.push(`AI hodnocení zčásti selhalo (${r.error}) – ${r.failed} zakázek je bez hodnocení, příští hledání je zkusí znovu.`);
+    if (r.skipped > 0) warnings.push(`AI nevrátila hodnocení u ${r.skipped} zakázek – příští hledání je zkusí znovu.`);
   }
 
   // kraj z oficiálních dat (TED) má přednost před odhadem AI
@@ -108,13 +107,14 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
     .filter((t) => t.score < 0 || t.score >= (body.minScore ?? 0))
     .sort((a, b) => b.score - a.score);
   const newScores: Record<string, Score> = Object.fromEntries(
-    [...scored.values()].map((t) => [t.id, { score: t.score, product: t.product, reason: t.reason, region: t.region }]),
+    // nehodnocené (-1) se neukládají, ať je příští hledání pošle AI znovu
+    [...scored.values()].filter((t) => t.score >= 0).map((t) => [t.id, { score: t.score, product: t.product, reason: t.reason, region: t.region }]),
   );
   await Promise.all([saveScores(key, newScores), addSpend(cost)]).catch(() => {});
   return {
     total: tenders.length,
     open: open.length,
-    scored: scored.size,
+    scored: Object.keys(newScores).length,
     cached: open.length - fresh.length,
     cost,
     newScores,

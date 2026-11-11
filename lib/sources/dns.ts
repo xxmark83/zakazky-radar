@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { terms } from "./nen";
+import { matcher } from "../match";
 import type { Tender } from "../types";
 
 // Dynamické nákupní systémy z otevřených dat ISVZ: dodavatel se může přidat kdykoli po dobu trvání systému
@@ -38,13 +38,12 @@ export function fetchDns(opts: { keywords: string[]; cpv: string[] }): Tender[] 
   const d = load();
   if (!d) return [];
   const today = new Date().toISOString().slice(0, 10);
-  const words = terms(opts.keywords).map((w) => w.toLowerCase());
+  const hit = matcher(opts.keywords);
   const prefixes = opts.cpv.map((c) => c.replace(/0+$/, "")).filter((c) => c.length >= 2);
   return d.systems
     .filter((s) => !s.end || s.end >= today)
     .filter((s) => {
-      const text = `${s.title} ${s.description} ${s.categories.join(" ")}`.toLowerCase();
-      return words.some((w) => text.includes(w)) || s.cpv.some((c) => prefixes.some((p) => c.startsWith(p)));
+      return hit(`${s.title} ${s.description} ${s.categories.join(" ")}`) || s.cpv.some((c) => prefixes.some((p) => c.startsWith(p)));
     })
     .map((s) => ({
       id: s.id,

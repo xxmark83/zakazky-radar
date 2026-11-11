@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Tender } from "../types";
-import { terms } from "./nen";
+import { matcher } from "../match";
 
 // Zakázky ze všech profilů zadavatelů v ČR (Tender arena, eGORDION, E-ZAK krajů a měst, Vhodné uveřejnění, …).
 // Soubor každé ráno obnovuje GitHub Actions (scripts/crawl.mjs), tady ho jen filtrujeme.
@@ -83,7 +83,7 @@ const toTender = (t: Row): Tender => ({
 export function fetchProfily(opts: { keywords: string[]; cpv: string[]; days: number }): Tender[] {
   const d = load();
   if (!d) return [];
-  const words = terms(opts.keywords).map((w) => w.toLowerCase());
+  const hit = matcher(opts.keywords);
   // CPV je hierarchické: 72000000 pokrývá všechno, co začíná na 72
   const prefixes = opts.cpv.map((c) => c.replace(/0+$/, "")).filter((c) => c.length >= 2);
   const since = new Date(Date.now() - opts.days * 86400_000).toISOString().slice(0, 10);
@@ -91,8 +91,7 @@ export function fetchProfily(opts: { keywords: string[]; cpv: string[]; days: nu
   return d.tenders
     .filter((t) => !t.published || t.published >= since)
     .filter((t) => {
-      const text = `${t.title} ${t.description}`.toLowerCase();
-      return words.some((w) => text.includes(w)) || prefixes.some((p) => t.cpv.startsWith(p));
+      return hit(`${t.title} ${t.description}`) || prefixes.some((p) => t.cpv.startsWith(p));
     })
     .map(toTender);
 }

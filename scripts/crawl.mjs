@@ -9,6 +9,7 @@
 // BUDGET_MIN=45                   – po kolika minutách přestat brát další profily (zbytek příště)
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { cleanTenders, uniqueProfiles } from "./lib/clean.mjs";
 
 const LIST = "data/profily-seznam.txt";
 const OUT = "data/profily.json";
@@ -148,16 +149,18 @@ const host = (u) => {
 };
 // napřed profily s otevřenými zakázkami, pak ty, které jsme nejdéle nestáhli
 const active = new Set(prev.map((t) => t.url));
-const all = [
-  ...new Set(
-    readFileSync(LIST, "utf8")
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => /^https?:\/\//.test(s))
-      .map(normalize)
-      .filter(Boolean),
-  ),
-];
+// stejný profil bývá v registru dvakrát (http i https) – stahujeme ho jen jednou
+const { keep: all, dropped } = uniqueProfiles(
+  readFileSync(LIST, "utf8")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter((s) => /^https?:\/\//.test(s))
+    .map(normalize)
+    .filter(Boolean),
+  prev,
+  state,
+);
+for (const p of dropped) delete state[p];
 const inactive = existsSync(INACTIVE) ? JSON.parse(readFileSync(INACTIVE, "utf8")) : {};
 const stillInactive = (p) => inactive[p] && (now - new Date(inactive[p])) / 86400_000 < INACTIVE_DAYS;
 const profiles = all.filter((p) => !stillInactive(p)).sort((a, b) => active.has(b) - active.has(a) || (state[a] ?? "").localeCompare(state[b] ?? ""));
@@ -288,7 +291,7 @@ for (const t of found.values()) {
   if (t.closed) merged.delete(t.id);
   else merged.set(t.id, t);
 }
-const tenders = [...merged.values()].filter((t) => !t.deadline || t.deadline >= today);
+const tenders = cleanTenders([...merged.values()], { today, dropped, maxDays: MAX_DAYS });
 // „ok“ = profily stažené v posledních 14 dnech (rotace pomalých serverů trvá několik dní)
 const fresh = Object.values(state).filter((d) => (now - new Date(d)) / 86400_000 <= 14).length;
 
