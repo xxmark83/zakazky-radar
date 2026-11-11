@@ -31,15 +31,20 @@ export async function askJson<T>(opts: {
     system: opts.system,
     messages: [{ role: "user", content: opts.content }],
   };
+  // Dlouhé výstupy (posouzení zakázky má limit 24 000 tokenů) se musí přenášet průběžně (stream): obyčejný požadavek
+  // knihovna nad ~21 000 tokenů odmítne ještě před odesláním („Streaming is required…“), takže posouzení dřív
+  // nikdy neproběhlo. Kratší dotazy (hodnocení zakázek, návrh nabídky) jdou dál obyčejně, jak jsou odzkoušené.
   // Opus při odmítnutí zkusí záložní model na straně serveru; Haiku tuhle volbu nemá
+  const streamed = params.max_tokens > 20000;
+  const beta = { ...params, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } as any;
   const response: any =
     opts.model === "opus"
-      ? await client.beta.messages.create({
-          ...params,
-          betas: ["server-side-fallback-2026-07-01"],
-          fallbacks: "default",
-        } as any)
-      : await client.messages.create(params as any);
+      ? streamed
+        ? await client.beta.messages.stream(beta).finalMessage()
+        : await client.beta.messages.create(beta)
+      : streamed
+        ? await client.messages.stream(params as any).finalMessage()
+        : await client.messages.create(params as any);
 
   if (response.stop_reason === "refusal") throw new Error("AI odmítla dotaz zpracovat");
   if (response.stop_reason === "max_tokens") throw new Error("AI odpověď se nevešla do limitu");

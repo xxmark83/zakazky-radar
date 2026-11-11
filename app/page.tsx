@@ -868,10 +868,10 @@ function Settings(props: {
             <span style={{ width: `${pct}%`, background: pct >= 100 ? "var(--bad)" : pct >= 80 ? "var(--mid)" : "var(--good)" }} />
           </div>
           {spent >= prefs.budget && (
-            <p className="note">Limit je vyčerpaný: nové zakázky se zobrazí bez AI hodnocení, rozbory jsou vypnuté.</p>
+            <p className="note">Limit je vyčerpaný: nové zakázky se zobrazí bez AI hodnocení, posouzení jsou vypnutá.</p>
           )}
         </div>
-        <label>Model pro hodnocení a rozbory</label>
+        <label>Model pro hodnocení a posouzení</label>
         <div className="flow">
           {(Object.keys(MODEL_LABEL) as Model[]).map((m) => (
             <button key={m} className={prefs.model === m ? "on" : ""} onClick={() => setPrefs({ ...prefs, model: m })}>
@@ -890,7 +890,7 @@ function Settings(props: {
         <p className="note">
           Limit hlídá appka. Pevný strop nastav i v console.anthropic.com → Settings → Limits, ten platí vždy.
         </p>
-        <label>Ranní AI rozbor nejlepších zakázek</label>
+        <label>Ranní posouzení nejlepších zakázek</label>
         <select value={prefs.morning ?? 0} onChange={(e) => setPrefs({ ...prefs, morning: Number(e.target.value) })}>
           <option value={0}>vypnuto</option>
           <option value={1}>1 zakázka denně (asi 1–5 centů)</option>
@@ -898,9 +898,8 @@ function Settings(props: {
           <option value={3}>3 zakázky denně</option>
         </select>
         <p className="note">
-          Ráno AI přečte dokumentaci nejlepších nových zakázek (skóre 75+), verdikt „podat / zvážit / nechat“ pošle rovnou
-          v e-mailu a udělá i rychlé posouzení zakázky – na kartě pak hned vidíš, jestli tě nezastaví obrat nebo reference.
-          Počítá se do měsíčního limitu (asi dvojnásobek uvedené ceny).
+          Ráno AI přečte dokumentaci nejlepších nových zakázek (skóre 75+) a udělá posouzení zakázky: verdikt přijde rovnou
+          v e-mailu a na kartě hned vidíš, jestli tě nezastaví obrat, reference nebo cena. Počítá se do měsíčního limitu.
         </p>
 
         <h3 className="sec">Zdroje zakázek</h3>
@@ -1776,7 +1775,7 @@ function NextLine({ t, status }: { t: ScoredTender; status: Status }) {
   const kept = useContext(KeptCtx);
   const a = kept.assess?.[t.id];
   if (!ACTIVE.includes(status) && !a) return null;
-  const nk = nextKind(status, a, kept.analysis[t.id], kept.drafts[t.id]);
+  const nk = nextKind(status, a, kept.drafts[t.id]);
   const q = ACTIVE.includes(status) && status !== "sent" ? questionsDeadline(t.deadline, kept.analysis[t.id]?.questionsDeadline) : null;
   const qSoon = q && q.date >= today() && q.date <= new Date(Date.now() + 14 * 86400_000).toLocaleDateString("sv-SE");
   if (!nk && !a && !qSoon) return null;
@@ -1976,7 +1975,7 @@ function TenderCard(props: {
           <NextLine t={t} status={status} />
           <div className="tender-foot" onClick={(e) => e.stopPropagation()}>
             <button className="link more-link" onClick={() => openDetail(t)}>
-              Detail a AI rozbor <Icon n="arrow" size={14} />
+              Detail a posouzení <Icon n="arrow" size={14} />
             </button>
             <div className="actions" role="group" aria-label="Co s zakázkou">
               {ACTIONS.map(({ s, label, icon }) => (
@@ -2058,7 +2057,7 @@ function Detail(props: {
         from: `Posouzení zakázky${assessed.qualification.filter((q) => q.status === "nesplněno").length ? ` · ${assessed.qualification.filter((q) => q.status === "nesplněno").length}× nesplněno` : ""}`,
       }
     : ana
-      ? { cls: VERDICT[ana.verdict]?.cls ?? "mid", label: VERDICT[ana.verdict]?.label ?? "Zvážit", from: "AI rozbor · kvalifikace neposouzena" }
+      ? { cls: VERDICT[ana.verdict]?.cls ?? "mid", label: VERDICT[ana.verdict]?.label ?? "Zvážit", from: "dřívější rozbor · kvalifikace neposouzena" }
       : {
           cls: t.score >= 75 ? "good" : t.score >= 50 ? "mid" : "bad",
           label: t.score < 0 ? "Nehodnoceno" : t.score >= 75 ? "Sedí na tvoji nabídku" : t.score >= 50 ? "Sedí zčásti" : "Spíš nesedí",
@@ -2117,36 +2116,33 @@ function Detail(props: {
     return () => clearTimeout(id);
   }, [note]);
 
-  async function runAi(kind: "analysis" | "draft") {
+  // rozbor (co chtějí, rizika, co přiložit) dělá Posouzení zakázky z jednoho čtení dokumentace; tady už jen návrh nabídky
+  async function runAi(kind: "draft") {
     setBusy(kind);
     setError("");
     try {
-      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model, texts: kind === "analysis" ? (texts ?? undefined) : undefined });
+      const res = await post("/api/analyze", { kind, profile, tender: t, analysis, model: ai.model });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
-      if (kind === "draft") keep("drafts", t.id, d.data);
-      else keep("analysis", t.id, d.data);
+      keep("drafts", t.id, d.data);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setBusy(null);
     }
   }
-  const analyze = () => runAi("analysis");
-  const nk = nextKind(status, assessed, analysis, draft);
+  const nk = nextKind(status, assessed, draft);
   const next: { label: string; run: () => void; ai?: boolean } | null =
     nk === "assess"
       ? { label: NEXT_TEXT.assess, run: () => goTo("d-assess") }
-      : nk === "analysis"
-        ? { label: NEXT_TEXT.analysis, run: () => (goTo("d-ai"), analyze()), ai: true }
-        : nk === "draft"
-          ? { label: NEXT_TEXT.draft, run: () => (goTo("d-draft"), runAi("draft")), ai: true }
-          : nk === "word"
-            ? { label: NEXT_TEXT.word, run: () => exportWord() }
-            : nk === "sent"
-              ? { label: NEXT_TEXT.sent, run: () => goTo("d-top") }
-              : null;
+      : nk === "draft"
+        ? { label: NEXT_TEXT.draft, run: () => (goTo("d-draft"), runAi("draft")), ai: true }
+        : nk === "word"
+          ? { label: NEXT_TEXT.word, run: () => exportWord() }
+          : nk === "sent"
+            ? { label: NEXT_TEXT.sent, run: () => goTo("d-top") }
+            : null;
 
   function saveDocx(name: string, blocks: Block[]) {
     const url = URL.createObjectURL(makeDocx(blocks));
@@ -2214,7 +2210,7 @@ function Detail(props: {
       blocks.push({ h2: "Průvodní dopis" }, { p: draft.coverLetter });
     }
     if (kept.notes[t.id]) blocks.push({ h2: "Poznámky" }, { p: kept.notes[t.id] });
-    if (!analysis && !draft) blocks.push({ p: "Tip: udělej nejdřív AI rozbor a návrh nabídky, podklady budou úplnější.", muted: true });
+    if (!analysis && !draft) blocks.push({ p: "Tip: udělej nejdřív posouzení zakázky a návrh nabídky, podklady budou úplnější.", muted: true });
     const url = URL.createObjectURL(makeDocx(blocks));
     const a = document.createElement("a");
     a.href = url;
@@ -2413,7 +2409,7 @@ function Detail(props: {
               </b>
               <br />
               <span className="hint">
-                Jednou pro celou zakázku – použije je AI rozbor, Posouzení zakázky i Zeptej se dokumentace. PDF, Word, Excel, ZIP, i velké;
+                Jednou pro celou zakázku – použije je Posouzení zakázky i Zeptej se dokumentace. PDF, Word, Excel, ZIP, i velké;
                 text se vytáhne v prohlížeči, soubory se nikam neukládají. Bez nahrání si AI dokumentaci najde sama.
               </span>
             </span>
@@ -2441,6 +2437,8 @@ function Detail(props: {
           texts={texts}
           saved={kept.assess?.[t.id] ?? null}
           keep={(v) => keep("assess", t.id, v)}
+          analysis={analysis}
+          keepAnalysis={(v) => keep("analysis", t.id, v)}
           changes={changes}
           openCompetitor={openCompetitor}
           addChecks={(items) => {
@@ -2459,54 +2457,6 @@ function Detail(props: {
         <h2 className="phase" id="d-prepare">
           <span>2</span> Připravit nabídku
         </h2>
-        <h3 className="sec" id="d-ai">
-          AI rozbor <span className="hint">co chtějí, rizika, co přiložit</span>
-        </h3>
-        {!analysis && busy !== "analysis" && (
-          <div className="ai-cta">
-            <span>
-              {ai.noAi
-                ? "Měsíční limit za AI je vyčerpaný, změníš ho v Nastavení."
-                : texts
-                  ? "Přečte nahrané podklady a řekne, co chtějí, rizika, co nabídnout, hodnoticí kritéria a co přiložit."
-                  : "Najde a přečte zadávací dokumentaci a řekne, co chtějí, rizika, co nabídnout, hodnoticí kritéria a co přiložit."}
-            </span>
-            <button className={nk === "analysis" ? "primary" : ""} onClick={analyze} disabled={ai.noAi || busy !== null}>
-              Udělat rozbor
-            </button>
-          </div>
-        )}
-        {busy === "analysis" && (
-          <div className="ai-cta">
-            <div className="radar" aria-hidden="true" />
-            <span>{texts ? "Čtu nahrané podklady" : "Hledám a čtu zadávací dokumentaci"}, asi 30–60 vteřin…</span>
-          </div>
-        )}
-        {error && <div className="warn">{error}</div>}
-        {analysis && (
-          <div className="analysis">
-            <p>{analysis.summary}</p>
-            <AnalysisList title="Rizika" items={analysis.risks} />
-            <h4>Co nabídnout</h4>
-            <p>{analysis.offer}</p>
-            <AnalysisList title="Hodnoticí kritéria" items={analysis.criteria ?? []} />
-            <p className="note">
-              Předběžný dojem: <b className={`pre-${VERDICT[analysis.verdict].cls}`}>{VERDICT[analysis.verdict].label}</b> – {analysis.verdictReason}{" "}
-              Kvalifikaci, dotazy na zadavatele a rozhodnutí o podání řeší <a href="#d-assess" onClick={(e) => (e.preventDefault(), document.getElementById("d-assess")?.scrollIntoView({ behavior: "smooth", block: "start" }))}>Posouzení zakázky</a>
-            </p>
-            <p className="note sources">
-              {analysis.sources?.length
-                ? `Přečteno: ${analysis.sources.join(", ")}.`
-                : "Dokumentaci se nepodařilo stáhnout, rozbor je jen ze stránky zakázky – nahraj podklady nahoře a udělej ho znovu."}
-            </p>
-            {busy !== "analysis" && !ai.noAi && (
-              <button className="link" onClick={analyze}>
-                Udělat rozbor znovu
-              </button>
-            )}
-          </div>
-        )}
-
         {analysis?.checklist?.length || kept.checks[t.id]?.extra.length ? (
           <Checklist
             items={analysis?.checklist ?? []}
@@ -2538,9 +2488,10 @@ function Detail(props: {
         <h3 className="sec" id="d-draft">
           Návrh nabídky
         </h3>
+        {error && <div className="warn">{error}</div>}
         {!draft && busy !== "draft" && (
           <div className="ai-cta">
-            <span>Osnova nabídky na míru této zakázce a průvodní dopis. Použije i rozbor, pokud je hotový.</span>
+            <span>Osnova nabídky na míru této zakázce a průvodní dopis. Použije i posouzení zakázky, pokud je hotové.</span>
             <button className={nk === "draft" ? "primary" : ""} onClick={() => runAi("draft")} disabled={ai.noAi || busy !== null}>
               Navrhnout
             </button>
@@ -2604,7 +2555,7 @@ function Detail(props: {
           <button onClick={exportWord}>
             <Icon n="download" size={16} /> Stáhnout podklady do Wordu
           </button>
-          <span className="hint">Posouzení zakázky, rozbor, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
+          <span className="hint">Posouzení zakázky, checklist, osnova, průvodní dopis a poznámky v jednom souboru</span>
         </div>
 
         <h2 className="phase" id="d-context">
@@ -2836,6 +2787,8 @@ function Assess({
   texts,
   saved,
   keep,
+  analysis,
+  keepAnalysis,
   changes,
   openCompetitor,
   addChecks,
@@ -2846,6 +2799,8 @@ function Assess({
   texts: { name: string; text: string }[] | null;
   saved: Assessment | null;
   keep: (v: Assessment | null) => void;
+  analysis: Analysis | null;
+  keepAnalysis: (v: Analysis) => void;
   changes: Change[];
   openCompetitor: (name: string) => void;
   addChecks: (items: string[]) => void;
@@ -2871,6 +2826,7 @@ function Assess({
       if (!res.ok) throw new Error(d.error ?? `Chyba ${res.status}`);
       ai.onCost(d.cost ?? 0);
       keep(d.data);
+      if (d.analysis) keepAnalysis(d.analysis);
       addChecks((d.data as Assessment).qualification.filter((q) => q.status === "doložit").map((q) => `Doložit: ${q.requirement}`));
     } catch (e: any) {
       setError(e.message);
@@ -2902,7 +2858,7 @@ function Assess({
             <b>
               <Icon n="search" size={15} /> Rychlé posouzení
             </b>
-            <span>Na každou zajímavou zakázku: kvalifikace, odhad práce a verdikt.</span>
+            <span>Na každou zajímavou zakázku: co chtějí, kvalifikace, odhad práce, cena a verdikt.</span>
             <small>Haiku, asi 1–10 centů, do minuty</small>
           </button>
           <button
@@ -2928,6 +2884,16 @@ function Assess({
         </div>
       )}
       {error && <div className="warn">{error}</div>}
+      {!a && !busy && analysis && (
+        <div className="analysis assess">
+          <span className="assess-kind">Dřívější rozbor – kvalifikace ještě neposouzena</span>
+          <p className="assess-summary">{analysis.summary}</p>
+          <AnalysisList title="Rizika" items={analysis.risks} />
+          <h4>Co nabídnout</h4>
+          <p>{analysis.offer}</p>
+          <AnalysisList title="Hodnoticí kritéria" items={analysis.criteria ?? []} />
+        </div>
+      )}
       {a && !busy && (
         <div className="analysis assess">
           <span className={`assess-kind ${a.model === "opus" ? "deep" : ""}`}>
@@ -2943,6 +2909,7 @@ function Assess({
             <b>{a.verdict === "podat" ? "Podat" : a.verdict === "podat s partnerem" ? "Podat s partnerem / poddodavatelem" : a.verdict === "nepodávat" ? "Nepodávat" : "Nejasné – doplň podklady nebo profil"}</b>
             <span>{a.verdictReason}</span>
           </div>
+          {analysis?.summary && <p className="assess-summary">{analysis.summary}</p>}
           <h4>
             Kvalifikace{" "}
             <span className="hint">
@@ -3056,6 +3023,18 @@ function Assess({
                 ))}
               </div>
               <p className="hint">Ťuknutím uvidíš jejich zakázky. Společnou nabídku nebo poddodávku umožňuje § 82 a § 83 ZZVZ.</p>
+            </>
+          )}
+          {analysis && (
+            <>
+              <AnalysisList title="Další rizika" items={analysis.risks} />
+              {analysis.offer && (
+                <>
+                  <h4>Co nabídnout</h4>
+                  <p>{analysis.offer}</p>
+                </>
+              )}
+              <AnalysisList title="Hodnoticí kritéria" items={analysis.criteria ?? []} />
             </>
           )}
           <AnalysisList title="Co chybí a jak to vyřešit" items={a.gaps} />
@@ -3419,19 +3398,17 @@ const JUMPS: [string, string][] = [
 const goTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
 // co je u zakázky další krok (jedno hlavní tlačítko v detailu, řádek na kartě)
-type NextKind = "assess" | "analysis" | "draft" | "word" | "sent" | null;
-function nextKind(status: Status, assess: Assessment | null | undefined, analysis: Analysis | null | undefined, draft: Draft | null | undefined): NextKind {
+type NextKind = "assess" | "draft" | "word" | "sent" | null;
+function nextKind(status: Status, assess: Assessment | null | undefined, draft: Draft | null | undefined): NextKind {
   if (status === "no" || status === "won" || status === "lost") return null;
   if (status === "sent") return "sent";
   if (!assess) return "assess";
   if (assess.verdict === "nepodávat") return null;
-  if (!analysis) return "analysis";
   if (!draft) return "draft";
   return "word";
 }
 const NEXT_TEXT: Record<Exclude<NextKind, null>, string> = {
   assess: "Posoudit zakázku",
-  analysis: "Udělat AI rozbor",
   draft: "Navrhnout nabídku",
   word: "Stáhnout podklady a podat",
   sent: "Podáno – zapsat výsledek",

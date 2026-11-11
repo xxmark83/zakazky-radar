@@ -1,5 +1,4 @@
 import { sendAlert, sendWeekly } from "@/lib/email";
-import { analyzeTender } from "@/lib/analyze";
 import { assessTender } from "@/lib/assess";
 import { getCompany, getReferences } from "@/lib/company";
 import { questionsDeadline } from "@/lib/bidmath";
@@ -128,7 +127,7 @@ async function runFor(req: Request, started: number): Promise<string[]> {
     log.push(`konkurenti: ${competitorNews.reduce((n, c) => n + c.awards.length, 0)} nových výher`);
   }
 
-  // ranní AI rozbor nejlepších nových zakázek (zapíná se v Nastavení, počítá se do měsíčního limitu)
+  // ranní posouzení nejlepších nových zakázek (zapíná se v Nastavení, počítá se do měsíčního limitu)
   const morning: { tender: ScoredTender; verdict: string; reason: string }[] = [];
   if (redis && process.env.ANTHROPIC_API_KEY) {
     const ui = ((await getState()) as { ui?: Record<string, any> }).ui ?? {};
@@ -141,37 +140,28 @@ async function runFor(req: Request, started: number): Promise<string[]> {
         .filter((x) => x.t.score >= 75)
         .sort((a, b) => b.t.score - a.t.score)
         .slice(0, howMany);
-      for (const { t, profile } of best) {
-        try {
-          const r = await analyzeTender(profile, t, prefs.model === "opus" ? "opus" : "haiku");
-          await addSpend(r.cost);
-          await setKept("analysis", t.id, r.data);
-          morning.push({ tender: t, verdict: r.data.verdict, reason: r.data.verdictReason });
-        } catch (e: any) {
-          log.push(`ranní rozbor selhal: ${e.message}`);
-        }
-      }
-      log.push(`ranní rozbor: ${morning.length}`);
-      // u stejných zakázek rovnou rychlé posouzení zakázky – na kartě je pak vidět stopka (nesplněný obrat, reference…)
-      // dřív, než ji otevřeš. Jen když na to ranní běh ještě má čas (limit 300 s na všechno).
+      // jedno čtení dokumentace na zakázku: posouzení (kvalifikace, cena, smlouva) i rozbor (co chtějí, co přiložit).
+      // Na kartě je pak vidět stopka dřív, než zakázku otevřeš. Jen když na to ranní běh má čas (limit 300 s na všechno).
       if (best.length && Date.now() - started < 170_000) {
         const [company, references] = await Promise.all([getCompany(), getReferences()]);
-        const done = await Promise.all(
+        await Promise.all(
           best.map(({ t, profile }) =>
-            assessTender({ tender: t, profile, company, references, texts: [], model: "haiku" })
+            assessTender({ tender: t, profile, company, references, texts: [], model: prefs.model === "opus" ? "opus" : "haiku" })
               .then(async (r) => {
                 await addSpend(r.cost);
-                await setKept("assess", t.id, r.data);
-                const m = morning.find((x) => x.tender.id === t.id);
+                await Promise.all([setKept("assess", t.id, r.data), setKept("analysis", t.id, r.analysis)]);
                 const stop = r.data.qualification.filter((q) => q.status === "nesplněno").length;
-                if (m && (stop || r.data.verdict !== "podat")) m.reason = `${m.reason} Posouzení zakázky: ${r.data.verdict}${stop ? `, ${stop}× nesplněno` : ""}.`;
-                return true;
+                morning.push({
+                  tender: t,
+                  verdict: r.analysis.verdict,
+                  reason: `${r.data.verdictReason}${stop ? ` (${stop}× nesplněný požadavek)` : ""}${r.data.price?.level === "ztráta" ? " Cenově nevychází." : ""}`,
+                });
               })
-              .catch((e) => (log.push(`ranní posouzení selhalo: ${e.message}`), false)),
+              .catch((e) => void log.push(`ranní posouzení selhalo: ${e.message}`)),
           ),
         );
-        log.push(`ranní posouzení: ${done.filter(Boolean).length}`);
       }
+      log.push(`ranní posouzení: ${morning.length}`);
     }
   }
 

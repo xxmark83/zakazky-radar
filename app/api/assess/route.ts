@@ -14,8 +14,8 @@ export async function POST(req: Request) {
   try {
     const [company, references] = await Promise.all([getCompany(), getReferences()]);
     const r = await assessTender({ tender: body.tender, profile: body.profile, company, references, texts, model: pickModel(body.model) });
-    await Promise.all([addSpend(r.cost), setKept("assess", body.tender.id, r.data)]).catch(() => {});
-    return Response.json({ data: r.data, cost: r.cost });
+    await Promise.all([addSpend(r.cost), setKept("assess", body.tender.id, r.data), setKept("analysis", body.tender.id, r.analysis)]).catch(() => {});
+    return Response.json({ data: r.data, analysis: r.analysis, cost: r.cost });
   } catch (e: any) {
     return Response.json({ error: `AI selhala: ${e.message}` }, { status: 500 });
   }

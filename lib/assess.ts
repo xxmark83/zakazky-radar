@@ -4,7 +4,7 @@ import { fetchDocsReport, type Doc } from "./docs";
 import { suggestPartners } from "./partners";
 import { applyChecks, priceCheck, profileFacts } from "./qualify";
 import { pageText } from "./analyze";
-import type { Assessment, Tender } from "./types";
+import type { Analysis, Assessment, Tender } from "./types";
 
 // Posouzení zakázky – AI projde zadávací podklady, vypíše všechny kvalifikační předpoklady a u každého porovná
 // s firemním profilem a referencemi; pak odhadne, jestli a za kolik člověkodní to firma dokáže dodat (naprogramovat).
@@ -67,8 +67,18 @@ const SCHEMA = {
     gaps: { type: "array", items: str },
     missingInfo: { type: "array", items: str },
     questions: { type: "array", items: str },
+    // dřív samostatný „AI rozbor“ – teď z jednoho čtení dokumentace
+    summary: str,
+    risks: { type: "array", items: str },
+    offer: str,
+    criteria: { type: "array", items: str },
+    checklist: { type: "array", items: str },
+    questionsDeadline: str,
   },
-  required: ["verdict", "verdictReason", "qualification", "delivery", "contract", "gaps", "missingInfo", "questions"],
+  required: [
+    "verdict", "verdictReason", "qualification", "delivery", "contract", "gaps", "missingInfo", "questions",
+    "summary", "risks", "offer", "criteria", "checklist", "questionsDeadline",
+  ],
   additionalProperties: false,
 } as const;
 
@@ -105,6 +115,15 @@ Pravidla:
   pro malou firmu nepřijatelné). Když návrh smlouvy mezi podklady není, vrať prázdné pole a napiš to do missingInfo.
 - verdict: podat = kvalifikaci splní a dílo zvládne; podat s partnerem = chybí něco, co vyřeší poddodavatel/partner;
   nepodávat = zásadní překážka; nejasné = chybí podklady nebo profil. verdictReason: 1–2 věty.
+- summary: 2–3 věty, co přesně zadavatel chce koupit.
+- risks: co může malé firmě zlomit vaz mimo kvalifikaci a smlouvu (rozsah, termíny, závislost na třetích stranách,
+  migrace dat, nejasné zadání). Nejvýš 5 bodů.
+- offer: co konkrétně z produktů a služeb dodavatele nabídnout a jak se odlišit, 2–4 věty.
+- criteria: hodnoticí kritéria s vahami (např. „Cena 70 %“), nebo prázdné, když v podkladech nejsou.
+- checklist: co konkrétně připravit a přiložit k nabídce (doklady o kvalifikaci, čestná prohlášení, reference, formuláře,
+  vyplněné přílohy, podpis, způsob a místo podání). Krátké položky ve tvaru „udělat co“, nejvýš 12. Jen z podkladů.
+- questionsDeadline: poslední den, kdy lze žádat o vysvětlení zadávací dokumentace, ve tvaru RRRR-MM-DD, jen pokud je
+  v podkladech uveden nebo z nich jednoznačně plyne; jinak prázdný řetězec.
 - gaps: co přesně chybí k podání a jak to vyřešit (max 6). questions: dotazy na zadavatele, které by pomohly (max 5).
 Odpovídej česky, věcně a stručně.`;
 
@@ -158,12 +177,58 @@ export async function assessTender(opts: {
         : { type: "text", text: `DOKUMENT „${d.name}“:\n${d.text}` },
     ),
   ];
-  const r = await askJson<Assessment>({ model: opts.model, system: SYSTEM, schema: SCHEMA, effort: "high", content, maxTokens: 24000 });
+  type Raw = Assessment & Pick<Analysis, "summary" | "risks" | "offer" | "questionsDeadline"> & { criteria: string[]; checklist: string[] };
+  const ask = (list: Doc[]) =>
+    askJson<Raw>({
+      model: opts.model,
+      system: SYSTEM,
+      schema: SCHEMA,
+      effort: "high",
+      maxTokens: 24000,
+      content: [
+        { type: "text", text: intro },
+        ...list.map((d) =>
+          "pdf" in d
+            ? { type: "document", title: d.name, source: { type: "base64", media_type: "application/pdf", data: d.pdf } }
+            : { type: "text", text: `DOKUMENT „${d.name}“:\n${d.text}` },
+        ),
+      ],
+    });
+  let r: Awaited<ReturnType<typeof ask>>;
+  try {
+    r = await ask(docs);
+  } catch (e) {
+    // moc stran nebo velké PDF: zkusit jen první PDF (a texty z Wordu), u jediného PDF jen texty
+    const pdfs = docs.filter((d) => "pdf" in d);
+    if (!pdfs.length) throw e;
+    const rest = docs.filter((d) => !("pdf" in d));
+    const used = pdfs.length > 1 ? [pdfs[0], ...rest] : rest;
+    skipped = [...skipped, ...docs.filter((d) => !used.includes(d)).map((d) => ({ name: d.name, why: "AI se celá dokumentace nevešla – přečteno bez tohoto souboru" }))];
+    docs = used;
+    r = await ask(docs);
+  }
+  const { summary, risks, offer, criteria, checklist, questionsDeadline, ...assessment } = r.data;
   // čísla (obrat, pojištění, hodnota a stáří referencí) se přepočítají proti profilu – výpočet má přednost před odhadem AI
-  const data = applyChecks(r.data, c, opts.references, now);
+  const data = applyChecks(assessment, c, opts.references, now);
   // vyjde to cenově? a když něco nesplníme, kdo podobné zakázky vyhrává (možný partner)
   const price = priceCheck(data.delivery.totalMd, c?.dayRate, t.value, t.currency);
   const needPartner = data.verdict === "podat s partnerem" || data.qualification.some((q) => q.status === "nesplněno");
   const partners = needPartner ? suggestPartners(t, c?.name ?? "") : [];
-  return { ...r, data: { ...data, price, partners, sources: docs.map((d) => d.name), skipped, model: opts.model, at: now.toISOString() } };
+  const sources = docs.map((d) => d.name);
+  // „Rozbor“ (shrnutí, rizika, co nabídnout, kritéria, co přiložit) vzniká ze stejného čtení dokumentace
+  // a ukládá se zvlášť, protože z něj vychází seznam úkolů, návrh nabídky i lhůta na dotazy.
+  const analysis: Analysis = {
+    summary,
+    requirements: data.qualification.map((q) => q.requirement),
+    risks,
+    verdict: data.verdict === "podat" ? "go" : data.verdict === "nepodávat" ? "skip" : "consider",
+    verdictReason: data.verdictReason,
+    offer,
+    questions: data.questions,
+    checklist,
+    criteria,
+    sources,
+    questionsDeadline: /^\d{4}-\d\d-\d\d/.test(questionsDeadline ?? "") ? questionsDeadline!.slice(0, 10) : undefined,
+  };
+  return { cost: r.cost, data: { ...data, price, partners, sources, skipped, model: opts.model, at: now.toISOString() } as Assessment, analysis };
 }
