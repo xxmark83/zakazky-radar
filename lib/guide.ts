@@ -12,7 +12,7 @@ export const GUIDE: GuideChapter[] = [
     icon: "home",
     intro: "Co je nového od minula a co hoří.",
     steps: [
-      s("dnes-1", "Ranní přehled", "Záložka Dnes ukáže nové zakázky od minula, lhůty tento týden, změny u sledovaných a nejlepší tipy. Odsud klikneš rovnou do detailu."),
+      s("dnes-1", "Ranní přehled", "Záložka Dnes ukáže stav dat (co se právě stahuje a kdy se co doplnilo), nové zakázky od minula, lhůty tento týden, změny u sledovaných a nejlepší tipy."),
     ],
   },
   {
@@ -34,10 +34,22 @@ export const GUIDE: GuideChapter[] = [
     steps: [
       s("detail-1", "Základní fakta", "Klikni na kartu a otevře se detail: lhůta, hodnota, zveřejnění, AI skóre a poslední den na dotazy zadavateli."),
       s("detail-2", "Stav zakázky", "Zvažuji, Připravuji, Podáno, Vyhráno, Nevyšlo nebo Ne. Stav zakázku přesune na nástěnku Moje zakázky a do kalendáře lhůt."),
-      s("detail-3", "Udělat rozbor", "AI sama najde a přečte zadávací dokumentaci (PDF, Word). Když ji nenajde, nahraj ji odkazem vedle. Rozbor stojí jednotky centů."),
-      s("detail-4", "Verdikt", "Nahoře verdikt Podat / Zvážit / Nechat být s důvodem, pod ním shrnutí, podmínky a kvalifikace, rizika, co nabídnout a hodnoticí kritéria."),
+      s("podklady-1", "Zadávací podklady", "Nepovinné: nahraj podklady jednou pro celou zakázku – PDF, Word, Excel nebo ZIP, i velké. Použije je rozbor, Zvládneme to? i Zeptej se dokumentace. Bez nich si AI dokumentaci najde sama."),
+      s("detail-3", "Udělat rozbor", "AI přečte podklady a řekne, co zadavatel chce. Stojí jednotky centů."),
+      s("detail-4", "Co v rozboru najdeš", "Shrnutí, rizika, co nabídnout a hodnoticí kritéria. Předběžný dojem je jen orientační – o podání rozhoduje Zvládneme to?."),
       s("detail-5", "Co připravit", "Checklist dokladů a příloh z dokumentace. Odškrtávej, co máš hotové, vlastní položku přidáš dole."),
       s("detail-6", "Návrh nabídky", "Navrhnout: osnova nabídky a průvodní dopis na míru zakázce, s vybranými referencemi. Všechno stáhneš jedním souborem přes Stáhnout podklady do Wordu."),
+    ],
+  },
+  {
+    id: "zvladneme",
+    title: "Zvládneme to?",
+    icon: "shield",
+    intro: "Kvalifikace proti tvé firmě a odhad, jestli to naprogramujete.",
+    steps: [
+      s("zvladneme-1", "Rychlé posouzení, nebo důkladná kontrola", "Rychlé posouzení (Haiku, pár centů) na každou zajímavou zakázku. Když zvažuješ podání, Důkladná kontrola před podáním (Opus) – pečlivější."),
+      s("zvladneme-2", "Verdikt a kvalifikace", "Jeden verdikt Podat / S partnerem / Nepodávat a u každého kvalifikačního předpokladu stav: splněno, doložit, nesplněno nebo nejasné – i s tím, jak to vyřešit."),
+      s("zvladneme-3", "Realizace", "Rozpad díla na části s odhadem v člověkodnech a rizikem, součet, technologie a jestli se to vejde do termínu."),
     ],
   },
   {
@@ -64,12 +76,12 @@ export const GUIDE: GuideChapter[] = [
   },
   {
     id: "cena",
-    title: "Cena a šance na výhru",
+    title: "Cena, šance a konkurence",
     icon: "chart",
     intro: "Za kolik podat a jakou máš šanci.",
     steps: [
-      s("cena-1", "Porovnat ceny", "V detailu klikni na Porovnat s cenami podobných zakázek. Radar vezme výsledky z ISVZ, TED a Registru smluv."),
-      s("cena-2", "Doporučená cena a šance", "Uvidíš rozpětí cen, doporučenou cenu a odhad šance na výhru s důvody. Odhad se zpřesní, když u podaných zakázek zapíšeš výsledek."),
+      s("cena-1", "Porovnat s podobnými", "V detailu v části Cena, šance a konkurence klikni na Porovnat. Radar vezme výsledky z ISVZ, TED a Registru smluv."),
+      s("cena-2", "Cena, šance a kdo vyhrával", "Doporučená cena, odhad šance na výhru s důvody a nejčastější vítězové podobných zakázek – klikem na jméno profil konkurenta."),
     ],
   },
   {

@@ -165,6 +165,13 @@ function applyTheme(t: Theme) {
   } catch {}
   if (t === "auto") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
+  // barva lišty prohlížeče / appky na ploše
+  const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  const fixed = t === "space-dark" ? "#050608" : t === "space-light" ? "#F1F2EF" : t === "dark" ? "#0c0e14" : t === "light" ? "#f4f6fb" : null;
+  metas.forEach((m) => {
+    if (!m.dataset.orig) m.dataset.orig = m.content;
+    m.content = fixed ?? m.dataset.orig;
+  });
 }
 
 // po načtení: co je v databázi, přepíše prohlížeč; co v databázi ještě chybí, nahraje se tam
@@ -735,8 +742,8 @@ const TAB_SHORT: Record<Tab, string> = { today: "Dnes", search: "Zakázky", boar
 
 const VERSION = process.env.APP_VERSION;
 
-type Theme = "auto" | "light" | "dark";
-const THEMES: Record<Theme, string> = { auto: "Podle systému", light: "Světlý", dark: "Tmavý" };
+type Theme = "auto" | "light" | "dark" | "space-dark" | "space-light";
+const THEMES: Record<Theme, string> = { auto: "Podle systému", light: "Světlý", dark: "Tmavý", "space-dark": "Vesmír tmavý", "space-light": "Vesmír světlý" };
 
 function Settings(props: {
   close: () => void;

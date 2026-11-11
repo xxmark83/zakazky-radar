@@ -18,6 +18,8 @@
   --warn-text: #7a5600;
   --soon-bg: #fff1d6;
   --soon-text: #9a6400;
+  --on-accent: #fff;
+  --on-good: #fff;
   color-scheme: light;
 }
 /* tmavý vzhled: podle systému, nebo ručně v Nastavení (data-theme na <html>) */
@@ -105,7 +107,7 @@ button.gear:hover { color: var(--text); }
 .tabs button.on .ic { opacity: 1; color: var(--accent); }
 .badge {
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; display: inline-grid; place-items: center;
-  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+  background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700;
 }
 .tabs button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
 .tabs .short { display: none; }
@@ -129,7 +131,7 @@ main { max-width: 1440px; margin: 0 auto; padding: 32px 32px 72px; }
 }
 .chip-group { font-size: 12px; font-weight: 700; color: var(--muted); align-self: center; margin-left: 4px; }
 .chip-group:first-child { margin-left: 0; }
-.tag.sk { background: var(--accent); color: #fff; }
+.tag.sk { background: var(--accent); color: var(--on-accent); }
 .src-group { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; font-size: 14px; }
 .src-group span { color: var(--muted); font-size: 13px; }
 label.src-group.toggle { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; margin: 0 0 8px; cursor: pointer; }
@@ -170,12 +172,12 @@ textarea { min-height: 120px; resize: vertical; }
 .preset-text > span { color: var(--muted); font-size: 13px; line-height: 1.45; }
 .preset-check {
   position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 50%;
-  display: grid; place-items: center; background: var(--accent); color: #fff; opacity: 0; transform: scale(.6);
+  display: grid; place-items: center; background: var(--accent); color: var(--on-accent); opacity: 0; transform: scale(.6);
   transition: opacity .15s, transform .2s var(--ease);
 }
 .preset.on { border-color: var(--accent); background: var(--accent-soft); }
 .preset.on b { color: var(--accent); }
-.preset.on .preset-ic { background: var(--accent); color: #fff; }
+.preset.on .preset-ic { background: var(--accent); color: var(--on-accent); }
 .preset.on .preset-check { opacity: 1; transform: none; }
 
 details { margin-top: 12px; }
@@ -191,7 +193,7 @@ button {
 }
 button:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 button:active { transform: translateY(1px); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; margin-top: 16px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; margin-top: 16px; }
 button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
 button.primary.big {
   display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 15px;
@@ -335,7 +337,7 @@ button.mine-row:active { transform: none; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .tag { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--soft); color: var(--muted); }
 .tag.accent { background: var(--accent-soft); color: var(--accent); }
-.tag.fresh { background: var(--good); color: #fff; }
+.tag.fresh { background: var(--good); color: var(--on-good); }
 .tag.soon { background: var(--soon-bg); color: var(--soon-text); }
 .tag.small { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
 .tender h3 { font-size: 17px; line-height: 1.35; margin: 2px 0 6px; letter-spacing: -0.015em; }
@@ -369,7 +371,7 @@ button.link.more-link .ic { transition: transform .15s var(--ease); }
 }
 .actions button:hover { color: var(--text); background: var(--card); }
 .actions button.on.maybe { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.actions button.on.bid { background: var(--good); border-color: var(--good); color: #fff; }
+.actions button.on.bid { background: var(--good); border-color: var(--good); color: var(--on-good); }
 .actions button.on.no { background: var(--soft); color: var(--muted); }
 
 .skeleton {
@@ -416,7 +418,7 @@ td:nth-child(n+2), th:nth-child(n+2) { text-align: right; white-space: nowrap; }
 .check:first-child { border-top: 0; }
 .check .dot {
   flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line);
-  display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff;
+  display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--on-good);
 }
 .check.ok .dot { background: var(--good); border-color: var(--good); }
 .check .state { margin-left: auto; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
@@ -432,7 +434,7 @@ button.title {
 button.title:hover { color: var(--accent); }
 .saved { color: var(--good); }
 .tag.st-sent { background: var(--accent-soft); color: var(--accent); }
-.tag.st-won { background: var(--good); color: #fff; }
+.tag.st-won { background: var(--good); color: var(--on-good); }
 .tag.st-lost { background: var(--soft); color: var(--muted); }
 
 /* detail zakázky */
@@ -461,7 +463,7 @@ button.icon { width: 36px; height: 36px; padding: 0; font-size: 22px; line-heigh
 .facts .deadline { display: grid; gap: 0; }
 .drawer-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 a.btn {
-  display: inline-block; padding: 9px 16px; border-radius: 10px; background: var(--accent); color: #fff;
+  display: inline-block; padding: 9px 16px; border-radius: 10px; background: var(--accent); color: var(--on-accent);
   font-weight: 600; text-decoration: none;
 }
 a.btn:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
@@ -469,7 +471,7 @@ h3.sec { font-size: 15px; margin: 26px 0 8px; padding-top: 16px; border-top: 1px
 .flow { display: flex; gap: 6px; flex-wrap: wrap; }
 .flow button { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
 .flow button.on { background: var(--text); border-color: var(--text); color: var(--bg); }
-.flow button.on.won { background: var(--good); border-color: var(--good); color: #fff; }
+.flow button.on.won { background: var(--good); border-color: var(--good); color: var(--on-good); }
 .ai-cta {
   display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 12px;
   background: var(--accent-soft); font-size: 14px;
@@ -632,7 +634,7 @@ kbd {
 /* rozbor, checklist, cena, výsledek */
 label.link.upload { display: inline; margin: 0; cursor: pointer; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .note.sources { margin-top: 12px; }
-.count.all { background: var(--good); color: #fff; }
+.count.all { background: var(--good); color: var(--on-good); }
 .checklist { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
 .checklist li { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
 .checklist label { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-weight: 400; font-size: 14px; cursor: pointer; }
@@ -896,7 +898,7 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .guide-cap p { margin: 0; line-height: 1.5; }
 .guide-ctl { display: flex; gap: 8px; align-items: center; }
 .guide-ctl select { flex: 1; min-width: 0; margin: 0; }
-.guide-ctl .play { background: var(--accent); color: #fff; border-color: transparent; }
+.guide-ctl .play { background: var(--accent); color: var(--on-accent); border-color: transparent; }
 @media (max-width: 640px) {
   .guide-bg { padding: 0; place-items: stretch; }
   .guide-player { border-radius: 0; border: 0; align-content: start; }
@@ -1022,7 +1024,7 @@ main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   .profile-summary > span:nth-child(2) { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
   .profile-summary small { color: var(--muted); font-size: 12px; }
   .profile-summary b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .profile-summary .preset-ic { background: var(--accent); color: #fff; }
+  .profile-summary .preset-ic { background: var(--accent); color: var(--on-accent); }
   .profile-summary .chev { color: var(--muted); font-size: 14px; }
   .profile:not(.folded) .profile-summary { margin-bottom: 14px; }
   .profile.folded { padding: 10px 12px; }
@@ -1051,3 +1053,122 @@ main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   .jump { margin: 10px -16px 0; padding: 8px 16px; top: -14px; }
 }
 .table-wrap { overflow-x: auto; }
+
+/* =========================================================================
+   Vzhled Vesmír (Nastavení → Vzhled): čierna noc / svetlá obrátená verzia, biely akcent,
+   Big Shoulders verzálky v nadpisoch, Public Sans v texte, tlačidlá ako pilulky, plochy oddelené čiarou.
+   ========================================================================= */
+:root[data-theme="space-dark"] {
+  --bg: #050608; --card: #0C1013; --panel2: #12171B; --line: #232B30; --dim: #5E6763;
+  --text: #F1F2EF; --muted: #A9B3AE; --accent: #F1F2EF; --accent-hover: #FFFFFF;
+  --accent-soft: rgba(241, 242, 239, .1); --soft: rgba(241, 242, 239, .06); --hair: rgba(241, 242, 239, .24);
+  --good: #3DDC84; --mid: #FF8A7A; --bad: #F06476; --low: #A9B3AE; --info: #85BCEB;
+  --warn-bg: rgba(255, 138, 122, .1); --warn-text: #FF8A7A; --soon-bg: rgba(255, 138, 122, .12); --soon-text: #FF8A7A;
+  --bar: rgba(5, 6, 8, .78); --on-accent: #050608; --on-good: #050608;
+  --shadow: none; --radius: 14px;
+  color-scheme: dark;
+}
+:root[data-theme="space-light"] {
+  --bg: #F1F2EF; --card: #FFFFFF; --panel2: #E6E8E4; --line: #CDD2CE; --dim: #8B9591;
+  --text: #050608; --muted: #4A5056; --accent: #050608; --accent-hover: #232B30;
+  --accent-soft: rgba(5, 6, 8, .08); --soft: rgba(5, 6, 8, .05); --hair: rgba(5, 6, 8, .26);
+  --good: #14874A; --mid: #C8321F; --bad: #C42E45; --low: #4A5056; --info: #1E4E8C;
+  --warn-bg: rgba(200, 50, 31, .08); --warn-text: #C8321F; --soon-bg: rgba(200, 50, 31, .08); --soon-text: #C8321F;
+  --bar: rgba(241, 242, 239, .8); --on-accent: #F1F2EF; --on-good: #050608;
+  --shadow: none; --radius: 14px;
+  color-scheme: light;
+}
+:root[data-theme^="space"] {
+  --display: "Big Shoulders", "Arial Narrow", sans-serif;
+  --body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+:root[data-theme^="space"] body {
+  font-family: var(--body); font-size: 15.5px; line-height: 1.5;
+  background: var(--bg);
+}
+:root[data-theme="space-dark"] body {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='480'%3E%3Ccircle cx='238.2' cy='408.4' r='0.66' fill='%23F1F2EF' fill-opacity='0.46'/%3E%3Ccircle cx='27.2' cy='310.7' r='0.73' fill='%23F1F2EF' fill-opacity='0.42'/%3E%3Ccircle cx='390.4' cy='29.8' r='0.71' fill='%23F1F2EF' fill-opacity='0.42'/%3E%3Ccircle cx='387.1' cy='228.4' r='1.04' fill='%23F1F2EF' fill-opacity='0.75'/%3E%3Ccircle cx='112.5' cy='214.4' r='0.72' fill='%23F1F2EF' fill-opacity='0.68'/%3E%3Ccircle cx='13.4' cy='361.3' r='0.84' fill='%23F1F2EF' fill-opacity='0.57'/%3E%3Ccircle cx='92.0' cy='443.8' r='0.82' fill='%23F1F2EF' fill-opacity='0.50'/%3E%3Ccircle cx='446.9' cy='285.5' r='0.83' fill='%23F1F2EF' fill-opacity='0.38'/%3E%3Ccircle cx='433.8' cy='342.7' r='1.04' fill='%23F1F2EF' fill-opacity='0.55'/%3E%3Ccircle cx='439.1' cy='64.2' r='0.86' fill='%23F1F2EF' fill-opacity='0.70'/%3E%3Ccircle cx='314.0' cy='296.9' r='1.06' fill='%23F1F2EF' fill-opacity='0.51'/%3E%3Ccircle cx='268.0' cy='206.6' r='1.26' fill='%23F1F2EF' fill-opacity='0.40'/%3E%3Ccircle cx='125.0' cy='152.5' r='0.71' fill='%23F1F2EF' fill-opacity='0.59'/%3E%3Ccircle cx='276.9' cy='36.3' r='0.78' fill='%23F1F2EF' fill-opacity='0.74'/%3E%3Ccircle cx='131.2' cy='320.3' r='0.89' fill='%23F1F2EF' fill-opacity='0.34'/%3E%3Ccircle cx='462.5' cy='302.9' r='0.77' fill='%23F1F2EF' fill-opacity='0.57'/%3E%3Ccircle cx='144.3' cy='378.0' r='0.62' fill='%23F1F2EF' fill-opacity='0.49'/%3E%3Ccircle cx='302.3' cy='351.2' r='0.67' fill='%23F1F2EF' fill-opacity='0.28'/%3E%3Ccircle cx='218.4' cy='282.6' r='0.92' fill='%23F1F2EF' fill-opacity='0.28'/%3E%3Ccircle cx='130.2' cy='336.1' r='0.97' fill='%23F1F2EF' fill-opacity='0.77'/%3E%3Ccircle cx='28.4' cy='294.8' r='1.01' fill='%23F1F2EF' fill-opacity='0.50'/%3E%3Ccircle cx='34.4' cy='182.3' r='0.82' fill='%23F1F2EF' fill-opacity='0.34'/%3E%3Ccircle cx='398.4' cy='47.9' r='0.63' fill='%23F1F2EF' fill-opacity='0.75'/%3E%3Ccircle cx='453.6' cy='309.1' r='0.96' fill='%23F1F2EF' fill-opacity='0.64'/%3E%3Ccircle cx='29.4' cy='124.6' r='0.94' fill='%23F1F2EF' fill-opacity='0.31'/%3E%3Ccircle cx='422.0' cy='281.6' r='0.76' fill='%23F1F2EF' fill-opacity='0.58'/%3E%3C/svg%3E") repeat, var(--bg);
+  background-attachment: fixed;
+}
+:root[data-theme^="space"] ::selection { background: var(--text); color: var(--bg); }
+:root[data-theme^="space"] :focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+:root[data-theme^="space"] * { scrollbar-color: var(--line) transparent; scrollbar-width: thin; }
+
+/* písmo: nadpisy a čísla Big Shoulders, verzálky */
+:root[data-theme^="space"] :is(h1, h2, .brand span, .drawer-title, .kpi-v, .summary b, .score span, .price-range b, .login-card h1, .data-today-h, h3.sec) {
+  font-family: var(--display); font-optical-sizing: auto; letter-spacing: .03em;
+}
+:root[data-theme^="space"] :is(h1, h2, h3.sec, .data-today-h) { text-transform: uppercase; font-weight: 800; }
+:root[data-theme^="space"] .hero h1 { font-size: 38px; line-height: .95; letter-spacing: .01em; }
+@media (min-width: 900px) { :root[data-theme^="space"] .hero h1 { font-size: clamp(40px, 4.4vw, 58px); line-height: .92; } }
+:root[data-theme^="space"] h2, :root[data-theme^="space"] .data-today-h { font-size: 20px; }
+:root[data-theme^="space"] h3.sec { font-size: 17px; }
+:root[data-theme^="space"] h3.sec .hint { text-transform: none; font-family: var(--body); font-size: 13px; letter-spacing: 0; font-weight: 400; }
+:root[data-theme^="space"] .drawer-title { font-size: 26px; font-weight: 800; line-height: 1.05; letter-spacing: .01em; }
+:root[data-theme^="space"] .brand span { font-weight: 800; font-size: 20px; text-transform: uppercase; letter-spacing: .04em; }
+:root[data-theme^="space"] :is(.kpi-v, .score span, .price-range b) { font-weight: 700; }
+:root[data-theme^="space"] label { font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; color: var(--muted); }
+:root[data-theme^="space"] label.check-line, :root[data-theme^="space"] .checklist label, :root[data-theme^="space"] .assess-drop, :root[data-theme^="space"] .preset { text-transform: none; letter-spacing: 0; color: var(--text); font-size: 14px; }
+
+/* plochy: tenká čiara, bez tieňov, gradientov a podfarbenia */
+:root[data-theme^="space"] .card { box-shadow: none; background: var(--card); }
+:root[data-theme="space-dark"] .card, :root[data-theme="space-dark"] .data-row, :root[data-theme="space-dark"] .qual, :root[data-theme="space-dark"] .cw-option { background: rgba(12, 16, 19, .82); }
+:root[data-theme^="space"] .tender::before { display: none; }
+:root[data-theme^="space"] body { background-size: auto; }
+:root[data-theme^="space"] .top { background: var(--bar); border-bottom: 1px solid var(--line); }
+:root[data-theme^="space"] .drawer { background: var(--bg); border-left: 1px solid var(--hair); box-shadow: none; }
+:root[data-theme^="space"] .drawer-bg { background: rgba(0, 0, 0, .5); }
+
+/* tlačidlá: tři podoby – hlavné, vedľajšie, textové; pilulky.
+   Tlačidlá, ktoré sú v skutočnosti nadpis, skóre, riadok alebo dlaždica, zostávajú bez pilulky. */
+:root[data-theme^="space"] :is(button:not(.title, .score-col, .mine-row, .preset, .assess-mode, .guide-tile, .data-strip, .link, .ghost, .back), a.btn) {
+  border-radius: 999px; border: 1px solid var(--hair); background: transparent; color: var(--text); font-weight: 600;
+  min-height: 36px; transition: background .2s, border-color .2s, color .2s, transform .12s;
+}
+:root[data-theme^="space"] button:not(.title, .score-col, .mine-row, .preset, .assess-mode, .guide-tile, .data-strip, .link, .ghost, .back):hover { border-color: var(--text); background: var(--soft); }
+:root[data-theme^="space"] button:not(.title, .score-col, .mine-row):active { transform: scale(.97); }
+:root[data-theme^="space"] button.title:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+:root[data-theme^="space"] :is(.preset, button.assess-mode, button.guide-tile, button.data-strip) { background: transparent; border: 1px solid var(--hair); border-radius: 14px; }
+:root[data-theme^="space"] :is(.preset, button.assess-mode, button.guide-tile, button.data-strip):hover { border-color: var(--text); background: var(--soft); }
+:root[data-theme^="space"] .preset.on { border-color: var(--text); background: var(--soft); }
+:root[data-theme^="space"] .preset-ic { background: var(--soft); color: var(--text); }
+:root[data-theme^="space"] .preset.on .preset-ic { background: var(--accent); color: var(--bg); }
+:root[data-theme^="space"] :is(button.primary, a.btn) {
+  background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; min-height: 44px; padding: 0 22px;
+}
+:root[data-theme^="space"] :is(button.primary, a.btn):hover { background: var(--accent-hover); border-color: var(--accent-hover); box-shadow: none; transform: none; }
+:root[data-theme^="space"] button.primary.big { box-shadow: none; }
+:root[data-theme^="space"] :is(button.link, button.ghost, button.back) { border: 0; background: none; min-height: 0; color: var(--muted); }
+:root[data-theme^="space"] :is(button.link, button.ghost):hover { color: var(--text); background: none; }
+:root[data-theme^="space"] a { color: var(--text); }
+:root[data-theme^="space"] button.gear { border: 1px solid var(--hair); background: transparent; border-radius: 999px; }
+:root[data-theme^="space"] .flow button.on, :root[data-theme^="space"] .chips button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+/* prepínač záložek: obal s obrysom, vybraná voľba biela pilulka */
+:root[data-theme^="space"] .tabs { background: transparent; border: 1px solid var(--hair); border-radius: 24px; padding: 3px; gap: 2px; }
+:root[data-theme^="space"] .tabs button { border: 0; border-radius: 999px; color: var(--muted); min-height: 34px; }
+:root[data-theme^="space"] .tabs button:hover { background: var(--soft); color: var(--text); }
+:root[data-theme^="space"] .tabs button.on { background: var(--accent); color: var(--bg); box-shadow: none; }
+:root[data-theme^="space"] .tabs button.on .ic { color: var(--bg); }
+
+/* polia: priehľadné, obrys --hair, polomer 12 px, hľadanie ako pilulka */
+:root[data-theme^="space"] :is(textarea, input, select) { background: transparent; border-color: var(--hair); border-radius: 12px; min-height: 44px; }
+:root[data-theme^="space"] :is(textarea, input, select):focus { border-color: var(--text); box-shadow: none; }
+:root[data-theme^="space"] input[type="search"], :root[data-theme^="space"] input[placeholder^="Hledat"] { border-radius: 999px; padding-left: 16px; }
+:root[data-theme^="space"] select option { background: var(--card); color: var(--text); }
+
+/* štítky a stavy: farba len na význam */
+:root[data-theme^="space"] .tag { background: transparent; border: 1px solid var(--hair); color: var(--muted); border-radius: 999px; }
+:root[data-theme^="space"] .tag.accent { color: var(--text); }
+:root[data-theme^="space"] .tag.fresh { background: var(--good); border-color: var(--good); color: #050608; }
+:root[data-theme^="space"] .meter span, :root[data-theme^="space"] .progress-meter span { background: var(--text); }
+:root[data-theme^="space"] .verdict { background: transparent; border: 1px solid var(--line); border-left-width: 3px; }
+:root[data-theme^="space"] .chip { background: transparent; border: 1px solid var(--hair); color: var(--text); }
+:root[data-theme^="space"] .live { background: var(--good); }
+:root[data-theme^="space"] .ds-chip.run, :root[data-theme^="space"] .data-running { background: var(--soft); color: var(--text); }
+:root[data-theme^="space"] .guide-ctl .play { background: var(--accent); color: var(--bg); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme^="space"] * { transition: none !important; animation: none !important; }
+}
+:root[data-theme^="space"] a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
