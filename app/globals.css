@@ -1320,3 +1320,23 @@ button.ghost.dense-toggle.on { color: var(--text); }
   .drawer:has(.detail-bar) .status-row :is(.maybe, .bid, .no) { display: none; }
   :root[data-theme^="space"] .drawer:has(.detail-bar) .drawer-title { font-size: 21px; line-height: 1.12; }
 }
+
+/* ---------- 1.45: Zvládneme to? – čísla z profilu, výpočet u požadavku, co se přečetlo ---------- */
+.fact-row { align-items: center; }
+.fact-row input { flex: 1; min-width: 0; }
+.fact-row input.narrow, .fact-row input[type="month"] { flex: 0 0 132px; }
+.fact-row button.ghost { flex: none; padding: 6px 10px; font-size: 18px; line-height: 1; }
+button.ghost.add-fact { margin: 6px 0 4px; padding-left: 0; }
+.qual p.qual-calc { color: var(--text); padding: 6px 8px; margin-top: 6px; border-radius: 6px; background: var(--soft); font-size: 13px; }
+.qual p.qual-calc b { font-weight: 600; }
+.docs-read { display: grid; gap: 4px; margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+.docs-read.partial { border-color: color-mix(in srgb, var(--mid) 55%, var(--line)); }
+.docs-read > span { color: var(--muted); overflow-wrap: anywhere; }
+.docs-read b.miss { margin-top: 6px; color: var(--mid); }
+.docs-read ul { margin: 0; padding-left: 18px; }
+.docs-read li { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .fact-row { flex-wrap: wrap; }
+  .fact-row input { flex: 1 1 100%; }
+  .fact-row input.narrow, .fact-row input[type="month"] { flex: 1 1 0; }
+}

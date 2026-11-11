@@ -118,6 +118,14 @@ export type QualItem = {
   where: string; // článek / strana / příloha
   status: "splněno" | "doložit" | "nesplněno" | "nejasné";
   how: string; // čím doložit, nebo jak vyřešit (subdodavatel, partner, certifikace…)
+  // co přesně zadavatel chce – z toho se počítá proti profilu (lib/qualify.ts); u starších posouzení chybí
+  kind?: "obrat" | "pojištění" | "reference" | "certifikát" | "tým" | "jiné";
+  amount?: number; // Kč: min. roční obrat / limit pojištění / min. hodnota jedné reference; 0 = neuvedeno
+  count?: number; // počet požadovaných referencí; 0 = neuvedeno
+  years?: number; // reference za posledních N let / obrat za N účetních období; 0 = neuvedeno
+  refs?: number[]; // čísla referencí z knihovny, které obsahem sedí
+  calc?: string; // výsledek výpočtu proti profilu (doplní server)
+  refNames?: string[]; // reference, které prošly i čísly (doplní server)
 };
 export type DeliveryPart = { item: string; how: string; effortMd: number; risk: "nízké" | "střední" | "vysoké" };
 export type Assessment = {
@@ -129,6 +137,7 @@ export type Assessment = {
   missingInfo: string[];
   questions: string[];
   sources?: string[];
+  skipped?: { name: string; why: string }[]; // dokumenty, které se nepřečetly, a proč
   model?: string;
   at?: string;
 };

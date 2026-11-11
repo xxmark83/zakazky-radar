@@ -2754,7 +2754,7 @@ function Assess({
   useEffect(() => {
     fetch("/api/company")
       .then((r) => r.json())
-      .then((d) => setHasProfile(Boolean(d.company?.capabilities?.trim())))
+      .then((d) => setHasProfile(Boolean(d.company?.capabilities?.trim() || Object.values(d.company?.turnover ?? {}).some(Boolean))))
       .catch(() => {});
   }, []);
   useEffect(() => setError(""), [t.id]);
@@ -2784,8 +2784,8 @@ function Assess({
       </h3>
       {hasProfile === false && (
         <div className="warn">
-          Vyplň v Nastavení → Firma a reference pole „Co umíš a čím disponuješ“ (tým, obrat, pojištění, certifikace) a reference –
-          bez nich AI většinu požadavků označí jako nejasné.
+          Vyplň v Nastavení → Firma a reference čísla pro kvalifikaci (obrat, pojištění, certifikace, tým) a reference – bez nich
+          většina požadavků vyjde jako nejasná.
         </div>
       )}
       <div className="assess-up">
@@ -2849,6 +2849,11 @@ function Assess({
                 <div>
                   <b>{q.requirement}</b> <span className="hint">{q.area}{q.where ? `, ${q.where}` : ""}</span>
                   {q.how && <p>{q.how}</p>}
+                  {q.calc && (
+                    <p className="qual-calc">
+                      <b>Výpočet z profilu:</b> {q.calc}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
@@ -2895,9 +2900,30 @@ function Assess({
           <AnalysisList title="Co chybí a jak to vyřešit" items={a.gaps} />
           <AnalysisList title="Doplň do firemního profilu" items={a.missingInfo} />
           <AnalysisList title="Dotazy na zadavatele" items={a.questions} />
+          <div className={`docs-read ${a.skipped?.length || !a.sources?.length ? "partial" : ""}`}>
+            <b>
+              {a.sources?.length
+                ? `Přečteno ${a.sources.length} z ${a.sources.length + (a.skipped ?? []).filter((x) => !x.why.startsWith("přečten jen")).length} dokumentů`
+                : "Dokumentace se nepodařila načíst – posouzení vychází jen ze stránky zakázky"}
+            </b>
+            {a.sources?.length ? <span>{a.sources.join(", ")}</span> : null}
+            {a.skipped && a.skipped.length > 0 && (
+              <>
+                <b className="miss">Nepřečteno nebo jen zčásti</b>
+                <ul>
+                  {a.skipped.map((x, i) => (
+                    <li key={i}>
+                      {x.name} <span className="hint">– {x.why}</span>
+                    </li>
+                  ))}
+                </ul>
+                <span className="hint">Chybí mezi přečtenými kvalifikace nebo smlouva? Nahraj je nahoře v Zadávacích podkladech a spusť posouzení znovu.</span>
+              </>
+            )}
+          </div>
           <p className="note sources">
-            {a.model === "opus" ? "Důkladná kontrola (Opus)" : "Rychlé posouzení (Haiku)"}, {a.at ? new Date(a.at).toLocaleString("cs-CZ") : ""}. Podklady: {a.sources?.join(", ") || "jen stránka zakázky"}.
-            Je to odhad AI – před podáním ověř v dokumentaci.
+            {a.model === "opus" ? "Důkladná kontrola (Opus)" : "Rychlé posouzení (Haiku)"}, {a.at ? new Date(a.at).toLocaleString("cs-CZ") : ""}.
+            Čísla s označením „Výpočet z profilu“ jsou spočítaná, zbytek je odhad AI – před podáním ověř v dokumentaci.
           </p>
         </div>
       )}
@@ -2985,12 +3011,19 @@ function CompanyPanel() {
       .catch(() => {});
   }, []);
   if (!c) return null;
-  const field = (k: keyof Company, label: string, ph = "") => (
+  type TextKey = "name" | "address" | "dic" | "person" | "role" | "email" | "phone" | "bank";
+  const field = (k: TextKey, label: string, ph = "") => (
     <div>
       <label>{label}</label>
       <input value={c[k]} placeholder={ph} onChange={(e) => setC({ ...c, [k]: e.target.value })} />
     </div>
   );
+  // částka psaná s mezerami („2 400 000“) → číslo
+  const amount = (v: string) => Number(v.replace(/[^\d]/g, "")) || null;
+  const shown = (v: number | null | undefined) => (v ? v.toLocaleString("cs-CZ") : "");
+  const years = Array.from({ length: 3 }, (_, i) => String(new Date().getFullYear() - 1 - i));
+  const certs = c.certs ?? [];
+  const team = c.team ?? [];
   async function save(body: object, done: string) {
     const res = await post("/api/company", body);
     const d = await res.json();
@@ -3021,12 +3054,73 @@ function CompanyPanel() {
         {field("phone", "Telefon")}
         {field("bank", "Bankovní spojení")}
       </div>
+      <h4 className="sub-h">Čísla pro kvalifikaci</h4>
+      <p className="note">
+        „Zvládneme to?“ je porovná s požadavky zadavatele výpočtem, ne odhadem – obrat, limit pojištění, platnost certifikátů. Co
+        nevyplníš, vyjde jako nejasné.
+      </p>
+      <div className="row">
+        {years.map((y) => (
+          <div key={y}>
+            <label>Obrat {y} (Kč bez DPH)</label>
+            <input
+              inputMode="numeric"
+              value={shown(c.turnover?.[y])}
+              placeholder="např. 2 400 000"
+              onChange={(e) => setC({ ...c, turnover: { ...c.turnover, [y]: amount(e.target.value) } })}
+            />
+          </div>
+        ))}
+        <div>
+          <label>Pojištění odpovědnosti – limit (Kč)</label>
+          <input inputMode="numeric" value={shown(c.insurance)} placeholder="např. 5 000 000" onChange={(e) => setC({ ...c, insurance: amount(e.target.value) })} />
+        </div>
+      </div>
+      <label>Certifikace a oprávnění</label>
+      {certs.map((x, i) => (
+        <div key={i} className="add-item fact-row">
+          <input value={x.name} placeholder="např. ISO 27001" onChange={(e) => setC({ ...c, certs: certs.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)) })} />
+          <input
+            type="month"
+            value={x.until}
+            aria-label="Platí do"
+            title="Platí do (nech prázdné, když platnost nekončí)"
+            onChange={(e) => setC({ ...c, certs: certs.map((y, j) => (j === i ? { ...y, until: e.target.value } : y)) })}
+          />
+          <button className="ghost" onClick={() => setC({ ...c, certs: certs.filter((_, j) => j !== i) })} aria-label="Odebrat certifikát">
+            ×
+          </button>
+        </div>
+      ))}
+      <button className="ghost add-fact" onClick={() => setC({ ...c, certs: [...certs, { name: "", until: "" }] })}>
+        + Přidat certifikát
+      </button>
+      <label>Tým (role, ne jména)</label>
+      {team.map((m, i) => (
+        <div key={i} className="add-item fact-row">
+          <input value={m.role} placeholder="např. vedoucí projektu" onChange={(e) => setC({ ...c, team: team.map((y, j) => (j === i ? { ...y, role: e.target.value } : y)) })} />
+          <input
+            className="narrow"
+            inputMode="numeric"
+            value={m.years ?? ""}
+            placeholder="let praxe"
+            onChange={(e) => setC({ ...c, team: team.map((y, j) => (j === i ? { ...y, years: amount(e.target.value) } : y)) })}
+          />
+          <input value={m.note} placeholder="vzdělání, certifikace, úvazek" onChange={(e) => setC({ ...c, team: team.map((y, j) => (j === i ? { ...y, note: e.target.value } : y)) })} />
+          <button className="ghost" onClick={() => setC({ ...c, team: team.filter((_, j) => j !== i) })} aria-label="Odebrat člena týmu">
+            ×
+          </button>
+        </div>
+      ))}
+      <button className="ghost add-fact" onClick={() => setC({ ...c, team: [...team, { role: "", years: null, note: "" }] })}>
+        + Přidat člena týmu
+      </button>
       <label>Co umíš a čím disponuješ (pro posouzení „Zvládneme to?“)</label>
       <textarea
         className="capabilities"
         value={c.capabilities ?? ""}
         onChange={(e) => setC({ ...c, capabilities: e.target.value })}
-        placeholder={"Tým: já (PM, analýza) + 2 vývojáři na smlouvu, 10 let praxe\nTechnologie: React, Node.js, PostgreSQL, Azure, vlastní CRM Kotva a LMS\nObrat: 2023 1,8 mil., 2024 2,4 mil., 2025 3,1 mil. Kč\nPojištění odpovědnosti: 5 mil. Kč\nCertifikace: zatím žádné ISO\nPartneři: kyberbezpečnost – firma XY (ISO 27001)"}
+        placeholder={"Technologie: React, Node.js, PostgreSQL, Azure, vlastní CRM Kotva a LMS\nCo děláme nejčastěji: portály pro obce, evidence, e-learning\nPartneři: kyberbezpečnost – firma XY (ISO 27001)\nOstatní, co se nevešlo do polí výše"}
       />
       <div className="row-btns">
         <button className="primary" onClick={() => save({ company: c }, "Firma uložena.")}>

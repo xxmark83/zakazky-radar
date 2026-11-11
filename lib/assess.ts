@@ -1,6 +1,7 @@
 import { askJson, type ModelChoice } from "./ai";
 import type { Company, Reference } from "./company";
-import { fetchDocs, type Doc } from "./docs";
+import { fetchDocsReport, type Doc } from "./docs";
+import { applyChecks, profileFacts } from "./qualify";
 import { pageText } from "./analyze";
 import type { Assessment, Tender } from "./types";
 
@@ -22,8 +23,13 @@ const SCHEMA = {
           where: str,
           status: { type: "string", enum: ["splněno", "doložit", "nesplněno", "nejasné"] },
           how: str,
+          kind: { type: "string", enum: ["obrat", "pojištění", "reference", "certifikát", "tým", "jiné"] },
+          amount: { type: "number" },
+          count: { type: "integer" },
+          years: { type: "integer" },
+          refs: { type: "array", items: { type: "integer" } },
         },
-        required: ["area", "requirement", "where", "status", "how"],
+        required: ["area", "requirement", "where", "status", "how", "kind", "amount", "count", "years", "refs"],
         additionalProperties: false,
       },
     },
@@ -71,6 +77,13 @@ Pravidla:
   doložit = splňuje nebo snadno splní, ale musí dodat doklad (výpis, čestné prohlášení, pojistka);
   nesplněno = z profilu plyne, že nesplňuje (v how navrhni řešení: poddodavatel § 83, společná nabídka, partner, certifikace);
   nejasné = profil to neříká.
+  K tomu u každého požadavku vyplň údaje, podle kterých ho aplikace přepočítá proti profilu (čísla nezaokrouhluj, 0 = neuvedeno):
+  kind = obrat (minimální obrat), pojištění (pojištění odpovědnosti), reference (významné zakázky/služby/dodávky),
+  certifikát, tým, jinak jiné. amount = částka v Kč bez DPH: u obratu požadované minimum, u pojištění požadovaný limit,
+  u referencí minimální hodnota JEDNÉ reference. count = počet požadovaných referencí. years = za kolik posledních let
+  musí reference být, u obratu počet účetních období. refs = čísla těch referencí ze seznamu REFERENCE DODAVATELE, které
+  požadavku odpovídají OBSAHEM (předmět plnění, typ objednatele) – hodnotu a stáří neřeš, ty ověří aplikace. U požadavků
+  jiného druhu dej amount, count i years 0 a refs prázdné.
 - delivery: zvládne dodavatel dílo technicky? Rozlož předmět plnění na části (item), u každé jak to postavit (how –
   vlastní produkt dodavatele, úprava, nový vývoj, nákup licencí), odhad pracnosti v člověkodnech (effortMd, realisticky,
   vč. analýzy, testů a nasazení) a riziko. totalMd = součet. stack = doporučené technologie. timeline = zda se to vejde
@@ -79,6 +92,8 @@ Pravidla:
   nepodávat = zásadní překážka; nejasné = chybí podklady nebo profil. verdictReason: 1–2 věty.
 - gaps: co přesně chybí k podání a jak to vyřešit (max 6). questions: dotazy na zadavatele, které by pomohly (max 5).
 Odpovídej česky, věcně a stručně.`;
+
+export const UPLOAD_MAX = 200_000; // znaků z jednoho nahraného souboru
 
 export async function assessTender(opts: {
   tender: Tender;
@@ -89,8 +104,18 @@ export async function assessTender(opts: {
   model: ModelChoice;
 }) {
   const { tender: t, company: c } = opts;
+  const now = new Date();
   let docs: Doc[] = opts.texts.filter((d) => d.text.trim()).map((d) => ({ name: d.name, type: "nahráno", text: d.text }));
-  if (!docs.length) docs = await fetchDocs(t);
+  // co se nepřečetlo a proč – ukáže se u výsledku, ať je vidět, na čem posouzení stojí
+  let skipped = [
+    ...opts.texts.filter((d) => !d.text.trim()).map((d) => ({ name: d.name, why: "v souboru není čitelný text (sken bez textové vrstvy?)" })),
+    ...opts.texts.filter((d) => d.text.length >= UPLOAD_MAX).map((d) => ({ name: d.name, why: `přečten jen začátek (prvních ${UPLOAD_MAX.toLocaleString("cs-CZ")} znaků)` })),
+  ];
+  if (!docs.length) {
+    const report = await fetchDocsReport(t);
+    docs = report.docs;
+    skipped = [...skipped, ...report.skipped];
+  }
   const page = docs.length ? "" : await pageText(t.url);
   const firm = c
     ? [
@@ -98,11 +123,13 @@ export async function assessTender(opts: {
         `Co umí a čím disponuje (tým, technologie, obrat, certifikace, pojištění, partneři):\n${c.capabilities?.trim() || "NEUVEDENO – dodavatel to v profilu nemá vyplněné"}`,
       ].join("\n")
     : "Firemní profil není vyplněný.";
+  const facts = profileFacts(c, now);
   const refs = opts.references.length
     ? opts.references.map((r, i) => `${i + 1}. ${r.title} – ${r.client}, ${r.year}, ${r.value ? `${Math.round(r.value).toLocaleString("cs-CZ")} Kč bez DPH` : "cena neuvedena"}: ${r.description}`).join("\n")
     : "Žádné reference v knihovně.";
   const intro = [
-    `PROFIL DODAVATELE\n${firm}`,
+    `DNEŠNÍ DATUM: ${now.toISOString().slice(0, 10)}`,
+    `PROFIL DODAVATELE\n${firm}${facts ? `\nOvěřené údaje z profilu:\n${facts}` : ""}`,
     `CO DODAVATEL NABÍZÍ (produkty a služby)\n${opts.profile || "neuvedeno"}`,
     `REFERENCE DODAVATELE\n${refs}`,
     `ZAKÁZKA\n${JSON.stringify({ nazev: t.title, zadavatel: t.buyer, hodnota: t.value ? `${Math.round(t.value)} ${t.currency ?? ""}` : "neuvedeno", lhuta: t.deadline ?? "neuvedena", url: t.url })}`,
@@ -117,5 +144,7 @@ export async function assessTender(opts: {
     ),
   ];
   const r = await askJson<Assessment>({ model: opts.model, system: SYSTEM, schema: SCHEMA, effort: "high", content, maxTokens: 24000 });
-  return { ...r, data: { ...r.data, sources: docs.map((d) => d.name), model: opts.model, at: new Date().toISOString() } };
+  // čísla (obrat, pojištění, hodnota a stáří referencí) se přepočítají proti profilu – výpočet má přednost před odhadem AI
+  const data = applyChecks(r.data, c, opts.references, now);
+  return { ...r, data: { ...data, sources: docs.map((d) => d.name), skipped, model: opts.model, at: now.toISOString() } };
 }
