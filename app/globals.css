@@ -792,6 +792,12 @@ a.hist-row.contract:hover .hist-title { color: var(--accent); }
 .cw-found .link { justify-self: start; }
 
 /* stav dat */
+.data-today { margin: 0 0 18px; }
+.data-today .mine-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.data-today-h { display: inline-flex; align-items: center; margin: 0; font-size: 17px; }
+.data-grid .data-list { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.data-row { align-content: start; }
+.data-grid .data-running { margin-bottom: 8px; }
 .data-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; width: 100%; height: auto; margin: 0 0 14px; padding: 9px 12px; text-align: left; font-size: 13px; font-weight: 500; white-space: normal; border-radius: 12px; }
 .ds-title { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; margin-right: 4px; }
 .ds-chip { padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--text, inherit); }

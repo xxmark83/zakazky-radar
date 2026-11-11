@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.38.1** – Dnes: místo krátkého pruhu plný Stav dat (stejné karty jako v Nastavení: počty, ukazatel doplnění, co zbývá, kdy příště, právě běžící stahování na GitHubu i Macu s ukazatelem).
 - **1.38.0** – na obrazovce Dnes stálý pruh „Data“: co se právě stahuje (GitHub, Mac), kdy se který zdroj naposledy doplnil, zpožděné zdroje červeně; klik otevře Nastavení se Stavem dat.
 - **1.37.0** – Smlouvy sledovaných subjektů ve dvou krocích: „Vyhledat“ (ARES, u názvu až 6 kandidátů s IČO a adresou, nic se neukládá) → „Sledovat“ u vybraného subjektu. Oprava rozložení tlačítka „Hlídat aktuální profil“.
 - **1.36.2** – Hlídač státu (chyba 429 = příliš mnoho dotazů): všechny dotazy jdou přes jednu frontu (`lib/hlidac-api.ts`, ~3 za sekundu, při 429 čeká podle Retry-After a zkusí znovu), odpovědi se drží v Redisu (hledání 1 h, hlídání 3 h, historie zadavatele 12 h); srozumitelná hláška v historii zadavatele.

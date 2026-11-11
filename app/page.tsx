@@ -4347,45 +4347,7 @@ function DataStatus() {
         TED, NEN a Hlídač státu se čtou naživo při každém hledání. Tyhle zdroje se stahují dopředu, na pozadí – nic z toho
         nejde do tvého počítače.
       </p>
-      {d.running.length > 0 && (
-        <div className="data-running">
-          {d.running.map((r) => (
-            <div key={r.url}>
-              <span className="live" aria-hidden="true" />
-              <b>Právě se stahuje:</b> {r.name} <span className="hint">(běží {when(r.started).replace("před ", "")})</span>
-              <div className="meter indeterminate">
-                <span />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="data-list">
-        {d.datasets.map((x) => (
-          <div key={x.id} className={`data-row ${x.late ? "late" : ""}`}>
-            <div className="data-head">
-              <b>{x.name}</b>
-              <span className="hint">aktualizováno {when(x.updated)}</span>
-            </div>
-            <span>{x.count}</span>
-            {x.done !== undefined && x.done < 1 && (
-              <div className="meter" title={`${Math.round(x.done * 100)} %`}>
-                <span style={{ width: `${Math.round(x.done * 100)}%` }} />
-              </div>
-            )}
-            {x.pending && <span className="hint">⏳ {x.pending}</span>}
-            <span className="hint">
-              {x.where}
-              {x.next ? `, příště ${until(x.next)}` : ""}
-            </span>
-            {x.late && (
-              <span className="warn-text">
-                {x.id === "vhodne" || x.id === "isvz" ? "Dlouho se nedoplnilo – je Mac zapnutý a připojený?" : "Poslední noční běh se asi nepovedl."}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
+      <DataDetails d={d} />
 
       {d.refresh && <RefreshAll r={d.refresh} running={d.running.length} reload={load} />}
 
@@ -4433,6 +4395,63 @@ function DataStatus() {
   );
 }
 
+// stažené zdroje: co právě běží (s ukazatelem), kolik je staženo, co zbývá, kdy příště
+function DataDetails({ d, grid }: { d: DataStatusRes; grid?: boolean }) {
+  const macBusy = d.refresh?.request && d.refresh.request.id !== d.refresh.done?.id;
+  return (
+    <div className={grid ? "data-grid" : ""}>
+        {(d.running.length > 0 || macBusy) && (
+          <div className="data-running">
+            {d.running.map((r) => (
+              <div key={r.url}>
+                <span className="live" aria-hidden="true" />
+                <b>Právě se stahuje:</b> {r.name} <span className="hint">(běží {when(r.started).replace("před ", "")})</span>
+                <div className="meter indeterminate">
+                  <span />
+                </div>
+              </div>
+            ))}
+            {macBusy && (
+              <div>
+                <span className="live" aria-hidden="true" />
+                <b>Mac:</b> celé stažení Vhodného uveřejnění a ISVZ čeká nebo běží (asi 2,5 h, Mac musí být zapnutý)
+                <div className="meter indeterminate">
+                  <span />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="data-list">
+          {d.datasets.map((x) => (
+            <div key={x.id} className={`data-row ${x.late ? "late" : ""}`}>
+              <div className="data-head">
+                <b>{x.name}</b>
+                <span className="hint">aktualizováno {when(x.updated)}</span>
+              </div>
+              <span>{x.count}</span>
+              {x.done !== undefined && x.done < 1 && (
+                <div className="meter" title={`${Math.round(x.done * 100)} %`}>
+                  <span style={{ width: `${Math.round(x.done * 100)}%` }} />
+                </div>
+              )}
+              {x.pending && <span className="hint">⏳ {x.pending}</span>}
+              <span className="hint">
+                {x.where}
+                {x.next ? `, příště ${until(x.next)}` : ""}
+              </span>
+              {x.late && (
+                <span className="warn-text">
+                  {x.id === "vhodne" || x.id === "isvz" ? "Dlouho se nedoplnilo – je Mac zapnutý a připojený?" : "Poslední noční běh se asi nepovedl."}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+    </div>
+  );
+}
+
 // krátký přehled stavu dat na obrazovce Dnes
 const SHORT_NAME: Record<string, string> = { profily: "Profily", vhodne: "Vhodné uveřejnění", isvz: "ISVZ", dns: "DNS", smlouvy: "Registr smluv" };
 function DataStrip({ open }: { open: () => void }) {
@@ -4445,34 +4464,26 @@ function DataStrip({ open }: { open: () => void }) {
   useEffect(() => {
     load();
   }, []);
+  const busy = Boolean(d && (d.running.length || (d.refresh?.request && d.refresh.request.id !== d.refresh.done?.id)));
   useEffect(() => {
-    if (!d?.running.length) return;
+    if (!busy) return;
     const id = setInterval(load, 60_000);
     return () => clearInterval(id);
-  }, [d?.running.length]);
+  }, [busy]);
   if (!d) return null;
-  const macBusy = d.refresh?.request && d.refresh.request.id !== d.refresh.done?.id;
-  const late = d.datasets.filter((x) => x.late);
   return (
-    <button className="data-strip" onClick={open} title="Podrobnosti v Nastavení → Stav dat">
-      <span className="ds-title">
-        <span className={`live ${d.running.length || macBusy ? "" : late.length ? "bad" : "idle"}`} aria-hidden="true" />
-        Data
-      </span>
-      {d.running.map((r) => (
-        <span key={r.url} className="ds-chip run">
-          stahuje se {r.name.replace(/^Sběr zakázek z /, "").replace(/^IT smlouvy z /, "")} ({when(r.started).replace("před ", "")})
-        </span>
-      ))}
-      {macBusy && <span className="ds-chip run">Mac: celé stažení čeká nebo běží</span>}
-      {d.datasets
-        .filter((x) => x.id !== "dns")
-        .map((x) => (
-          <span key={x.id} className={`ds-chip ${x.late ? "late" : ""}`}>
-            {SHORT_NAME[x.id] ?? x.name} <small>{when(x.updated)}</small>
-          </span>
-        ))}
-    </button>
+    <section className="data-today">
+      <div className="mine-head">
+        <h2 className="data-today-h">
+          <span className={`live ${busy ? "" : d.datasets.some((x) => x.late) ? "bad" : "idle"}`} aria-hidden="true" />
+          Stav dat
+        </h2>
+        <button className="link" onClick={open}>
+          Nastavení a stáhnout znovu
+        </button>
+      </div>
+      <DataDetails d={d} grid />
+    </section>
   );
 }
 
