@@ -39,11 +39,25 @@ const SLOW = {
 // - E-ZAK: „company_detail_N“ je stránka zadavatele, profil je „profile_display_N“; „contract_display_N“
 //   a „vzNNN“ jsou jednotlivé zakázky, ne profily
 // - e-zakazky.cz s useknutým GUID (registr adresu ořízl)
+// - Tender arena: „/profil/JMENO“ server odmítne (403), správně je „/profily/JMENO“ (přes 100 zadavatelů, hlavně nemocnice);
+//   adresa s „#/“ nebo s připojenou zakázkou („…/detail/Z0001901/zakazka/123“) se ořízne na profil
+// - NEN s překlepem v doméně („nen.nipez..cz“, „nen.nipez.c“, „nipez.cz“)
 function normalize(u) {
   if (/vhodne-uverejneni\.cz/i.test(u)) return null;
+  // schéma a „www“ se nemění: adresa profilu je součástí id zakázek, které už uživatel zná
+  if (/^https?:\/\/\.?(www\.)?tenderarena\.cz\//i.test(u)) {
+    u = u
+      .replace(/^(https?:\/\/)\./, "$1")
+      .replace(/^(https?:\/\/(?:www\.)?tenderarena\.cz)\/+#\/+/i, "$1/")
+      .replace(/^(https?:\/\/(?:www\.)?tenderarena\.cz)\/profil\/([^/?#]+)\/?$/i, "$1/profily/$2")
+      .replace(/(\/detail\/Z\d+)\/.*$/i, "$1");
+  }
+  if (/^https?:\/\/(nen\.)?nipez[.a-z]*\/profil\//i.test(u) && !/^https?:\/\/nen\.nipez\.cz\//i.test(u)) u = u.replace(/^https?:\/\/(nen\.)?nipez[.a-z]*\/profil\//i, "https://nen.nipez.cz/profil/");
   u = u.replace(/^(https?:\/\/)nen\.nipez\//i, "$1nen.nipez.cz/").replace(/\/company_detail_(\d+)\.html$/, "/profile_display_$1.html");
   if (/\/contract_display_\d+\.html$|\/vz\d{6,}$/i.test(u)) return null;
-  const guid = u.match(/\/Profil-Zadavatele\/([^/?#]*)/i)?.[1];
+  // jen e-zakazky.cz – eveza.cz má ve stejné cestě název zadavatele („/profil-zadavatele/obec-rymice/1172“),
+  // ne GUID, a tohle pravidlo ji od 6. 11. celou vyřazovalo
+  const guid = /e-zakazky\.cz/i.test(u) ? u.match(/\/Profil-Zadavatele\/([^/?#]*)/i)?.[1] : undefined;
   if (guid !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guid)) return null;
   return u;
 }
@@ -299,7 +313,16 @@ writeFileSync(STATE, JSON.stringify(state));
 writeFileSync(INACTIVE, JSON.stringify(inactive));
 writeFileSync(
   OUT,
-  JSON.stringify({ updated: now.toISOString(), mode: FULL ? "full" : "incremental", profiles: profiles.length, ok: fresh, failed: nFailed(), tenders }),
+  JSON.stringify({
+    updated: now.toISOString(),
+    mode: FULL ? "full" : "incremental",
+    profiles: profiles.length,
+    ok: fresh,
+    // nikdy se nepodařilo stáhnout = nejspíš chybná adresa v registru (ne výpadek serveru)
+    never: profiles.filter((p) => !state[p]).length,
+    failed: nFailed(),
+    tenders,
+  }),
 );
 console.log(
   `Hotovo za ${Math.round((Date.now() - started) / 60_000)} min: ${ok} ok, ${nFailed()} chyb, ${skipped} odloženo na příště, ${tenders.length} otevřených zakázek`,

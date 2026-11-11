@@ -1348,3 +1348,21 @@ button.ghost.add-fact { margin: 6px 0 4px; padding-left: 0; }
 @media (max-width: 560px), (pointer: coarse) and (max-height: 520px) {
   .top { backdrop-filter: none; -webkit-backdrop-filter: none; background: color-mix(in srgb, var(--bg) 96%, transparent); }
 }
+
+/* ---------- 1.46: stav dat jako jeden řádek nahoře na Dnes ---------- */
+.data-today { margin: 0 0 14px; }
+button.data-line {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--muted); font-size: 13px; font-weight: 500;
+}
+button.data-line .live { flex: none; }
+.data-line-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-line-more { flex: none; color: var(--text); font-weight: 600; }
+.data-today.late button.data-line {
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--text);
+}
+.data-today.late .data-line-text { white-space: normal; }
+.data-line-foot { margin: 8px 0 0; text-align: right; font-size: 13px; }
+:root[data-theme^="space"] button.data-line { border-color: var(--hair); border-radius: 999px; min-height: 0; }
+:root[data-theme^="space"] .data-today.late button.data-line { border-radius: 14px; border-color: color-mix(in srgb, var(--bad) 60%, var(--hair)); }
+.data-today button.data-line + * { margin-top: 8px; }

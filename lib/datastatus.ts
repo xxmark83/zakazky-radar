@@ -58,7 +58,19 @@ export function datasets(): Dataset[] {
       where: "GitHub každou noc (asi 23:17)",
       next: nextDaily(22, 17),
       done: p.profiles ? p.ok / p.profiles : undefined,
-      pending: p.profiles > p.ok ? `${fmt(p.profiles - p.ok)} profilů teď neodpovídá, zkusí se znovu příští noc` : undefined,
+      // většina „chybějících“ profilů má v úředním registru chybnou adresu (překlep, jen úvodní stránka portálu) –
+      // ty se nestáhnou nikdy; dočasně nedostupné se zkouší znovu každou noc
+      pending:
+        p.profiles > p.ok
+          ? p.never !== null
+            ? [
+                p.never ? `${fmt(p.never)} profilů má v registru chybnou adresu a stáhnout nejdou` : "",
+                p.profiles - p.ok - p.never > 0 ? `${fmt(p.profiles - p.ok - p.never)} teď neodpovídá, zkusí se znovu příští noc` : "",
+              ]
+                .filter(Boolean)
+                .join("; ")
+            : `${fmt(p.profiles - p.ok)} profilů se nepodařilo stáhnout – většinou mají v registru chybnou adresu`
+          : undefined,
       late: hoursAgo(p.updated) > 30,
     });
   const v = vhodne();
