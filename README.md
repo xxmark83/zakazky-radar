@@ -66,6 +66,7 @@ npm run dev
 ## Verze
 Číslo verze je v `package.json`, zobrazuje se v patičce a v Nastavení. Při každém vydání ho zvýšit a doplnit sem.
 
+- **1.31.1** – útrata za AI počítá i vyšší cenu Haiku 5.5 u vstupu nad 100 tis. tokenů (velká dokumentace).
 - **1.31** – smlouvy sledovaných subjektů: jedno políčko na IČO nebo názvy (ARES), každé ráno nové uzavřené smlouvy
   z Registru smluv přes Hlídač státu (objednatel i dodavatel), u každého subjektu „vše“ nebo jen vybrané oblasti,
   e-mail, telefon, přehled v Hlídání a na Dnes, tlačítko „Zkontrolovat teď“.

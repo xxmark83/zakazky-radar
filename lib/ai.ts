@@ -46,6 +46,8 @@ export async function askJson<T>(opts: {
   const text = response.content.flatMap((b: any) => (b.type === "text" ? [b.text] : [])).join("");
   const u = response.usage ?? {};
   const inputTokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) * 0.1;
-  const cost = (inputTokens * m.input + (u.output_tokens ?? 0) * m.output) / 1e6;
+  // Haiku 5.5: nad 100 tis. tokenů vstupu (velká zadávací dokumentace) je cena 5× vyšší: 0,50 $ / 2,50 $
+  const long = opts.model === "haiku" && inputTokens > 100_000;
+  const cost = (inputTokens * (long ? 0.5 : m.input) + (u.output_tokens ?? 0) * (long ? 2.5 : m.output)) / 1e6;
   return { data: JSON.parse(text) as T, cost };
 }
