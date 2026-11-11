@@ -2,6 +2,7 @@ import { allowedPresets, accessFor } from "./access";
 import { hlidacGet } from "./hlidac-api";
 import { terms } from "./buyer";
 import { PRESETS } from "./presets";
+import { smlouvyBySubject, smlouvyInfo } from "./sources/smlouvy";
 import { redis } from "./store";
 import { userKey } from "./users";
 
@@ -134,15 +135,41 @@ export async function updateWatched(ico: string, change: { filter?: Watched["fil
   return next;
 }
 
-// ---------- smlouvy z Hlídače státu ----------
-async function fetchFor(w: Watched, days: number): Promise<SignedContract[]> {
-  const token = process.env.HLIDAC_TOKEN;
-  if (!token || !/^\d{8}$/.test(w.ico)) return []; // bez IČO se v registru hledat nedá
+// ---------- smlouvy: Hlídač státu, jinak vlastní data ----------
+// Hlídač státu má celý Registr smluv, ale jeho API je placené a omezené (zkušební přístup 50 dotazů). Když
+// neodpoví nebo není token, vezmou se smlouvy z vlastních dat (data/smlouvy-it.json, každé ráno z otevřených dat
+// Registru smluv) – ta ale obsahují jen IT smlouvy nad 50 tis. Kč.
+export type ContractSource = "hlidac" | "local";
+
+function fromLocal(w: Watched, days: number): SignedContract[] {
+  return smlouvyBySubject(w.ico, days).map((c) => {
+    const buyer = c.buyerIco === w.ico;
+    return {
+      // id verze smlouvy je stejné jako id v Hlídači státu – po návratu Hlídače se smlouvy neukážou dvakrát
+      id: String(c.version ?? c.id),
+      ico: w.ico,
+      subject: w.name,
+      role: buyer ? "objednatel" : "dodavatel",
+      counterpart: buyer ? c.winners.join(", ") : c.buyer,
+      title: c.title.slice(0, 300),
+      value: c.value ? Math.round(c.value) : null,
+      signed: c.published,
+      url: c.url,
+      areas: areasOf(c.title),
+      found: new Date().toISOString(),
+    };
+  });
+}
+
+async function fromHlidac(w: Watched, days: number): Promise<SignedContract[]> {
   const since = sinceDay(days);
   const out: SignedContract[] = [];
   for (let strana = 1; strana <= PAGES; strana++) {
     const q = new URLSearchParams({ dotaz: `ico:${w.ico} AND podepsano:[${since} TO *]`, strana: String(strana), razeni: "1" });
-    const data = await hlidacGet(`https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?${q}`, 3 * 3600).catch(() => null);
+    // první stránka musí projít (jinak se přejde na vlastní data), další už jen když jsou
+    const data = await (strana === 1
+      ? hlidacGet(`https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?${q}`, 3 * 3600)
+      : hlidacGet(`https://api.hlidacstatu.cz/api/v2/smlouvy/hledat?${q}`, 3 * 3600).catch(() => null));
     if (!data) break;
     const rows: any[] = data.results ?? [];
     for (const r of rows) {
@@ -171,6 +198,11 @@ async function fetchFor(w: Watched, days: number): Promise<SignedContract[]> {
   return out;
 }
 
+export async function getSource(): Promise<{ source: ContractSource; updated: string | null }> {
+  const s = redis ? await redis.get<ContractSource>(await userKey("contractSource")) : null;
+  return { source: s === "hlidac" ? "hlidac" : "local", updated: smlouvyInfo()?.updated ?? null };
+}
+
 // nalezené smlouvy si pamatujeme (hash id → smlouva), ať se ukazují v appce a v e-mailu jen jednou
 async function feedKey() {
   return userKey("contractFeed");
@@ -190,14 +222,20 @@ export async function checkContracts(): Promise<SignedContract[]> {
   const key = await feedKey();
   const known = new Set(Object.keys((await redis.hgetall<Record<string, unknown>>(key)) ?? {}));
   const fresh: SignedContract[] = [];
+  // Hlídač státu se zkusí u prvního subjektu; když neodpoví (limit, výpadek, chybí token), jede celý běh z vlastních dat
+  let hlidac = Boolean(process.env.HLIDAC_TOKEN);
   for (const w of watched) {
-    for (const c of await fetchFor(w, days).catch(() => [])) {
+    if (!/^\d{8}$/.test(w.ico)) continue; // bez IČO se smlouvy dohledat nedají
+    let list: SignedContract[] | null = null;
+    if (hlidac) list = await fromHlidac(w, days).catch(() => ((hlidac = false), null));
+    for (const c of list ?? fromLocal(w, days)) {
       const id = `${w.ico}:${c.id}`;
       if (known.has(id) || !passes(w, c)) continue;
       known.add(id);
       fresh.push(c);
     }
   }
+  if (watched.length) await redis.set(await userKey("contractSource"), hlidac ? "hlidac" : "local");
   if (fresh.length) {
     await redis.hset(key, Object.fromEntries(fresh.map((c) => [`${c.ico}:${c.id}`, c])));
     // jen posledních FEED_KEEP

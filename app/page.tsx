@@ -4510,6 +4510,8 @@ type ContractsState = {
   feed: SignedContract[];
   days?: number; // zvolené období (dny podle data podpisu)
   periods?: number[];
+  source?: "hlidac" | "local"; // odkud smlouvy jsou
+  updated?: string | null; // kdy se vlastní data naposled doplnila
 };
 
 function ContractRowSigned({ c }: { c: SignedContract }) {
@@ -4602,7 +4604,13 @@ function ContractWatch() {
         Každé ráno zkontroluju Registr smluv: nové uzavřené smlouvy zadaných subjektů (jako objednatel i dodavatel) ti
         přijdou e-mailem a na telefon. U každého vybereš, jestli chceš všechny smlouvy, nebo jen tvoje oblasti.
       </p>
-      {!st.hlidac && <div className="warn">Potřebuje token Hlídače státu (HLIDAC_TOKEN ve Vercelu).</div>}
+      {st.watched.length > 0 && st.source !== "hlidac" && (
+        <p className="note source-note">
+          <b>Jen IT smlouvy.</b> Hlídač státu teď neodpovídá (vyčerpaný nebo chybějící přístup k API), takže smlouvy beru
+          z vlastních dat Registru smluv: IT smlouvy nad 50 tis. Kč{st.updated ? `, doplněno ${when(st.updated)}` : ""}. S platným
+          přístupem k Hlídači státu se ukážou všechny smlouvy subjektu.
+        </p>
+      )}
       <div className="card contract-watch">
         <label htmlFor="cw">1. Najdi subjekt – IČO nebo název (víc oddělíš čárkou)</label>
         <div className="add-item">

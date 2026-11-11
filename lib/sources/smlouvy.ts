@@ -62,3 +62,15 @@ export function smlouvyBuyerIco(name: string): string | null {
   const want = norm(name);
   return load()?.contracts.find((c) => c.buyerIco && norm(c.buyer) === want)?.buyerIco ?? null;
 }
+
+/** Smlouvy jednoho subjektu podle IČO – jako objednatel i jako dodavatel (sledování smluv bez Hlídače státu). */
+export function smlouvyBySubject(ico: string, days: number) {
+  const d = load();
+  if (!d) return [];
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  // datum podpisu bývá v registru i s překlepem (rok 2323) – budoucnost nebereme
+  const until = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
+  return d.contracts.filter(
+    (c) => (c.buyerIco === ico || c.winnerIco.includes(ico)) && c.published !== null && c.published >= since && c.published <= until,
+  );
+}

@@ -1417,3 +1417,4 @@ button.maybe-toggle > span:last-child { flex: none; color: var(--text); font-wei
 /* smlouvy sledovaných subjektů: volba období v nadpisu */
 select.period { display: inline-block; width: auto; height: auto; padding: 3px 26px 3px 10px; margin: 0 2px; font: inherit; font-size: 14px; font-weight: 600; vertical-align: baseline; }
 .assess-summary { margin: 10px 0 0; }
+.source-note { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--mid) 45%, var(--line)); border-radius: 10px; }

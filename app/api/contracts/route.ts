@@ -1,5 +1,5 @@
 import { accessFor, allowedPresets } from "@/lib/access";
-import { addSubjects, checkContracts, lookupSubjects, getDays, getFeed, getWatched, passes, PERIODS, setDays, sinceDay, updateWatched, type Watched } from "@/lib/contracts";
+import { addSubjects, checkContracts, lookupSubjects, getDays, getFeed, getSource, getWatched, passes, PERIODS, setDays, sinceDay, updateWatched, type Watched } from "@/lib/contracts";
 import { redis } from "@/lib/store";
 
 export const maxDuration = 60;
@@ -15,6 +15,7 @@ export async function GET(req: Request) {
   return Response.json({
     days,
     periods: PERIODS,
+    ...(await getSource()), // source: odkud smlouvy jsou (hlidac = celý registr, local = jen IT z vlastních dat)
     db: Boolean(redis),
     hlidac: Boolean(process.env.HLIDAC_TOKEN),
     areas: allowedPresets(await accessFor()).map((p) => p.name),
