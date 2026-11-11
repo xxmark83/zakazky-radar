@@ -7,7 +7,7 @@ const bare = (s) =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
-const canon = (u) => u.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+const canon = (u) => u.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/{2,}/g, "/").replace(/\/+$/, "");
 
 /**
  * Registr má stovku profilů dvakrát (http i https, s www i bez) – stahovaly se dvakrát a každá jejich zakázka

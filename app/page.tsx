@@ -649,6 +649,7 @@ export default function Home() {
           </aside>
         )}
         <div className="content">
+          {tab === "today" && <DataStrip open={() => setSettings(true)} />}
           {tab === "today" && (
             <TodayTab
               key={synced}
@@ -664,7 +665,6 @@ export default function Home() {
               goBoard={() => setTab("board")}
             />
           )}
-          {tab === "today" && <DataStrip open={() => setSettings(true)} />}
           {tab === "search" && (
             <SearchTab
               since={since}
@@ -5025,29 +5025,33 @@ function DataStrip({ open }: { open: () => void }) {
   }, [busy]);
   const [show, setShow] = useState(false);
   if (!d) return null;
-  const late = d.datasets.some((x) => x.late);
-  const expanded = show || busy || late;
+  // Nahoře jen jeden řádek: v pořádku / právě se stahuje / pozor, data jsou stará. Celý přehled až po ťuknutí.
+  const stale = d.datasets.filter((x) => x.late);
+  const late = stale.length > 0;
   const newest = d.datasets.map((x) => x.updated).filter(Boolean).sort().pop() ?? null;
+  const profily = d.datasets.find((x) => x.id === "profily");
+  const text = late
+    ? `Pozor, stará data: ${stale.map((x) => `${x.name} (${when(x.updated)})`).join(", ")}`
+    : busy
+      ? `Právě se stahují nová data${d.running.length ? ` – ${d.running.map((r) => r.name).join(", ")}` : ""}`
+      : `Data jsou čerstvá${profily?.updated ? ` – profily zadavatelů ${when(profily.updated)}` : newest ? ` – poslední doplnění ${when(newest)}` : ""}`;
   return (
-    <section className="data-today">
-      <div className="mine-head">
-        <h2 className="data-today-h">
-          <span className={`live ${busy ? "" : late ? "bad" : "idle"}`} aria-hidden="true" />
-          Stav dat
-          {!expanded && <small className="hint data-ok"> v pořádku, poslední doplnění {when(newest)}</small>}
-        </h2>
-        <span className="row-btns" style={{ margin: 0 }}>
-          {!busy && !late && (
-            <button className="link" onClick={() => setShow((v) => !v)}>
-              {show ? "Sbalit" : "Podrobnosti"}
+    <section className={`data-today ${late ? "late" : ""}`}>
+      <button className="data-line" onClick={() => setShow((v) => !v)} aria-expanded={show}>
+        <span className={`live ${busy ? "" : late ? "bad" : "idle"}`} aria-hidden="true" />
+        <span className="data-line-text">{text}</span>
+        <span className="data-line-more">{show ? "Sbalit" : "Stav dat"}</span>
+      </button>
+      {show && (
+        <>
+          <DataDetails d={d} grid />
+          <p className="data-line-foot">
+            <button className="link" onClick={open}>
+              Stáhnout všechno znovu
             </button>
-          )}
-          <button className="link" onClick={open}>
-            Stáhnout znovu
-          </button>
-        </span>
-      </div>
-      {expanded && <DataDetails d={d} grid />}
+          </p>
+        </>
+      )}
     </section>
   );
 }
