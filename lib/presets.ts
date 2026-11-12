@@ -1,3 +1,4 @@
+import { matcher } from "./match";
 import type { Profile } from "./types";
 
 export const PRESETS: Profile[] = [
@@ -32,6 +33,14 @@ export const PRESETS: Profile[] = [
       "vývoj aplikace, aplikace na míru, software na míru, webová aplikace, mobilní aplikace, webové stránky, rezervační systém, objednávkový systém, evidenční systém, databáze, formulář, portál, intranet, dashboard, chatbot, digitalizace, CRM, helpdesk, e-learning, web, webu, internetové stránky, redakční systém, CMS, elektronizace",
     cpv: "72200000 72212000 72262000 72413000 72230000 48000000",
   },
+  {
+    name: "MM security",
+    profile:
+      "Nabízím penetrační testování – praktické ověření bezpečnosti simulovaným kybernetickým útokem: webové aplikace (informační weby, e-shopy, podnikové systémy ERP, CRM, CMS; autentizace a autorizace, ochrana dat, chyby v obchodní logice), mobilní aplikace pro iOS a Android (lokální úložiště, komunikace se serverem, správa relací), desktopové aplikace pro Windows, macOS a Linux, IT infrastrukturu externí i interní, on-premise i cloudovou (veřejně dostupné servery, síťové prvky, VPN, eskalace oprávnění, laterální pohyb v síti), API a webové služby (REST, SOAP) a bezpečnostní revizi zdrojového kódu lokálně provozovanými AI agenty (bez předání kódu do veřejného cloudu). Výstupem je závěrečná zpráva pro management i technické týmy, prioritizovaná doporučení, podpora při nápravě a opakovaný test (re-test). Hodí se mi zakázky na penetrační testy, testy a skenování zranitelností, bezpečnostní testování aplikací a infrastruktury, red teaming a bezpečnostní audit kódu – samostatně i jako část většího bezpečnostního projektu. Nezajímají mě dodávky hardwaru a softwaru, provoz SOC a SIEM, fyzická ostraha, kamerové systémy ani funkční a zátěžové testování bez bezpečnostního zaměření.",
+    keywords:
+      "penetrační testy, penetrační test, penetrační testování, pentest, test zranitelností, skenování zranitelností, zranitelnost, bezpečnostní testování, testování bezpečnosti aplikací, revize zdrojového kódu, audit zdrojového kódu, code review, red teaming, etický hacking, OWASP",
+    cpv: "72800000 72810000 72820000",
+  },
 ];
 
 // Klíčová slova před rozšířením z 11. 11. 2026 (web, servicedesk, kyber, dvoufaktorové, elearning…). Uložená hledání
@@ -50,7 +59,23 @@ export const PRESET_SHORT: Record<string, string> = {
   "Vzdělávací portál": "Vzdělávání",
   "Kybernetická bezpečnost": "Kyberbezpečnost",
   "Zakázky na míru (živnost)": "Na míru",
+  "MM security": "MM security",
 };
+
+// Štítek na zakázce: do kterých oblastí patří. Rozhodují klíčová slova oblasti v názvu; když v názvu žádné není,
+// zkusí se popis a nakonec oblast, kterou u zakázky uvedla AI. Prázdný výsledek = zakázku našlo jen obecné IT heslo nebo CPV.
+const AREA_HIT = PRESETS.map((p) => ({ name: p.name, hit: matcher(p.keywords.split(","), false) }));
+export function areasOf(t: { title: string; description?: string; product?: string }, allowed?: string[] | null): string[] {
+  const list = AREA_HIT.filter((a) => !allowed || allowed.includes(a.name));
+  const by = (text: string) => list.filter((a) => a.hit(text)).map((a) => a.name);
+  const title = by(t.title);
+  if (title.length) return title;
+  const desc = t.description ? by(t.description) : [];
+  if (desc.length) return desc;
+  return list.filter((a) => t.product?.includes(a.name)).map((a) => a.name);
+}
+/** AI u víc oblastí píše do „product“ název oblasti – ten už ukazuje štítek oblasti, podruhé ho nezobrazujeme. */
+export const productIsArea = (product: string) => PRESETS.some((p) => product.includes(p.name) || product === PRESET_SHORT[p.name]);
 export const selectedPresets = (name: string) => name.split(JOIN).filter((n) => PRESETS.some((p) => p.name === n));
 export function combine(names: string[], old = false) {
   const list = PRESETS.filter((p) => names.includes(p.name)).map((p) => (old ? { ...p, keywords: OLD_KEYWORDS[p.name] ?? p.keywords } : p));

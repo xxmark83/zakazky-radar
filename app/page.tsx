@@ -9,7 +9,7 @@ import { coverSheet, eligibility, referenceList } from "@/lib/templates";
 import type { Company, Reference } from "@/lib/company";
 import qrcode from "qrcode-generator";
 import { MB_LOGO } from "@/lib/logo";
-import { combine, JOIN, PRESET_SHORT, PRESETS, selectedPresets, upgradeProfile } from "@/lib/presets";
+import { areasOf, combine, JOIN, PRESET_SHORT, PRESETS, productIsArea, selectedPresets, upgradeProfile } from "@/lib/presets";
 import { diff } from "@/lib/diff";
 import { profileKey } from "@/lib/profile-key";
 import { REGIONS } from "@/lib/regions";
@@ -61,6 +61,7 @@ const ICONS = {
   chat: "M4 5h16v11H9l-5 4z",
   mail: "M3 6h18v12H3zM3 7l9 6 9-6",
   calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+  bug: "M9 7a3 3 0 0 1 6 0M8 10h8v5a4 4 0 0 1-8 0zM4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2.5M19 19l-3-2.5",
 };
 type IconName = keyof typeof ICONS;
 function Icon({ n, size = 16 }: { n: IconName; size?: number }) {
@@ -228,8 +229,8 @@ function download(name: string, text: string, type: string) {
 function exportCsv(rows: ScoredTender[]) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [
-    ["Skóre", "Název", "Zadavatel", "Zdroj", "Lhůta", "Hodnota", "Produkt", "Proč", "Odkaz"],
-    ...rows.map((t) => [t.score < 0 ? "" : t.score, t.title, t.buyer, t.source, t.deadline, t.value ? Math.round(t.value) : "", t.product, t.reason, t.url]),
+    ["Skóre", "Název", "Zadavatel", "Zdroj", "Lhůta", "Hodnota", "Produkt", "Proč", "Odkaz", "Oblast"],
+    ...rows.map((t) => [t.score < 0 ? "" : t.score, t.title, t.buyer, t.source, t.deadline, t.value ? Math.round(t.value) : "", t.product, t.reason, t.url, areasOf(t).join(", ")]),
   ].map((r) => r.map(esc).join(";"));
   download(`zakazky-${today()}.csv`, "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
 }
@@ -611,6 +612,7 @@ export default function Home() {
       </header>
     <KeptCtx.Provider value={kept}>
     <KeywordsCtx.Provider value={form.keywords}>
+    <AreasCtx.Provider value={access.presets}>
     <main className={`${tab === "search" && hasResults ? "compact" : ""} ${split ? "split" : ""}`}>
       {offline && <div className="warn offline">Jsi offline – vidíš poslední uložená data. Hledání a AI počkají na připojení.</div>}
       <PullToRefresh disabled={Boolean(detail || settings || competitor)} />
@@ -703,6 +705,7 @@ export default function Home() {
         Zakázky radar <button className="link" onClick={() => setSettings(true)}>v{VERSION}</button>
       </footer>
     </main>
+    </AreasCtx.Provider>
     </KeywordsCtx.Provider>
     </KeptCtx.Provider>
       {settings && (
@@ -990,6 +993,7 @@ const PRESET_ICON: Record<string, IconName> = {
   "Vzdělávací portál": "cap",
   "Kybernetická bezpečnost": "shield",
   "Zakázky na míru (živnost)": "code",
+  "MM security": "bug",
 };
 
 const PRESET_HINT: Record<string, string> = {
@@ -997,6 +1001,7 @@ const PRESET_HINT: Record<string, string> = {
   "Vzdělávací portál": "E-learning, LMS, povinná školení zaměstnanců",
   "Kybernetická bezpečnost": "GAP analýza NIS2, SIEM a SOC, endpoint a antivirus",
   "Zakázky na míru (živnost)": "Aplikace, evidence, portály a weby do 2 mil. Kč",
+  "MM security": "Penetrační testy aplikací, infrastruktury a API, revize kódu",
 };
 
 type Form = (typeof PRESETS)[number] & { days: number; minScore: number };
@@ -1281,11 +1286,12 @@ function SearchTab(props: {
           (r) => statuses[r.id] === filter,
         );
   const q = norm(query.trim());
+  const areaScope = useContext(AreasCtx);
   const shown = pool
     .filter((r) => source === "all" || r.source === source)
     .filter((r) => region === "all" || r.region === region || (region === "neznámý" && !r.region))
     .filter((r) => VALUES[value].test(r.value))
-    .filter((r) => !q || norm(`${r.title} ${r.buyer} ${r.product} ${r.reason}`).includes(q))
+    .filter((r) => !q || norm(`${r.title} ${r.buyer} ${r.product} ${r.reason} ${areasOf(r, areaScope).join(" ")}`).includes(q))
     .sort(CMP[sort]);
   const count = (s: Status) => Object.values(statuses).filter((x) => x === s).length;
   // nové od poslední návštěvy nahoru (jen ve „Vše“), uvnitř skupin platí zvolené řazení
@@ -1767,6 +1773,34 @@ const isSmall = (t: ScoredTender) =>
   /malého rozsahu/i.test(t.description) || Boolean(t.value && (t.currency ?? "CZK") === "CZK" && t.value <= 2_000_000);
 // klíčová slova aktuálního hledání – pro vysvětlení skóre na kartě
 const KeywordsCtx = createContext("");
+// oblasti, které účet smí hledat (null = všechny) – štítky oblastí na zakázkách ukazují jen ty
+const AreasCtx = createContext<string[] | null>(null);
+
+// štítky „do které oblasti zakázka patří“ (podle klíčových slov oblastí); bez shody „obecné IT“
+function AreaTags({ t, max = 2 }: { t: ScoredTender; max?: number }) {
+  const areas = areasOf(t, useContext(AreasCtx));
+  if (!areas.length)
+    return (
+      <span className="tag area none" title="Zakázku našlo obecné IT heslo nebo CPV kód, ne klíčové slovo některé oblasti">
+        obecné IT
+      </span>
+    );
+  return (
+    <>
+      {areas.slice(0, max).map((a) => (
+        <span key={a} className="tag area" title={`Oblast: ${a}`}>
+          <Icon n={PRESET_ICON[a] ?? "search"} size={11} />
+          {PRESET_SHORT[a] ?? a}
+        </span>
+      ))}
+      {areas.length > max && (
+        <span className="tag area" title={areas.slice(max).join(", ")}>
+          +{areas.length - max}
+        </span>
+      )}
+    </>
+  );
+}
 // rozbory, posouzení a návrhy – karta z nich ukáže „další krok“
 const KeptCtx = createContext<Kept>(EMPTY_KEPT);
 
@@ -1927,11 +1961,12 @@ function TenderCard(props: {
           <div className="tender-top">
             <div className="tags">
               {fresh && <span className="tag fresh">nová</span>}
+              <AreaTags t={t} />
               {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
               {isSmall(t) && <span className="tag small">malý rozsah</span>}
               {t.country === "SK" && <span className="tag sk">SK</span>}
               {["sent", "won", "lost"].includes(status) && <span className={`tag st-${status}`}>{STATUS_LABEL[status]}</span>}
-              {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
+              {t.product && t.product !== "–" && !productIsArea(t.product) && <span className="tag accent">{t.product}</span>}
             </div>
             {t.source === "DNS" ? (
               <span className="deadline open">
@@ -2244,8 +2279,9 @@ function Detail(props: {
           </button>
           <div className="tags">
             <span className="tag">{t.source}</span>
+            <AreaTags t={t} max={5} />
             {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
-            {t.product && t.product !== "–" && <span className="tag accent">{t.product}</span>}
+            {t.product && t.product !== "–" && !productIsArea(t.product) && <span className="tag accent">{t.product}</span>}
           </div>
           <button className="icon" onClick={close} aria-label="Zavřít">
             ×
