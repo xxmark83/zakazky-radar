@@ -337,6 +337,9 @@ button.mine-row:active { transform: none; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .tag { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--soft); color: var(--muted); }
 .tag.accent { background: var(--accent-soft); color: var(--accent); }
+.tag.area { display: inline-flex; align-items: center; gap: 4px; background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.tag.area .ic { flex: none; color: var(--accent); }
+.tag.area.none { color: var(--muted); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 40%, transparent); }
 .tag.fresh { background: var(--good); color: var(--on-good); }
 .tag.soon { background: var(--soon-bg); color: var(--soon-text); }
 .tag.small { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
@@ -1263,11 +1266,12 @@ button.ghost.dense-toggle.on { color: var(--text); }
   .list { gap: 8px; }
   .tender { padding: 12px; gap: 10px; }
   .tender .tender-foot { display: none; }
-  .tender-top { flex-wrap: nowrap; margin-bottom: 2px; }
-  .tender-top .tags { flex-wrap: nowrap; overflow: hidden; min-width: 0; }
-  .tender-top .tags .tag { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
-  .tender-top .tags .tag.fresh { flex: none; }
-  .tender-top .deadline { flex: none; white-space: nowrap; }
+  /* štítky oblastí se nezkracují: když se s lhůtou nevejdou na řádek, lhůta spadne pod ně */
+  .tender-top { flex-wrap: wrap; row-gap: 4px; margin-bottom: 2px; }
+  .tender-top .tags { flex-wrap: wrap; overflow: hidden; min-width: 0; margin-bottom: 0; }
+  .tender-top .tags .tag { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; max-width: 100%; }
+  .tender-top .tags .tag.fresh, .tender-top .tags .tag.area { flex: none; }
+  .tender-top .deadline { flex: none; white-space: nowrap; margin-left: auto; }
   .tender-top .deadline small { display: none; }
   .tender h3 { margin: 2px 0 3px; }
   .tender h3 .title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: left; }

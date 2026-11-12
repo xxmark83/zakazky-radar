@@ -31,8 +31,12 @@ const STOP = new Set([
   "pro", "správa", "systém", "zaměstnanců", "občany", "klientů", "kontaktů",
   "analýza", "testy", "bezpečnost", "soc", "iso", "edr", "xdr", "gap",
   "tvorba", "stránky", "míru", "online", "žádosti", "elektronické",
+  "test", "testování", "bezpečnostní", "bezpečnosti", "skenování", "revize", "audit", "zdrojového", "kódu",
+  "code", "review", "red", "teaming", "etický", "aplikací",
 ]);
 const ALWAYS = ["informační systém", "aplikac", "software"];
+// všech pět oblastí najednou dá kolem 45 slov; dřív se četlo jen prvních 24 a slova posledních oblastí se na NEN vůbec neptala
+const MAX_TERMS = 50;
 export const terms = (keywords: string[]) => {
   const words = keywords
     .flatMap((k) => k.split(/\s+/))
@@ -40,7 +44,11 @@ export const terms = (keywords: string[]) => {
     .map((w) => (w.length >= 8 ? w.slice(0, -2) : w).toLowerCase());
   // víc oblastí najednou = víc slov; NEN se ptáme postupně, 24 slov se vejde do limitu hledání.
   // Obecná IT slova jdou první, aby je limit nikdy neodřízl. (Naše stažená data limit nemají – lib/match.ts.)
-  return [...new Set([...ALWAYS, ...words])].slice(0, 24);
+  // NEN hledá podřetězec, takže „zranitelnos“ je zbytečné vedle „zranitelno“ a „webová“ vedle „web“:
+  // každé slovo nahradí nejkratší slovo seznamu, které v něm je (na místě toho prvního), a ušetří se dotaz
+  const all = [...new Set([...ALWAYS, ...words])];
+  const shortest = (w: string) => all.filter((v) => w.includes(v)).sort((a, b) => a.length - b.length)[0];
+  return [...new Set(all.map(shortest))].slice(0, MAX_TERMS);
 };
 
 // NEN umí filtr na stav přímo v adrese (stavZP=neukoncena). Bez něj je otevřená jen zhruba každá čtvrtá zakázka
@@ -89,12 +97,13 @@ const fresh = (code: string, now: Date) => {
   return y >= cur || (y === cur - 1 && now.getMonth() < 4);
 };
 
-// budgetMs: jeden dotaz na NEN trvá 1–3 s včetně rozestupu, slovo stojí obvykle jeden až dva dotazy (24 slov kolem minuty).
+// budgetMs: jeden dotaz na NEN trvá 1–3 s včetně rozestupu, slovo stojí obvykle jeden až dva dotazy
+// (jedna oblast kolem půl minuty, všech pět oblastí = 50 slov kolem 2,5 minuty; hledání má na všechno 5 minut i s AI).
 // Po vyčerpání času vrátíme, co máme – stejné zakázky jsou i v denním sběru profilů (nen.nipez.cz/profil/…).
 export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }): Promise<Tender[]> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  const stopAt = Date.now() + (opts.budgetMs ?? 90_000);
+  const stopAt = Date.now() + (opts.budgetMs ?? 150_000);
   const seen = new Map<string, Tender>();
 
   // NEN při souběžných dotazech vrací 503 – ptáme se postupně a chybu jednoho slova přeskočíme

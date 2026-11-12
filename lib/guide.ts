@@ -22,8 +22,8 @@ export const GUIDE: GuideChapter[] = [
     intro: "Výběr oblastí, hledání a AI skóre.",
     steps: [
       s("hledani-1", "Vyber, co hledáš", "V záložce Zakázky vlevo zaškrtni jednu nebo víc oblastí. Pod „Upravit, co hledám“ doladíš popis nabídky, klíčová slova a CPV kódy."),
-      s("hledani-2", "Spusť hledání", "Klikni na Najít zakázky. Radar projde TED, NEN, profily zadavatelů a další zdroje, spojí duplicity a AI ohodnotí, co sedí. Trvá to asi minutu."),
-      s("hledani-3", "Nejlepší nahoře", "Číslo v kroužku je AI skóre 0–100 – jak dobře zakázka sedí na tvou nabídku, pod názvem je důvod. Nad seznamem filtruješ podle stavu, zdroje, kraje a lhůty."),
+      s("hledani-2", "Spusť hledání", "Klikni na Najít zakázky. Radar projde TED, NEN, profily zadavatelů a další zdroje, spojí duplicity a AI ohodnotí, co sedí. Jedna oblast trvá asi minutu, všechny najednou i tři."),
+      s("hledani-3", "Nejlepší nahoře", "Číslo v kroužku je AI skóre 0–100 – jak dobře zakázka sedí na tvou nabídku, pod názvem je důvod. Štítek nad názvem říká, do které oblasti zakázka patří (i do víc najednou); „obecné IT“ znamená, že ji našlo jen obecné heslo nebo CPV. Nad seznamem filtruješ podle stavu, zdroje, kraje a lhůty."),
     ],
   },
   {
