@@ -339,6 +339,8 @@ button.mine-row:active { transform: none; }
 .tag.accent { background: var(--accent-soft); color: var(--accent); }
 .tag.area { display: inline-flex; align-items: center; gap: 4px; background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .tag.area .ic { flex: none; color: var(--accent); }
+.related-note { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--soon-bg); color: var(--soon-text); font-size: 13px; line-height: 1.4; }
+.related-note .ic { flex: none; margin-top: 2px; }
 .tag.area.none { color: var(--muted); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 40%, transparent); }
 .tag.fresh { background: var(--good); color: var(--on-good); }
 .tag.soon { background: var(--soon-bg); color: var(--soon-text); }

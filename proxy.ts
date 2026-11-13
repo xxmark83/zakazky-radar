@@ -26,6 +26,13 @@ const pass = (req: NextRequest, user?: string, setup = false) => {
 
 export async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
+  // Na produkci bez nastavených účtů appku neotvíráme (chybějící nebo smazaná proměnná by ji jinak zpřístupnila
+  // komukoli jako vlastníkovi). Lokální vývoj a náhledy zůstávají otevřené.
+  if (!authEnabled() && process.env.VERCEL_ENV === "production" && !path.startsWith("/_next/"))
+    return new Response("Chyba konfigurace: nejsou nastavené účty (OWNER_* / USER_* / APP_PASSWORD). Appka je zamčená, dokud je ve Vercelu nedoplníš.", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   // kalendář lhůt si stahuje kalendářová aplikace bez přihlášení, ověřuje se tajným klíčem v adrese
   if (!authEnabled() || PUBLIC.includes(path) || path.startsWith("/_next/") || path.startsWith("/api/calendar/"))
     return pass(req);

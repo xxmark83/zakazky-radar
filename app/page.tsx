@@ -1962,6 +1962,11 @@ function TenderCard(props: {
             <div className="tags">
               {fresh && <span className="tag fresh">nová</span>}
               <AreaTags t={t} />
+              {t.related?.length ? (
+                <span className="tag soon" title="Zadavatel má pod stejným názvem víc řízení (jiné evidenční číslo) – nejspíš znovu vyhlášená zakázka">
+                  víc řízení
+                </span>
+              ) : null}
               {t.kind === "upcoming" && <span className="tag soon">připravovaná</span>}
               {isSmall(t) && <span className="tag small">malý rozsah</span>}
               {t.country === "SK" && <span className="tag sk">SK</span>}
@@ -2311,6 +2316,16 @@ function Detail(props: {
             </button>
           )}
         </div>
+        {t.related?.length ? (
+          <p className="related-note">
+            <Icon n="file" size={14} />
+            <span>
+              Stejný název má u zadavatele i jiné řízení:{" "}
+              {t.related.map((r) => `${r.code}${r.published ? ` (zveřejněno ${new Date(r.published).toLocaleDateString("cs-CZ")})` : ""}`).join(", ")}. Nejspíš jde o
+              znovu vyhlášenou zakázku – ověř na profilu, které řízení platí.
+            </span>
+          </p>
+        ) : null}
         <nav className="jump" aria-label="Části detailu">
           {JUMPS.map(([id, label]) => (
             <button key={id} onClick={() => goTo(id)}>

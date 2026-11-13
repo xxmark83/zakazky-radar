@@ -2,6 +2,7 @@ import { pickModel } from "@/lib/ai";
 import { buyerAi, buyerHistory } from "@/lib/buyer";
 import { addSpend, setKept } from "@/lib/store";
 import type { Contract, Tender } from "@/lib/types";
+import { aiBudgetLeft, BUDGET_ERROR } from "@/lib/budget";
 
 export const maxDuration = 60;
 
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
   try {
     if (body.kind === "ai") {
       if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "Chybí ANTHROPIC_API_KEY." }, { status: 400 });
+      if (!(await aiBudgetLeft())) return Response.json({ error: BUDGET_ERROR }, { status: 402 });
       const r = await buyerAi(body.profile ?? "", body.tender, body.items ?? [], pickModel(body.model));
       await Promise.all([addSpend(r.cost), setKept("history", body.tender.id, r.data)]).catch(() => {});
       return Response.json({ data: r.data, cost: r.cost });

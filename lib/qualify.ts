@@ -63,26 +63,35 @@ function insurance(q: QualItem, c: Company | null): Result | null {
 }
 
 function references(q: QualItem, refs: Reference[], now: Date): Result | null {
-  if (!refs.length) return { status: "nesplněno", calc: "V knihovně nemáš žádné reference – přidej je v Nastavení → Firma, jinak je nelze posoudit." };
+  // prázdná knihovna není „nesplněno“: nevíme, jestli firma reference nemá, nebo je jen ještě nevyplnila
+  if (!refs.length) return { status: "nejasné", calc: "V knihovně nemáš žádné reference – doplň je v Nastavení → Firma, bez nich požadavek nejde posoudit." };
   const need = Math.max(1, q.count || 1);
   const picked = [...new Set(q.refs ?? [])].map((n) => refs[n - 1]).filter(Boolean);
   if (!picked.length) return { calc: `Obsahem neodpovídá žádná z tvých ${refs.length} referencí (potřeba ${need}).` };
   const minYear = q.years ? now.getFullYear() - q.years : 0;
   const ok: Reference[] = [];
   const bad: string[] = [];
+  const missing: string[] = []; // reference, u které chybí údaj – po doplnění může vyhovět
   for (const r of picked) {
     const year = Number(String(r.year).match(/\d{4}/)?.[0]) || 0;
-    if (q.amount && !r.value) bad.push(`${r.title} – nemá vyplněnou cenu`);
-    else if (q.amount && r.value! < q.amount) bad.push(`${r.title} – ${kc(r.value!)} je pod požadovanými ${kc(q.amount)}`);
-    else if (minYear && !year) bad.push(`${r.title} – nemá vyplněný rok`);
-    else if (minYear && year < minYear) bad.push(`${r.title} – rok ${year} je starší než ${q.years} ${q.years === 1 ? "rok" : q.years! < 5 ? "roky" : "let"}`);
+    if (q.amount && r.value && r.value < q.amount) bad.push(`${r.title} – ${kc(r.value)} je pod požadovanými ${kc(q.amount)}`);
+    else if (minYear && year && year < minYear) bad.push(`${r.title} – rok ${year} je starší než ${q.years} ${q.years === 1 ? "rok" : q.years! < 5 ? "roky" : "let"}`);
+    else if (q.amount && !r.value) missing.push(`${r.title} – nemá vyplněnou cenu`);
+    else if (minYear && !year) missing.push(`${r.title} – nemá vyplněný rok`);
     else ok.push(r);
   }
   const names = ok.map((r) => `${r.title} (${r.client}, ${r.year}${r.value ? `, ${kc(r.value)}` : ""})`);
   const limits = [q.amount ? `min. ${kc(q.amount)}` : "", q.years ? `za poslední ${q.years} ${q.years === 1 ? "rok" : q.years < 5 ? "roky" : "let"}` : ""].filter(Boolean).join(", ");
   const head = `Potřeba ${need}${limits ? ` (${limits})` : ""}; vyhovuje ${ok.length}`;
-  const tail = bad.length ? ` Nevyhovují: ${bad.join("; ")}.` : "";
+  const tail = (bad.length ? ` Nevyhovují: ${bad.join("; ")}.` : "") + (missing.length ? ` Chybí údaj: ${missing.join("; ")}.` : "");
   if (ok.length >= need) return { status: "splněno", calc: `${head}: ${names.join("; ")}.${tail}`, names: ok.map((r) => r.title) };
+  // s doplněnými údaji by počet mohl stačit – verdikt necháváme otevřený, partnera zatím nedoporučujeme
+  if (ok.length + missing.length >= need)
+    return {
+      status: "nejasné",
+      calc: `${head}${names.length ? `: ${names.join("; ")}` : ""}.${tail} Doplň chybějící údaje v Nastavení → Firma, pak půjde požadavek posoudit.`,
+      names: ok.map((r) => r.title),
+    };
   return {
     status: "nesplněno",
     calc: `${head}${names.length ? `: ${names.join("; ")}` : ""}.${tail} Řešení: poddodavatel nebo společná nabídka (§ 83 ZZVZ).`,

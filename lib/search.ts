@@ -4,7 +4,8 @@ import { fetchDns } from "./sources/dns";
 import { fetchProfily } from "./sources/profily";
 import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { pickModel } from "./ai";
-import { profileKey } from "./profile-key";
+import { profileKey, richness, stale } from "./profile-key";
+import { aiBudgetLeft } from "./budget";
 import { scoreTenders } from "./score";
 import { assignIds, canonFields, cluster } from "./dedupe";
 import { addSpend, getCanon, getScores, saveCanon, saveScores } from "./store";
@@ -79,16 +80,26 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
 
   // co už AI s tímto profilem hodnotila (v prohlížeči nebo v databázi), se znovu neposílá
   const key = profileKey(body.profile);
-  const known = { ...(await getScores(key, open.map((t) => t.id)).catch(() => ({}))), ...body.known };
-  const fresh = open.filter((t) => !known[t.id]);
-  onProgress?.({ step: "ai", fresh: process.env.ANTHROPIC_API_KEY && !body.noAi ? fresh.length : 0, cached: open.length - fresh.length });
+  const saved: Record<string, Score> = await getScores(key, open.map((t) => t.id)).catch(() => ({}));
+  // paměť prohlížeče má přednost, ale údaj „r“ (s čím AI hodnotila) si bere z databáze, když ho sama nemá
+  const known: Record<string, Score> = { ...saved };
+  for (const [id, s] of Object.entries(body.known ?? {})) known[id] = { ...s, r: s.r ?? saved[id]?.r };
+  // zakázka, která od hodnocení dostala znatelně bohatší popis (hodnotu, CPV), jde k AI znovu
+  const fresh = open.filter((t) => !known[t.id] || stale(known[t.id], t));
+  // starším skóre bez „r“ ho doplníme podle dnešní podoby, ať se příští obohacení pozná
+  const backfill: Record<string, Score> = Object.fromEntries(
+    open.filter((t) => saved[t.id] && saved[t.id].r === undefined).map((t) => [t.id, { ...saved[t.id], r: richness(t) }]),
+  );
+  // měsíční limit hlídá server: prohlížeč ani ranní běh ho neobejdou
+  const noAi = Boolean(body.noAi) || !(await aiBudgetLeft());
+  onProgress?.({ step: "ai", fresh: process.env.ANTHROPIC_API_KEY && !noAi ? fresh.length : 0, cached: open.length - fresh.length });
   const unscored = (t: Tender): ScoredTender => ({ ...t, score: -1, product: "–", reason: "" });
 
   let scored = new Map<string, ScoredTender>();
   let cost = 0;
   if (!process.env.ANTHROPIC_API_KEY) {
     warnings.push("Chybí ANTHROPIC_API_KEY – nové zakázky jsou bez AI hodnocení.");
-  } else if (body.noAi) {
+  } else if (noAi) {
     if (fresh.length) warnings.push(`Měsíční limit za AI je vyčerpaný – ${fresh.length} nových zakázek je bez hodnocení.`);
   } else if (fresh.length) {
     const r = await scoreTenders(body.profile, fresh, pickModel(body.model), (done, all) => onProgress?.({ step: "batch", done, all }));
@@ -108,9 +119,9 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
     .sort((a, b) => b.score - a.score);
   const newScores: Record<string, Score> = Object.fromEntries(
     // nehodnocené (-1) se neukládají, ať je příští hledání pošle AI znovu
-    [...scored.values()].filter((t) => t.score >= 0).map((t) => [t.id, { score: t.score, product: t.product, reason: t.reason, region: t.region }]),
+    [...scored.values()].filter((t) => t.score >= 0).map((t) => [t.id, { score: t.score, product: t.product, reason: t.reason, region: t.region, r: richness(t) }]),
   );
-  await Promise.all([saveScores(key, newScores), addSpend(cost)]).catch(() => {});
+  await Promise.all([saveScores(key, { ...backfill, ...newScores }), addSpend(cost)]).catch(() => {});
   return {
     total: tenders.length,
     open: open.length,
