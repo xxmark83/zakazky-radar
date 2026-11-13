@@ -2,6 +2,7 @@ import { askCited, pickModel } from "@/lib/ai";
 import { fetchDocs, type Doc } from "@/lib/docs";
 import { addSpend } from "@/lib/store";
 import type { Tender } from "@/lib/types";
+import { aiBudgetLeft, BUDGET_ERROR } from "@/lib/budget";
 
 export const maxDuration = 300;
 
@@ -12,6 +13,7 @@ a cituj je. Když odpověď v dokumentech není, napiš to otevřeně a navrhni,
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "Chybí ANTHROPIC_API_KEY." }, { status: 400 });
+  if (!(await aiBudgetLeft())) return Response.json({ error: BUDGET_ERROR }, { status: 402 });
   const body = (await req.json()) as { tender: Tender; question: string; model?: string; texts?: { name: string; text: string }[] };
   if (!body.question?.trim()) return Response.json({ error: "Napiš otázku." }, { status: 400 });
   try {

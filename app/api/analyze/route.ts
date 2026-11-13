@@ -3,6 +3,7 @@ import { analyzeTender, draftOffer } from "@/lib/analyze";
 import { getReferences } from "@/lib/company";
 import { addSpend, setKept } from "@/lib/store";
 import type { Analysis, Tender } from "@/lib/types";
+import { aiBudgetLeft, BUDGET_ERROR } from "@/lib/budget";
 
 export const maxDuration = 300; // stažení dokumentace a jejich přečtení může trvat i minuty
 
@@ -11,6 +12,7 @@ export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return Response.json({ error: "Chybí ANTHROPIC_API_KEY." }, { status: 400 });
   }
+  if (!(await aiBudgetLeft())) return Response.json({ error: BUDGET_ERROR }, { status: 402 });
   const body = (await req.json()) as {
     kind?: "analysis" | "draft";
     profile: string;

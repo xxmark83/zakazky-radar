@@ -13,6 +13,8 @@ export type Tender = {
   cpv: string[];
   description: string;
   url: string;
+  // jiná řízení téhož zadavatele se stejným názvem (jiné evidenční číslo) – nejspíš znovu vyhlášená zakázka
+  related?: { code: string; published: string | null }[];
 };
 
 export type ScoredTender = Tender & {
@@ -42,7 +44,9 @@ export type Profile = {
   cpv: string; // CPV kódy oddělené čárkou/mezerou
 };
 
-export type Score = Pick<ScoredTender, "score" | "product" | "reason" | "region">;
+// r = kolik údajů měla AI při hodnocení k dispozici (lib/profile-key.ts: richness) – když zakázka později
+// dostane bohatší popis, ohodnotí se znovu
+export type Score = Pick<ScoredTender, "score" | "product" | "reason" | "region"> & { r?: number };
 
 export type SearchRequest = Profile & {
   mode: "open" | "upcoming";
