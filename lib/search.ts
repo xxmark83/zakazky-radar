@@ -1,7 +1,7 @@
 import { fetchHlidac } from "./sources/hlidac";
 import { fetchNen } from "./sources/nen";
 import { fetchDns } from "./sources/dns";
-import { fetchProfily } from "./sources/profily";
+import { fetchProfily, profilyInfo } from "./sources/profily";
 import { fetchTedOpen, fetchTedUpcoming } from "./sources/ted";
 import { pickModel } from "./ai";
 import { profileKey, richness, stale } from "./profile-key";
@@ -27,12 +27,17 @@ export type SearchResult = {
   cost: number; // cena AI hodnocení v USD
   newScores: Record<string, Score>; // nová skóre všech zakázek (i pod limitem), klient si je zapamatuje
   warnings: string[];
+  sources: SourceReport[]; // co který zdroj vrátil a jestli úplně
   results: ScoredTender[];
 };
 
+// Úplnost zdroje: error = zdroj selhal celý, partial = vrátil jen část (došel čas, selhala slova, stará data),
+// off = zdroj je vypnutý (chybí klíč). Bez toho vypadá „prohledali jsme jen část“ stejně jako „nic nového“.
+export type SourceReport = { name: string; count: number | null; error?: string; partial?: string; off?: string };
+
 // průběh hledání pro appku: který zdroj je hotový a kolik dávek AI už ohodnotila
 export type SearchProgress =
-  | { step: "source"; name: string; count: number | null; error?: string }
+  | { step: "source"; name: string; count: number | null; error?: string; partial?: string }
   | { step: "ai"; fresh: number; cached: number }
   | { step: "batch"; done: number; all: number };
 
@@ -52,10 +57,14 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
     // DNS běží roky, takže se nefiltrují podle data zveřejnění
     ["DNS", Promise.resolve(kind === "open" ? fetchDns({ keywords, cpv }) : [])],
   ];
+  // stažená data profilů starší než 30 hodin = noční sběr neproběhl; výsledek z nich je jen částečný
+  const pi = kind === "open" ? profilyInfo() : null;
+  const staleProfily = pi && Date.now() - Date.parse(pi.updated) > 30 * 3600_000 ? `data jsou z ${new Date(pi.updated).toLocaleDateString("cs-CZ")}, noční sběr od té doby neproběhl` : undefined;
+  const partialOf = (name: string, list: Tender[]) => (list as Tender[] & { partial?: string }).partial ?? (name === "Profily zadavatelů" ? staleProfily : undefined);
   const settled = await Promise.allSettled(
     sources.map(([name, p]) =>
       p.then(
-        (list) => (onProgress?.({ step: "source", name, count: list.length }), list),
+        (list) => (onProgress?.({ step: "source", name, count: list.length, partial: partialOf(name, list) }), list),
         (e) => {
           onProgress?.({ step: "source", name, count: null, error: String(e?.message ?? e) });
           throw e;
@@ -64,9 +73,20 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
     ),
   );
   const tenders: Tender[] = [];
+  const report: SourceReport[] = [];
   settled.forEach((r, i) => {
-    if (r.status === "fulfilled") tenders.push(...r.value);
-    else warnings.push(`${sources[i][0]}: ${r.reason?.message ?? r.reason}`);
+    const name = sources[i][0];
+    if (r.status === "fulfilled") {
+      tenders.push(...r.value);
+      const partial = partialOf(name, r.value);
+      const off = name === "Hlídač státu" && !process.env.HLIDAC_TOKEN ? "vypnuto – chybí licence (HLIDAC_TOKEN)" : undefined;
+      report.push({ name, count: r.value.length, partial, off });
+      if (partial) warnings.push(`${name}: částečné výsledky – ${partial}.`);
+    } else {
+      const error = String(r.reason?.message ?? r.reason);
+      report.push({ name, count: null, error });
+      warnings.push(`${name}: ${error}`);
+    }
   });
 
   // u otevřených zahodit prošlou lhůtu; připravované lhůtu obvykle nemají.
@@ -130,6 +150,7 @@ export async function runSearch(body: SearchRequest, onProgress?: (p: SearchProg
     cost,
     newScores,
     warnings,
+    sources: report,
     results,
   };
 }

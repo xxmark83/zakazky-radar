@@ -59,3 +59,10 @@ test("NEN: při všech oblastech se ptá i na slova poslední oblasti", () => {
   for (const w of ["pentest", "penetrač", "zranitelno", "web", "crm"]) assert.ok(list.includes(w), w);
   assert.ok(list.length <= 50);
 });
+
+test("NEN: poznámka o neúplnosti", async () => {
+  const { nenNote } = await import("../lib/sources/nen");
+  assert.equal(nenNote({ terms: 50, asked: 50, failed: 0, pagesCut: 0 }), undefined);
+  assert.match(nenNote({ terms: 50, asked: 8, failed: 0, pagesCut: 0 })!, /prohledáno 8 z 50 slov/);
+  assert.match(nenNote({ terms: 10, asked: 10, failed: 2, pagesCut: 1 })!, /2 slova selhala; u 1 slov se nenačetly/);
+});

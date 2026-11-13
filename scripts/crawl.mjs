@@ -306,8 +306,12 @@ for (const t of found.values()) {
   else merged.set(t.id, t);
 }
 const tenders = cleanTenders([...merged.values()], { today, dropped, maxDays: MAX_DAYS });
-// „ok“ = profily stažené v posledních 14 dnech (rotace pomalých serverů trvá několik dní)
-const fresh = Object.values(state).filter((d) => (now - new Date(d)) / 86400_000 <= 14).length;
+// „ok“ = profily stažené v posledních 14 dnech (rotace pomalých serverů trvá několik dní).
+// Všechna tři čísla se počítají ze stejné množiny (profily tohoto běhu): ok + stale + never = profiles.
+// Dřív se „ok“ bralo z celého stavu včetně profilů, které v seznamu už nejsou, a součty neseděly.
+const age = (p) => (now - new Date(state[p])) / 86400_000;
+const fresh = profiles.filter((p) => state[p] && age(p) <= 14).length;
+const never = profiles.filter((p) => !state[p]).length;
 
 writeFileSync(STATE, JSON.stringify(state));
 writeFileSync(INACTIVE, JSON.stringify(inactive));
@@ -318,8 +322,12 @@ writeFileSync(
     mode: FULL ? "full" : "incremental",
     profiles: profiles.length,
     ok: fresh,
-    // nikdy se nepodařilo stáhnout = nejspíš chybná adresa v registru (ne výpadek serveru)
-    never: profiles.filter((p) => !state[p]).length,
+    // zatím se nepodařilo stáhnout ani jednou (často chybná adresa v registru, ale i dlouhodobě nedostupný server)
+    never,
+    // stažené dřív, ale ne v posledních 14 dnech
+    stale: profiles.length - fresh - never,
+    // profily odložené jako neaktivní (dlouho bez zakázky) – v „profiles“ nejsou
+    inactive: all.length - profiles.length,
     failed: nFailed(),
     tenders,
   }),
