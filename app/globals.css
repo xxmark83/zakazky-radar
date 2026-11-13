@@ -339,6 +339,13 @@ button.mine-row:active { transform: none; }
 .tag.accent { background: var(--accent-soft); color: var(--accent); }
 .tag.area { display: inline-flex; align-items: center; gap: 4px; background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .tag.area .ic { flex: none; color: var(--accent); }
+.progress-steps li.part { color: var(--soon-text); }
+.progress-steps .src-part { color: var(--soon-text); font-weight: 600; }
+.mail-sent { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.mail-sent li { margin: 2px 0; }
+.mail-hist { margin-top: 8px; font-size: 13px; }
+.mail-hist summary { cursor: pointer; color: var(--muted); }
+.mail-hist .run { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--muted) 25%, transparent); }
 .related-note { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--soon-bg); color: var(--soon-text); font-size: 13px; line-height: 1.4; }
 .related-note .ic { flex: none; margin-top: 2px; }
 .tag.area.none { color: var(--muted); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 40%, transparent); }

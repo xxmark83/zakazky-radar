@@ -1393,12 +1393,13 @@ function SearchTab(props: {
                 {SEARCH_SOURCES.map(([key, label]) => {
                   const st = sourceState(progress, key);
                   return (
-                    <li key={key} className={st ? (st.error ? "err" : "ok") : "wait"} title={st?.error ?? (LIVE.has(key) ? "hledá se naživo na webu zdroje" : "čte se ze staženého")}>
+                    <li key={key} className={st ? (st.error ? "err" : st.partial ? "part" : "ok") : "wait"} title={st?.error ?? st?.partial ?? (LIVE.has(key) ? "hledá se naživo na webu zdroje" : "čte se ze staženého")}>
                       <Icon n={st ? (st.error ? "x" : "check") : "clock"} size={13} />
                       {label}
                       <small className="src-kind">{LIVE.has(key) ? "naživo" : "staženo"}</small>
                       {st && !st.error && <small> {st.count.toLocaleString("cs-CZ")}</small>}
                       {st?.error && <small className="src-err"> {st.error.slice(0, 80)}</small>}
+                      {st && !st.error && st.partial && <small className="src-part"> částečně</small>}
                       {key === "Profily zadavatelů" && profily && !st && <small> {profily.toLocaleString("cs-CZ")} profilů</small>}
                     </li>
                   );
@@ -1703,7 +1704,7 @@ const daysLeft = (d: string | null) => (d ? Math.round((Date.parse(dayOf(d)) - D
 // ---------- průběh hledání (z /api/search?stream=1) ----------
 // průběh obou hledání (otevřené a připravované) zvlášť podle klíče „zdroj|režim“
 type Progress = {
-  src?: Record<string, { count: number; error?: string }>;
+  src?: Record<string, { count: number; error?: string; partial?: string }>;
   ai?: Record<string, { fresh: number; cached: number; done: number; all: number }>;
 };
 const SEARCH_SOURCES: [string, string][] = [
@@ -1717,7 +1718,7 @@ const MODES = ["open", "upcoming"];
 // TED, NEN a Hlídač státu se ptají naživo, profily a DNS se čtou ze staženého
 const LIVE = new Set(["TED", "NEN", "Hlídač státu"]);
 function applyProgress(cur: Progress, mode: string, p: any): Progress {
-  if (p.step === "source") return { ...cur, src: { ...cur.src, [`${p.name}|${mode}`]: { count: p.count ?? 0, error: p.error } } };
+  if (p.step === "source") return { ...cur, src: { ...cur.src, [`${p.name}|${mode}`]: { count: p.count ?? 0, error: p.error, partial: p.partial } } };
   const m = cur.ai?.[mode] ?? { fresh: 0, cached: 0, done: 0, all: 0 };
   const next = p.step === "ai" ? { ...m, fresh: p.fresh, cached: p.cached } : { ...m, done: p.done, all: p.all };
   return { ...cur, ai: { ...cur.ai, [mode]: next } };
@@ -1726,7 +1727,7 @@ function applyProgress(cur: Progress, mode: string, p: any): Progress {
 function sourceState(p: Progress, name: string) {
   const parts = MODES.map((m) => p.src?.[`${name}|${m}`]);
   if (parts.some((x) => !x)) return null;
-  return { count: parts.reduce((a, x) => a + x!.count, 0), error: parts.find((x) => x!.error)?.error };
+  return { count: parts.reduce((a, x) => a + x!.count, 0), error: parts.find((x) => x!.error)?.error, partial: parts.find((x) => x!.partial)?.partial };
 }
 function aiState(p: Progress) {
   const parts = MODES.map((m) => p.ai?.[m]);
@@ -5069,10 +5070,39 @@ function EventList({ events, who }: { events: { at: string; user?: string; event
 // Správa účtů (jen vlastník): které oblasti smí ostatní hledat a jestli smí upravovat klíčová slova
 // ---------- stav stažených dat a e-mailů ----------
 type DataSet = { id: string; name: string; what: string; count: string; updated: string | null; where: string; next: string | null; done?: number; pending?: string; late?: boolean };
+type MailRun = { at: string; log: string[]; sent?: { title: string; score: number; profile: string }[]; partial?: string[] };
+// jeden ranní běh: co se stalo, které zakázky šly do e-mailu a které zdroje byly neúplné
+function MailRunView({ run }: { run: MailRun }) {
+  return (
+    <>
+      <ul className="mail-log">
+        {run.log.map((l, i) => (
+          <li key={i} className={/selhal|chyba/i.test(l) ? "err" : ""}>
+            {l}
+          </li>
+        ))}
+      </ul>
+      {run.partial?.length ? (
+        <p className="warn-text" style={{ margin: "6px 0 0" }}>
+          Neúplné zdroje: {run.partial.join(" · ")}. Co ráno chybělo, doplní další běh nebo noční sběr profilů.
+        </p>
+      ) : null}
+      {run.sent?.length ? (
+        <ul className="mail-sent">
+          {run.sent.map((s, i) => (
+            <li key={i}>
+              <b>{s.score}</b> {s.title} <span className="hint">({s.profile})</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
 type DataStatusRes = {
   datasets: DataSet[];
   running: { name: string; started: string; url: string }[];
-  mail: { to: string | null; from: string; testSender: boolean; ready: boolean; cron: boolean; last: { at: string; log: string[] } | null };
+  mail: { to: string | null; from: string; testSender: boolean; ready: boolean; cron: boolean; last: MailRun | null; history?: MailRun[] };
   refresh: { ready: boolean; request: { id: string } | null; done: { id: string; at: string } | null } | null;
 };
 const when = (iso: string | null) => {
@@ -5152,15 +5182,18 @@ function DataStatus({ part }: { part: "data" | "mail" }) {
             <b>Poslední ranní běh</b>
             <span className="hint">{m.last ? when(m.last.at) : "zatím žádný záznam"}</span>
           </div>
-          {m.last && (
-            <ul className="mail-log">
-              {m.last.log.map((l, i) => (
-                <li key={i} className={/selhal|chyba/i.test(l) ? "err" : ""}>
-                  {l}
-                </li>
+          {m.last && <MailRunView run={m.last} />}
+          {m.history?.length ? (
+            <details className="mail-hist">
+              <summary>Předchozí běhy ({m.history.length}) – proč zakázka přišla nebo nepřišla</summary>
+              {m.history.map((r) => (
+                <div key={r.at} className="run">
+                  <b>{new Date(r.at).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}</b>
+                  <MailRunView run={r} />
+                </div>
               ))}
-            </ul>
-          )}
+            </details>
+          ) : null}
         </div>
       </div>
       <div className="row-btns">

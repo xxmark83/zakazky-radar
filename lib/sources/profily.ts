@@ -17,7 +17,7 @@ type Row = {
   url: string;
   detail?: string; // přímý odkaz na zakázku, když ho známe (jinak se počítá níž, nebo zbývá adresa profilu)
 };
-type Data = { updated: string; profiles: number; ok: number; never?: number; tenders: Row[] };
+type Data = { updated: string; profiles: number; ok: number; never?: number; stale?: number; inactive?: number; tenders: Row[] };
 
 const read = (name: string) => {
   try {
@@ -56,7 +56,7 @@ function load(): Data | null {
 
 export function profilyInfo() {
   const d = load();
-  return d ? { updated: d.updated, profiles: d.profiles, ok: d.ok, never: d.never ?? null, open: d.tenders.length, mode: (d as { mode?: string }).mode ?? null } : null;
+  return d ? { updated: d.updated, profiles: d.profiles, ok: d.ok, never: d.never ?? null, stale: d.stale ?? null, inactive: d.inactive ?? null, open: d.tenders.length, mode: (d as { mode?: string }).mode ?? null } : null;
 }
 
 /** Aktuální podoba zakázek z profilů podle id – pro hlídání změn u sledovaných zakázek. */

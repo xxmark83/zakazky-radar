@@ -100,7 +100,19 @@ const fresh = (code: string, now: Date) => {
 // budgetMs: jeden dotaz na NEN trvá 1–3 s včetně rozestupu, slovo stojí obvykle jeden až dva dotazy
 // (jedna oblast kolem půl minuty, všech pět oblastí = 50 slov kolem 2,5 minuty; hledání má na všechno 5 minut i s AI).
 // Po vyčerpání času vrátíme, co máme – stejné zakázky jsou i v denním sběru profilů (nen.nipez.cz/profil/…).
-export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }): Promise<Tender[]> {
+// Výsledek nese i „partial“: text, co se nestihlo nebo selhalo. „Nic nového“ a „prohledali jsme jen část“
+// jsou různé výsledky a hledání i ranní běh to musí umět říct.
+export type Partial = { partial?: string };
+export function nenNote(s: { terms: number; asked: number; failed: number; pagesCut: number }): string | undefined {
+  const parts = [
+    s.asked < s.terms ? `prohledáno ${s.asked - s.failed} z ${s.terms} slov, na zbytek nezbyl čas` : "",
+    s.failed ? `${s.failed} ${s.failed === 1 ? "slovo selhalo" : s.failed < 5 ? "slova selhala" : "slov selhalo"}` : "",
+    s.pagesCut ? `u ${s.pagesCut} slov se nenačetly všechny stránky` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join("; ") : undefined;
+}
+
+export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }): Promise<Tender[] & Partial> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const stopAt = Date.now() + (opts.budgetMs ?? 150_000);
@@ -110,6 +122,7 @@ export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }):
   const list = terms(opts.keywords);
   let failed = 0;
   let asked = 0;
+  let pagesCut = 0; // slova, u kterých se nenačetly všechny stránky (chyba nebo čas)
   for (const term of list) {
     if (Date.now() > stopAt) break;
     asked++;
@@ -118,12 +131,16 @@ export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }):
       let rows = first.rows;
       // další stránky; když některá selže nebo dojde čas, to už načtené nezahazujeme
       try {
-        for (let n = 2; n <= Math.min(first.last, MAX_PAGES) && Date.now() < stopAt; n++) {
+        const lastPage = Math.min(first.last, MAX_PAGES);
+        let n = 2;
+        for (; n <= lastPage && Date.now() < stopAt; n++) {
           const next = (await page(term, n)).rows;
           if (!next.length) break;
           rows = rows.concat(next);
         }
+        if (n <= lastPage && Date.now() >= stopAt) pagesCut++;
       } catch (e) {
+        pagesCut++;
         if (process.env.NEN_DEBUG) console.warn("NEN", term, "další stránka:", String(e));
       }
       // sloupce: Detail | Systémové číslo | Název | Stav | Zadavatel | Lhůta
@@ -152,6 +169,6 @@ export async function fetchNen(opts: { keywords: string[]; budgetMs?: number }):
       if (process.env.NEN_DEBUG) console.warn("NEN", term, String(e));
     }
   }
-  if (failed === asked) throw new Error("NEN neodpovídá");
-  return [...seen.values()];
+  if (failed === asked) throw new Error(asked ? "NEN neodpovídá" : "na NEN nezbyl čas");
+  return Object.assign([...seen.values()], { partial: nenNote({ terms: list.length, asked, failed, pagesCut }) });
 }

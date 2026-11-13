@@ -58,18 +58,21 @@ export function datasets(): Dataset[] {
       where: "GitHub každou noc (asi 23:17)",
       next: nextDaily(22, 17),
       done: p.profiles ? p.ok / p.profiles : undefined,
-      // většina „chybějících“ profilů má v úředním registru chybnou adresu (překlep, jen úvodní stránka portálu) –
-      // ty se nestáhnou nikdy; dočasně nedostupné se zkouší znovu každou noc
+      // „never“ = profil se zatím nepodařilo stáhnout ani jednou. Příčinu neznáme: často je to chybná adresa
+      // v úředním registru (překlep, jen úvodní stránka portálu), ale i server, který dlouhodobě neodpovídá.
+      // Zakázky těchto zadavatelů radar z profilu nevidí (mohou přijít přes TED nebo NEN).
       pending:
         p.profiles > p.ok
           ? p.never !== null
             ? [
-                p.never ? `${fmt(p.never)} profilů má v registru chybnou adresu a stáhnout nejdou` : "",
-                p.profiles - p.ok - p.never > 0 ? `${fmt(p.profiles - p.ok - p.never)} teď neodpovídá, zkusí se znovu příští noc` : "",
+                p.never ? `${fmt(p.never)} profilů se zatím nepodařilo stáhnout ani jednou (často chybná adresa v registru) – jejich zakázky z profilu nevidíme` : "",
+                (p.stale ?? p.profiles - p.ok - p.never) > 0
+                  ? `${fmt(p.stale ?? p.profiles - p.ok - p.never)} se naposled stáhlo před víc než 14 dny, zkouší se znovu každou noc`
+                  : "",
               ]
                 .filter(Boolean)
                 .join("; ")
-            : `${fmt(p.profiles - p.ok)} profilů se nepodařilo stáhnout – většinou mají v registru chybnou adresu`
+            : `${fmt(p.profiles - p.ok)} profilů se nepodařilo stáhnout – jejich zakázky z profilu nevidíme`
           : undefined,
       late: hoursAgo(p.updated) > 30,
     });

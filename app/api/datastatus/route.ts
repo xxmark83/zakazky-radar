@@ -7,10 +7,12 @@ import { currentUser, userKey } from "@/lib/users";
 // stav stažených dat + kam chodí e-maily a jak dopadl poslední ranní e-mail
 export async function GET() {
   const me = await currentUser();
-  const [running, refresh, last] = await Promise.all([
+  type Run = { at: string; log: string[]; sent?: { title: string; score: number; profile: string }[]; partial?: string[] };
+  const [running, refresh, last, history] = await Promise.all([
     runningJobs(),
     me.owner ? refreshState() : null,
-    redis ? redis.get<{ at: string; log: string[] }>(await userKey("mailLog")) : null,
+    redis ? redis.get<Run>(await userKey("mailLog")) : null,
+    redis ? redis.get<Run[]>(await userKey("mailHistory")) : null,
   ]);
   return Response.json({
     datasets: datasets(),
@@ -23,6 +25,7 @@ export async function GET() {
       ready: Boolean(process.env.RESEND_API_KEY && me.email),
       cron: Boolean(process.env.CRON_SECRET),
       last: last ?? null,
+      history: (history ?? []).slice(1), // starší běhy (první je „last“)
     },
   });
 }

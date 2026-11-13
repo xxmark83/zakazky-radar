@@ -49,6 +49,7 @@ async function runFor(req: Request, started: number): Promise<string[]> {
   const days = redis ? 30 : 1;
   const groups: { profile: string; tenders: ScoredTender[] }[] = [];
   const log: string[] = [];
+  const partial = new Set<string>(); // zdroje, které ráno vrátily jen část nebo selhaly
 
   for (const p of profiles) {
     for (const mode of ["open", "upcoming"] as const) {
@@ -60,7 +61,17 @@ async function runFor(req: Request, started: number): Promise<string[]> {
         const good = r.results.filter((t) => t.score >= minScore);
         const fresh = await filterUnseen(good.map((t) => t.id));
         const tenders = good.filter((t) => fresh.has(t.id));
-        log.push(`${p.name}/${mode}: ${r.open} aktuálních, ${good.length} vhodných, ${tenders.length} nových`);
+        for (const s of r.sources) {
+          if (s.error) partial.add(`${s.name}: selhal (${s.error.slice(0, 80)})`);
+          // NEN má ráno záměrně jen 20 s – co nestihne, pokrývá noční sběr profilů; hlásíme to, ale ne jako chybu
+          else if (s.partial) partial.add(`${s.name}: ${s.partial}`);
+        }
+        const noAi = r.warnings.find((w) => /limit za AI|bez AI hodnocení|AI hodnocení zčásti/.test(w));
+        log.push(
+          `${p.name}/${mode}: ${r.open} aktuálních, ${good.length} vhodných (skóre ${minScore}+), ${tenders.length} nových` +
+            (good.length > tenders.length ? `, ${good.length - tenders.length} už dřív posláno` : "") +
+            (noAi ? ` – ${noAi}` : ""),
+        );
         if (tenders.length) {
           const g = groups.find((x) => x.profile === p.name);
           if (g) g.tenders.push(...tenders);
@@ -267,7 +278,20 @@ async function runFor(req: Request, started: number): Promise<string[]> {
       log.push(`e-mail selhal: ${e.message}`);
     }
   } else log.push("nic nového – e-mail se neposílal");
-  // co se ráno stalo, ať to appka ukáže v Nastavení
-  if (redis) await redis.set(await userKey("mailLog"), { at: new Date().toISOString(), log: log.slice(-12) }).catch(() => {});
+  // Co se ráno stalo, ať to appka ukáže v Nastavení: řádky běhu, které zakázky šly do e-mailu a které zdroje
+  // byly neúplné. Posledních 14 běhů zůstává, aby šlo zpětně dohledat, proč zakázka přišla nebo nepřišla.
+  if (redis) {
+    const entry = {
+      at: new Date().toISOString(),
+      log: log.slice(-16),
+      sent: groups.flatMap((g) => g.tenders.map((t) => ({ title: t.title.slice(0, 140), score: t.score, profile: g.profile }))).slice(0, 40),
+      partial: [...partial].slice(0, 12),
+    };
+    try {
+      const prev = (await redis.get<(typeof entry)[]>(await userKey("mailHistory"))) ?? [];
+      await redis.set(await userKey("mailHistory"), [entry, ...prev].slice(0, 14));
+      await redis.set(await userKey("mailLog"), entry);
+    } catch {}
+  }
   return log;
 }
