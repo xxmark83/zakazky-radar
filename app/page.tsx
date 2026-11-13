@@ -325,11 +325,29 @@ export default function Home() {
   // offline: appka z plochy ukáže poslední uložená data (service worker), tady jen upozornění
   const [offline, setOffline] = useState(false);
   useEffect(() => {
-    const on = () => setOffline(!navigator.onLine);
+    // navigator.onLine umí hlásit „offline“, i když připojení funguje (VPN, přepnutí sítě, probuzení počítače).
+    // Proto se ptáme serveru: malý soubor mimo mezipaměť. Dokud hláška svítí, zkoušíme to znovu každých 15 s.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stop = false;
+    const reachable = () =>
+      fetch(`/icon.svg?ping=${Date.now()}`, { cache: "no-store", signal: AbortSignal.timeout(6000) }).then(
+        (r) => r.ok,
+        () => false,
+      );
+    const on = async () => {
+      clearTimeout(timer);
+      if (navigator.onLine) return setOffline(false);
+      const ok = await reachable();
+      if (stop) return;
+      setOffline(!ok);
+      if (!ok || !navigator.onLine) timer = setTimeout(on, ok ? 60_000 : 15_000);
+    };
     on();
     window.addEventListener("online", on);
     window.addEventListener("offline", on);
     return () => {
+      stop = true;
+      clearTimeout(timer);
       window.removeEventListener("online", on);
       window.removeEventListener("offline", on);
     };
